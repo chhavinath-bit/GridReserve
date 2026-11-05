@@ -51,4 +51,15 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
+
+    <build>
+        <plugins>
+            <!-- Runs *IT classes in the integration-test/verify phases (configured by the Boot parent).
+                 Without it, Surefire runs only *Test classes and every *IT would be silently skipped. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
 </project>
