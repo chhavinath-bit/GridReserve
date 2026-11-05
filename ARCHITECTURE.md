@@ -123,7 +123,7 @@ flowchart LR
 ├── infra/
 │   ├── compose.yaml                 postgres, platform, services, redis (P4); mounts ../../gridreserve-config in dev
 │   ├── .env.example                 placeholders only (.env is git-ignored)
-│   └── postgres/init.sql            CREATE DATABASE/USER per service (passwords from env)
+│   └── postgres/init-databases.sh   CREATE DATABASE/USER per service (passwords from env)
 ├── scripts/refresh-config.sh        Eureka lookup + POST /actuator/refresh per instance
 ├── .github/workflows/
 └── docs/PROGRESS.md
@@ -691,6 +691,8 @@ sequenceDiagram
 
 - Compose starts PostgreSQL and the config server first (health checks), then the discovery server, then services, then the gateway; clients also retry, so order problems self-heal (NFR-OPS-04).
 - Config server location: fixed URL from an environment variable (`CONFIG_SERVER_URL`), not discovered through Eureka, to avoid a startup cycle (D-20).
+- If the Config Server is unreachable, a service fails fast and the container platform restarts it with backoff (PLAT-07, spike S6). Eureka keeps its own local config so it never waits for the Config Server.
+- Config backend: `native` (mounted local clone, read-only) in `dev`; Git (GitHub) in `prod` (D-33).
 
 ### 12.2 Profiles
 
@@ -876,6 +878,11 @@ flowchart LR
 | D-01 | One `booking` table for EXCLUSIVE and seat bookings (nullable `session_id`) | 2026-10-26 (design), confirmed by microservice split |
 | D-02 | Per-member limit via row lock on the local `member` row | 2026-11-04 |
 | D-03 | Waitlist promotion synchronous in the releasing transaction | 2026-11-05 (owner, M0.3) |
+| D-20 | Config server reached by a fixed URL (`CONFIG_SERVER_URL`), not through Eureka | 2026-11-05 (M1.1) |
+| D-21 | Resilience4j through Spring Cloud CircuitBreaker 5.0.3 (Resilience4j 2.3.0) works on Spring Boot 4.1.2: Feign circuit breaker with fallback (spike S2) and gateway route breaker with JSON fallback (S3) verified | 2026-11-05 (M1.1) |
+| D-22 | Gateway: Spring Cloud Gateway Server WebFlux | 2026-11-05 (M1.1) |
+| D-27 | `common-web` stays thin and servlet-only (error format, request ID, clock) and is wired by Spring Boot auto-configuration; the reactive gateway has its own small equivalents | 2026-11-05 (M1.1) |
+| D-33 | Config Server: `native` backend on the mounted local clone in `dev`, Git backend on GitHub in `prod`; startup = fail fast + container restart with backoff, no Spring Retry (spike S6) | 2026-11-05 (M1.1) |
 | D-32 | Per-weekday opening hours in P1 (`venue_opening_hours`, optional `bookable_opening_hours`); booking horizon 7 days; Trainer 45 + 15 on a 15-minute grid | 2026-11-05 (owner, M0.3) |
 | D-04 | Outbox introduced in P5 with HTTP push, no broker | 2026-11-04 |
 | D-12 | Access token in memory + rotating refresh-token cookie | 2026-10-26 |
@@ -902,14 +909,10 @@ flowchart LR
 | D-16b | DST-ambiguous local times in the slot grid | first occurrence / both / skip | Show both with UTC offset | P7 |
 | D-17 | Overlapping sessions on one CAPACITY bookable | forbid / allow | Forbid | P2 |
 | D-19 | Service-to-service authentication | service JWT / HMAC / network only | Service JWT signed by identity | M1.3 (actuator refresh), P5 (events) |
-| D-20 | Config server lookup | fixed URL / discovery-first | Fixed URL from env | M1.1 |
-| D-21 | Resilience4j on Boot 4 | Spring Cloud CircuitBreaker Resilience4j / Resilience4j Boot starter / Spring 7 built-ins + hand-written breaker | Whatever the M1.1 spike proves works | M1.1 |
-| D-22 | Gateway variant | Server WebFlux (Redis limiter built in) / Server WebMVC | WebFlux | M1.1 |
 | D-23 | Public-key distribution | config repo / JWKS endpoint | Config repo in P1, JWKS later | P1 / later |
 | D-24 | Distributed tracing | Micrometer Tracing + Zipkin / OTLP / none | Add when approved | P5+ |
 | D-25 | Membership credits | reservation saga / keep credits in booking-service | Decide at P6 start | P6 |
 | D-26 | VENUE_MANAGER scope source | JWT claim / lookup from identity | JWT claim (refresh picks up changes) | P6 |
-| D-27 | Shared library scope | thin `common-web` / none (copy) | Thin library, reviewed for creep | M1.1 |
 | D-28 | Stub HTTP server for Feign client tests | WireMock / JDK `HttpServer` (no dependency, clunky) / Spring Cloud Contract stubs | WireMock (needs approval) | M1.9 |
 
 ## 20. Known inconsistencies

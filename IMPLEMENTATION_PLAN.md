@@ -108,9 +108,9 @@ Phase goal (PROJECT.md §8): EXCLUSIVE booking end to end through the gateway; 5
 2. **Tasks.**
    - `backend/pom.xml` parent: Spring Boot 4.x parent, Spring Cloud BOM in `<dependencyManagement>` (compatible train, verified against the official table), version properties for non-BOM libraries, modules. **Dependency list shown for approval first.** Paths below are relative to `backend/`.
    - `platform/config-server` (Git backend → `gridreserve-config`), `platform/discovery-server` (Eureka), `platform/api-gateway` (routes `/api/v1/auth/**`, `/api/v1/me` → identity; `/api/v1/**` → booking; `X-Request-Id`; JSON error handler).
-   - `services/identity-service`, `services/booking-service`: config client (fail fast + retry, PLAT-07), Eureka client, actuator health with liveness/readiness, a temporary `GET /api/v1/ping`.
+   - `services/identity-service`, `services/booking-service`: config client (fail fast; container restart with backoff, PLAT-07), Eureka client, actuator health with liveness/readiness, a temporary `GET /api/v1/ping`.
    - `libs/common-web`: `ErrorResponse`, `ErrorCode`, `DomainException`, global handler, `RequestIdFilter`, `Clock` bean.
-   - `infra/compose.yaml`: postgres:16 + `infra/postgres/init.sql` (identity_db, booking_db, users), config server (mounting `../../gridreserve-config`, `CONFIG_REPO_URI=file:///config-repo`), discovery, gateway, services; health-based `depends_on`.
+   - `infra/compose.yaml`: postgres:16 + `infra/postgres/init-databases.sh` (identity_db, booking_db, users), config server (`native` profile, mounting `../../gridreserve-config` read-only), discovery, gateway, services; health-based `depends_on`.
    - Config repo: `application.yml`, `application-{dev,prod}.yml`, per-service files.
    - Profiles `dev`, `prod`, `test` (config client and Eureka off in `test`).
    - **Spikes (timeboxed, results in PROGRESS):** Spring Cloud OpenFeign on Boot 4 (a Feign call from booking-service to identity-service's `/api/v1/ping` through Eureka); Resilience4j through Spring Cloud CircuitBreaker on Boot 4 (D-21); gateway WebFlux variant (D-22); Testcontainers and Flyway artifact names on Boot 4; Jackson 3 effect on DTO serialization.
@@ -214,7 +214,7 @@ Phase goal (PROJECT.md §8): EXCLUSIVE booking end to end through the gateway; 5
 3. **Files/modules.** `platform/*/Dockerfile`, `services/*/Dockerfile`, `frontend/Dockerfile` (if needed), `.github/workflows/{ci,deploy}.yml`, config repo `*-prod.yml`, `.env.example`.
 4. **Dependencies.** M1.9; B-6.
 5. **Tests.** Compose `full` run from images + manual journey; deployed smoke test: gateway health, login, refresh after reload, hold + confirm + cancel; `docker history` shows no secrets.
-6. **Acceptance.** Live URL works; internal services not reachable publicly; restart keeps data.
+6. **Acceptance.** Live URL works; internal services not reachable publicly; restart keeps data; the host restarts a crashed container with backoff (PLAT-07: services fail fast when the Config Server is down).
 7. **Done.** Merged; README "Live demo"; D-15 recorded; tag `first-deploy`.
 
 ### M1.11 Admin catalog management and oversight `M`

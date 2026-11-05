@@ -1,6 +1,7 @@
 # GridReserve — Requirements
 
-> Version 0.4 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Version 0.5 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Changes from v0.4 (M1.1 spike S6, 2026-11-05): PLAT-07 startup behavior is fail fast + container restart with backoff (no in-app retry).
 > Changes from v0.3 (owner review M0.3, 2026-11-05): Phase 1 assumptions confirmed; **per-weekday opening hours** in Phase 1 (A-06); booking horizon **7 days** (A-07); Gym Trainer **45-minute sessions + 15-minute buffer on a 15-minute grid** (A-08); waitlist promotion style (D-03) decided.
 > Changes from v0.2 (owner decision 2026-11-05): deactivating a bookable or venue is a **soft close** — it stops new bookings and never touches existing ones; the `409 BOOKABLE_HAS_FUTURE_BOOKINGS` rule is removed (FR-CAT-10/13/16, US-09, CONC-09, FS-13, WL-11).
 > If this file and PROJECT.md disagree, PROJECT.md wins until the owner decides otherwise.
@@ -412,7 +413,7 @@ General rule: correctness comes from database constraints, conditional updates a
 - **PLAT-04** Configuration shall come from the **Config Server**, backed by a separate Git repository, using profiles `dev` and `prod` (`{service}.yml`, `{service}-dev.yml`, `{service}-prod.yml`, shared `application*.yml`). Automated tests use a `test` profile with the config client and Eureka disabled.
 - **PLAT-05** Properties marked refreshable (resilience thresholds, rate-limit settings, feature toggles, CORS origins, job intervals) shall be bound with `@RefreshScope` or `@ConfigurationProperties` rebinding. A refresh script shall find every instance through Eureka and call `POST /actuator/refresh` on each; the endpoint requires authentication and is not routed through the gateway. Booking **rules** are data in the database, not configuration (NFR-MAINT-01).
 - **PLAT-06** Secrets shall never be stored in the config repository; they come from environment variables (or encrypted `{cipher}` values, if approved later).
-- **PLAT-07** In `prod`, a service shall fail fast at startup if the Config Server is unreachable after retries (exponential, ~30 s total); in `dev` the same, so misconfiguration shows up early.
+- **PLAT-07** A service shall fail fast at startup if the Config Server is unreachable (no in-app retry, so misconfiguration shows up immediately). Recovery comes from the container platform restarting it with backoff: Compose uses `restart: unless-stopped`, and the deploy host must do the same (checked in M1.10). Verified in M1.1 (spike S6): a service started while the Config Server was down recovered on its own once it was back.
 - **PLAT-08** Each service shall own its data: a **separate database per service** (on one PostgreSQL server). No service reads or writes another service's database.
 - **PLAT-09** The gateway shall generate an `X-Request-Id` if missing; every service shall log it and forward it on outbound calls.
 - **PLAT-10** Each service shall expose `/actuator/health` with liveness and readiness groups; Eureka and the gateway shall route only to instances that are UP.
