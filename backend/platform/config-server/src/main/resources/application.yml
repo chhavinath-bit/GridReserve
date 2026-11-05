@@ -1,0 +1,26 @@
+# The Config Server's own settings stay local: it is the thing that serves everyone else's config.
+server:
+  port: 8888
+
+spring:
+  application:
+    name: config-server
+  cloud:
+    config:
+      server:
+        git:
+          # dev: file:///config-repo (local clone mounted by Compose); prod: the GitHub URL. Never secrets.
+          uri: ${CONFIG_REPO_URI:file://${user.home}/Developer/project/gridreserve-config}
+          # Branch to serve. main in normal use; set to a feature branch to try config changes before merging.
+          default-label: ${CONFIG_REPO_LABEL:main}
+          clone-on-start: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true

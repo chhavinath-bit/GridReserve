@@ -1,0 +1,27 @@
+# Local config by decision (M1.1): Eureka must not depend on the Config Server to start.
+server:
+  port: 8761
+
+spring:
+  application:
+    name: discovery-server
+
+eureka:
+  client:
+    # This is the registry itself: don't register with, or fetch from, another registry.
+    register-with-eureka: false
+    fetch-registry: false
+  server:
+    # Remove stopped instances quickly in local development.
+    enable-self-preservation: ${EUREKA_SELF_PRESERVATION:false}
+    eviction-interval-timer-in-ms: 10000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true

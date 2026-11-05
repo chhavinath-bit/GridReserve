@@ -1,0 +1,15 @@
+# Only identity and bootstrap settings live here; everything else comes from the Config Server
+# (gridreserve-config/booking-service*.yml).
+server:
+  port: 8082
+
+spring:
+  application:
+    name: booking-service
+  config:
+    # Running apps always import from the Config Server. CONFIG_IMPORT exists only so tests can
+    # start without one (they set it to an optional empty location).
+    import: "${CONFIG_IMPORT:configserver:${CONFIG_SERVER_URL:http://localhost:8888}}"
+  cloud:
+    config:
+      fail-fast: true
