@@ -2,7 +2,7 @@
 
 One booking platform for many kinds of venues: library rooms and seats, sports courts, parking bays, clinic appointments and gym sessions. A member picks a category, a venue and a bookable, holds a time slot for five minutes and confirms it. Double-booking is impossible, even under heavy concurrent load and with several service instances running.
 
-> **Status: Phase 1, platform skeleton (M1.1).** Config server, Eureka, gateway and two empty services run together; no booking features yet. Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
+> **Status: Phase 1, M1.2.** Config server, Eureka, gateway, identity and booking services run together; booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. No booking API yet. Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## What this project demonstrates
 
@@ -70,6 +70,8 @@ Build and run all backend tests (Docker must be running):
 cd backend
 ./mvnw -B verify
 ```
+
+`verify` runs unit tests (`*Test`, Surefire) and integration tests against a real PostgreSQL 16 in a Testcontainer (`*IT`, Failsafe). The schema guarantees are proven in `services/booking-service/src/test/java/com/gridreserve/booking/schema/BookingConstraintsIT.java`.
 
 All demo data is fictional.
 
