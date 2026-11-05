@@ -1,0 +1,126 @@
+# GridReserve local stack (dev). Run from this folder:  docker compose up -d --build
+# Secrets come from infra/.env (git-ignored; template: .env.example).
+# Published ports bind to 127.0.0.1 only; services without a published port are reachable
+# only inside this network (and through the gateway).
+name: gridreserve
+
+x-java-service: &java-service
+  environment: &java-env
+    SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+    CONFIG_SERVER_URL: http://config-server:8888
+    EUREKA_URL: http://discovery-server:8761/eureka/
+    JAVA_TOOL_OPTIONS: "-Xmx256m"
+  depends_on:
+    config-server:
+      condition: service_healthy
+    discovery-server:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      IDENTITY_DB_USER: ${IDENTITY_DB_USER}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD}
+      BOOKING_DB_USER: ${BOOKING_DB_USER}
+      BOOKING_DB_PASSWORD: ${BOOKING_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  config-server:
+    build:
+      context: ../backend
+      args:
+        MODULE: platform/config-server
+    image: gridreserve/config-server:dev
+    environment:
+      # dev: "native" backend reads the mounted sibling clone of gridreserve-config directly
+      # (the checked-out branch, uncommitted edits included). prod uses the Git backend (GitHub).
+      SPRING_PROFILES_ACTIVE: native
+      CONFIG_NATIVE_LOCATION: file:/config-repo/
+      JAVA_TOOL_OPTIONS: "-Xmx256m"
+    volumes:
+      - ../../gridreserve-config:/config-repo:ro
+    ports:
+      - "127.0.0.1:8888:8888"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8888/actuator/health/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  discovery-server:
+    build:
+      context: ../backend
+      args:
+        MODULE: platform/discovery-server
+    image: gridreserve/discovery-server:dev
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xmx256m"
+    ports:
+      - "127.0.0.1:8761:8761"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8761/actuator/health/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  identity-service:
+    <<: *java-service
+    build:
+      context: ../backend
+      args:
+        MODULE: services/identity-service
+    image: gridreserve/identity-service:dev
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8081/actuator/health/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  booking-service:
+    <<: *java-service
+    build:
+      context: ../backend
+      args:
+        MODULE: services/booking-service
+    image: gridreserve/booking-service:dev
+    # No published port: scale with --scale booking-service=2; reach it through the gateway.
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8082/actuator/health/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  api-gateway:
+    <<: *java-service
+    build:
+      context: ../backend
+      args:
+        MODULE: platform/api-gateway
+    image: gridreserve/api-gateway:dev
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:

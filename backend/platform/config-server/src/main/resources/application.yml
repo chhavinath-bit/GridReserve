@@ -8,12 +8,16 @@ spring:
   cloud:
     config:
       server:
+        # prod (default): Git backend reading the public GitHub repo. Never secrets in it.
         git:
-          # dev: file:///config-repo (local clone mounted by Compose); prod: the GitHub URL. Never secrets.
-          uri: ${CONFIG_REPO_URI:file://${user.home}/Developer/project/gridreserve-config}
-          # Branch to serve. main in normal use; set to a feature branch to try config changes before merging.
+          uri: ${CONFIG_REPO_URI:https://github.com/chhavinath-bit/gridreserve-config}
           default-label: ${CONFIG_REPO_LABEL:main}
           clone-on-start: true
+        # dev (profile "native"): read the YAML files straight from the local clone, read-only,
+        # whatever branch is checked out there (uncommitted edits included). Git-backed "file:" URIs
+        # are not used because the server would work inside the folder (lock files, checkouts).
+        native:
+          search-locations: ${CONFIG_NATIVE_LOCATION:file:${user.home}/Developer/project/gridreserve-config/}
 
 management:
   endpoints:
