@@ -141,7 +141,7 @@ Letter spacing `-0.01em` for 20 px and above. Never more than two weights on one
 | `CategorySelect` | Category dropdown (FR-UI-02) | Shows category icon + name |
 | `VenueCard` | Venue name, address, local time, number of bookables | Whole card is one link |
 | `BookableList` | Bookables grouped by type label ("Rooms", "Seats") | Label from bookable type; inactive hidden |
-| `DateStrip` | Next 14 days as compact buttons + calendar fallback | Days beyond horizon disabled |
+| `DateStrip` | Next 7 days (the booking horizon) as compact buttons | Closed weekdays shown as closed; days beyond the horizon not shown |
 | `SlotGrid` / `SlotCell` | Slots for a day in venue time, states in §3.3 | Roving tabindex, arrow keys move, Enter/Space selects; multi-slot range selection for types with max > slot; shows zone name |
 | `BookingSummary` | Sticky panel: bookable, date, time range, rules (cutoff), primary "Hold" button | Becomes `HoldPanel` after hold |
 | `HoldPanel` / `HoldTimer` | Countdown from server `expiresAt`, Confirm and Release buttons | Turns warning color under 60 s; announces at 1 min and on expiry (polite live region) |
@@ -183,7 +183,7 @@ Letter spacing `-0.01em` for 20 px and above. Never more than two weights on one
 - Short, plain, specific. Say what happened and what to do next: "This slot was just taken. Pick another time." not "Error 409".
 - Every API error code (REQUIREMENTS.md §15.3) has one user message in `src/api/errors.ts`.
 - Buttons are verbs: "Hold slot", "Confirm booking", "Cancel booking", "Close bookable" (admin deactivate).
-- No exclamation marks, no blame ("You entered…" → "Enter a date within the next 14 days").
+- No exclamation marks, no blame ("You entered…" → "Choose a date within the next 7 days").
 - Never use the word "resource"; use the bookable type label.
 
 ## 7. Accessibility checklist

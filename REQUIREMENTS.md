@@ -1,6 +1,7 @@
 # GridReserve — Requirements
 
-> Version 0.3 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Version 0.4 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Changes from v0.3 (owner review M0.3, 2026-11-05): Phase 1 assumptions confirmed; **per-weekday opening hours** in Phase 1 (A-06); booking horizon **7 days** (A-07); Gym Trainer **45-minute sessions + 15-minute buffer on a 15-minute grid** (A-08); waitlist promotion style (D-03) decided.
 > Changes from v0.2 (owner decision 2026-11-05): deactivating a bookable or venue is a **soft close** — it stops new bookings and never touches existing ones; the `409 BOOKABLE_HAS_FUTURE_BOOKINGS` rule is removed (FR-CAT-10/13/16, US-09, CONC-09, FS-13, WL-11).
 > If this file and PROJECT.md disagree, PROJECT.md wins until the owner decides otherwise.
 > Items marked **[ASSUMPTION]** are listed in section 17 for the owner's confirmation.
@@ -72,15 +73,15 @@ This document turns the product spec into **specific, testable requirements**. E
 | Category | Type | UI label | Model | Slot | Min | Max | Buffer after | Phase |
 |---|---|---|---|---|---|---|---|---|
 | Study | ROOM | Room | EXCLUSIVE | 30 min | 30 min | 3 h | 0 | P1 |
-| Study | SEAT | Seat | EXCLUSIVE | 60 min | 60 min | 4 h **[A-23]** | 0 | P1 |
+| Study | SEAT | Seat | EXCLUSIVE | 60 min | 60 min | 4 h | 0 | P1 |
 | Study | HALL | Hall | CAPACITY | sessions | — | — | — | P2 |
 | Sports | COURT | Court | EXCLUSIVE | 60 min | 60 min | 2 h | 0 | P1 |
 | Parking | BAY | Bay | EXCLUSIVE | 60 min | 60 min | 12 h | 0 | P1 |
 | Clinic | DOCTOR | Doctor | EXCLUSIVE | 30 min | 30 min | 30 min | 0 | P1 |
-| Gym | TRAINER | Trainer | EXCLUSIVE | 60 min | 60 min | 60 min | 15 min | P1 |
+| Gym | TRAINER | Trainer | EXCLUSIVE | 15 min | 45 min | 45 min (exactly one session) | 15 min | P1 |
 | Gym | CLASS | Class | CAPACITY | sessions | — | — | — | P2 |
 
-**Category-level defaults** (all categories): cancellation cutoff 2 h, max 3 active future bookings per member per category, waitlist offer TTL 10 min, booking horizon 14 days.
+**Category-level defaults** (all categories): cancellation cutoff 2 h, max 3 active future bookings per member per category, waitlist offer TTL 10 min, booking horizon 7 days.
 
 ### 2.4 Defaults already decided (CLAUDE.md, PROJECT.md)
 
@@ -231,13 +232,13 @@ Acceptance criteria use Given / When / Then. Each story links to the requirement
 
 - **FR-CAT-01** The system shall provide exactly five seeded categories in P1 (Study, Sports, Parking, Clinic, Gym) and the bookable types in table 2.3 (CAPACITY types are seeded but not bookable until P2). Categories and types are read-only through the API in P1.
 - **FR-CAT-02** Each category shall have: `code`, `name`, `cancellationCutoffMinutes`, `maxActiveBookingsPerMember`, `offerTtlMinutes` `[P3]`, `bookingHorizonDays`. Each bookable type shall have: `code`, `category`, `label` (UI), `bookingModel`, `slotMinutes`, `minDurationMinutes`, `maxDurationMinutes`, `bufferMinutes`.
-- **FR-CAT-03** Each venue shall have: name, category, address line (fictional), `countryCode` (ISO 3166-1 alpha-2), `timeZone` (IANA), opening time and closing time (local), and an `active` flag. The time zone **must be one of the zones of that country** (FR-CAT-14); otherwise `400 VALIDATION_FAILED`.
-- **FR-CAT-04** Each bookable shall have: venue, bookable type, name, `active` flag, and **nullable overrides** for `slotMinutes`, `minDurationMinutes`, `maxDurationMinutes`, `bufferMinutes`, opening time and closing time. A null override means "inherit".
-- **FR-CAT-05** The effective rule value shall be resolved as: bookable override → venue value (hours only) → bookable type default (slot, durations, buffer) → category default (cutoff, limit, offer TTL, horizon). One resolver shall be used everywhere (no per-category or per-type code paths).
+- **FR-CAT-03** Each venue shall have: name, category, address line (fictional), `countryCode` (ISO 3166-1 alpha-2), `timeZone` (IANA), **weekly opening hours** (per ISO weekday Monday–Sunday: one opening interval `opensAt`–`closesAt` in local time, or closed; a weekday with no interval is closed), and an `active` flag. The time zone **must be one of the zones of that country** (FR-CAT-14); otherwise `400 VALIDATION_FAILED`.
+- **FR-CAT-04** Each bookable shall have: venue, bookable type, name, `active` flag, and **nullable overrides** for `slotMinutes`, `minDurationMinutes`, `maxDurationMinutes`, `bufferMinutes`, and optional **own weekly opening hours**. A null override means "inherit"; if a bookable defines its own weekly hours, they replace the venue's hours entirely (no per-day mixing).
+- **FR-CAT-05** The effective rule value shall be resolved as: bookable override → venue weekly hours (hours only) → bookable type default (slot, durations, buffer) → category default (cutoff, limit, offer TTL, horizon). One resolver shall be used everywhere (no per-category or per-type code paths).
 - **FR-CAT-06** `GET /api/v1/categories` (with their bookable types), `GET /api/v1/venues?categoryId=`, `GET /api/v1/venues/{id}`, `GET /api/v1/venues/{venueId}/bookables` and `GET /api/v1/bookables/{id}` shall return only active venues/bookables to MEMBERs; ADMINs may pass `includeInactive=true`. Each bookable includes its type's `label` and `bookingModel`.
 - **FR-CAT-07** ADMIN shall create and update venues (`POST /api/v1/venues`, `PUT /api/v1/venues/{id}`).
 - **FR-CAT-08** ADMIN shall create and update bookables (`POST /api/v1/venues/{venueId}/bookables`, `PUT /api/v1/bookables/{id}`). The bookable type must belong to the venue's category.
-- **FR-CAT-09** Validation: opening time < closing time (closing may be 24:00); `slotMinutes` ∈ {15, 30, 60}; `minDuration` and `maxDuration` must be multiples of the slot length, with `slotMinutes ≤ minDuration ≤ maxDuration ≤ 24 h`; `bufferMinutes` 0–120. Invalid → `400 VALIDATION_FAILED` with field errors.
+- **FR-CAT-09** Validation: per weekday at most one interval, with opening time < closing time (closing may be 24:00); weekdays are ISO 1–7 without duplicates; `slotMinutes` ∈ {15, 30, 60}; `minDuration` and `maxDuration` must be multiples of the slot length, with `slotMinutes ≤ minDuration ≤ maxDuration ≤ 24 h`; `bufferMinutes` 0–120. Invalid → `400 VALIDATION_FAILED` with field errors.
 - **FR-CAT-10** `POST /api/v1/bookables/{id}/deactivate` shall set `active=false` and return `200` (also when already inactive), **whether or not future bookings exist** (soft close). From that commit on, new holds and seat claims on it are rejected with `422 BOOKABLE_INACTIVE` (BR-06), and it is hidden from members in catalog and availability (FR-CAT-06; availability for an inactive bookable → `404` for members). Existing HELD and CONFIRMED bookings are **not** cancelled, expired or changed: owners can still confirm open holds within their expiry, see their bookings, and cancel under the normal policy. The response includes `activeFutureBookings` (count) so the admin knows what is still scheduled.
 - **FR-CAT-11** `POST /api/v1/bookables/{id}/activate` shall set `active=true`.
 - **FR-CAT-12** Changing a bookable's rules shall not alter existing bookings; new rules apply to new bookings only.
@@ -248,7 +249,7 @@ Acceptance criteria use Given / When / Then. Each story links to the requirement
 
 ### 5.3 Availability (FR-AV) — booking service
 
-- **FR-AV-01** `GET /api/v1/bookables/{id}/availability?date=YYYY-MM-DD` shall return all slots of that **local** date within operating hours.
+- **FR-AV-01** `GET /api/v1/bookables/{id}/availability?date=YYYY-MM-DD` shall return all slots of that **local** date within that weekday's opening hours. On a closed weekday it returns `200` with `closed: true` and no slots.
 - **FR-AV-02** Each slot shall contain `start` and `end` (UTC ISO-8601), `localStart` and `localEnd` (venue time), and `status` ∈ {`FREE`, `TAKEN`, `PAST`}.
 - **FR-AV-03** A slot is `TAKEN` if it overlaps the occupied range (`[start, end + buffer)`) of any active booking on that bookable. A `HELD` booking whose `expiresAt` has passed shall be treated as free even if the expiry job has not run yet.
 - **FR-AV-04** A slot whose start is ≤ now is `PAST`. Dates beyond the booking horizon (BR-07) return `422 BEYOND_HORIZON`.
@@ -289,7 +290,7 @@ Acceptance criteria use Given / When / Then. Each story links to the requirement
 
 ### 5.8 Seed data (FR-SEED)
 
-- **FR-SEED-01** Seed data shall include all five categories and the bookable types in table 2.3; at least one venue per category matching PROJECT.md §1 (Central Library with ≥ 2 rooms and ≥ 10 seats, Sunrise Turf, Palm Apartments, CityCare Clinic, IronWorks); at least two bookables per other venue; Riverside Reading Hall and IronWorks classes in P2. All names are fictional. Venues carry a country code and a valid zone.
+- **FR-SEED-01** Seed data shall include all five categories and the bookable types in table 2.3; at least one venue per category matching PROJECT.md §1 (Central Library with ≥ 2 rooms and ≥ 10 seats, Sunrise Turf, Palm Apartments, CityCare Clinic, IronWorks); at least two bookables per other venue; Riverside Reading Hall and IronWorks classes in P2. All names are fictional. Venues carry a country code, a valid zone and weekly opening hours; at least one venue is closed on one weekday (e.g. CityCare Clinic on Sunday) and at least one bookable has its own weekly hours.
 - **FR-SEED-02** The identity service seed shall include one ADMIN and at least two MEMBER demo accounts, documented in the README as demo-only, with BCrypt hashes (not plaintext) in the migration.
 - **FR-SEED-03** No real personal, patient or payment data shall exist anywhere in the repositories (application and config).
 
@@ -313,12 +314,12 @@ All rule values come from the resolver in FR-CAT-05. "Local" = venue time zone.
 | ID | Rule | Violation |
 |---|---|---|
 | **BR-01** | `start < end`, both valid UTC instants. | `400 VALIDATION_FAILED` |
-| **BR-02** | `start` and `end` fall within operating hours on **one local date**. A booking may not cross local midnight in P1. **[A-06]** | `422 OUTSIDE_OPERATING_HOURS` |
-| **BR-03** | Grid alignment: local start minus opening time is a whole multiple of `slotMinutes`; duration is a whole multiple of `slotMinutes`. | `422 OFF_GRID` |
+| **BR-02** | `start` and `end` fall within the opening hours of **that local weekday** (bookable's own weekly hours if set, else the venue's), on **one local date**; a closed weekday rejects every booking. A booking may not cross local midnight in P1. **[A-06]** | `422 OUTSIDE_OPERATING_HOURS` |
+| **BR-03** | Grid alignment: local start minus **that day's** opening time is a whole multiple of `slotMinutes`; duration is a whole multiple of `slotMinutes`. | `422 OFF_GRID` |
 | **BR-04** | `minDuration ≤ end − start ≤ maxDuration`. | `422 DURATION_INVALID` |
 | **BR-05** | `start > now`. | `422 START_IN_PAST` |
 | **BR-06** | Bookable and its venue are active. | `422 BOOKABLE_INACTIVE` |
-| **BR-07** | `start < now + bookingHorizonDays` (default 14). **[A-07]** | `422 BEYOND_HORIZON` |
+| **BR-07** | `start < now + bookingHorizonDays` (default 7). **[A-07]** | `422 BEYOND_HORIZON` |
 | **BR-08** | Per-member limit: the member's active bookings with `end > now` **in the same category** must be < `maxActiveBookingsPerMember` (default 3) before the new one. HELD counts. Checked while holding a row lock on the member (CONC-05). | `422 MEMBER_LIMIT_REACHED` |
 | **BR-09** | Booking model check: `POST /bookings` with `start/end` only works for EXCLUSIVE bookables. | `422 WRONG_BOOKING_MODEL` |
 | **BR-10** | **No double-booking (DB).** Exclusion constraint on `(bookable_id WITH =, tstzrange(start_time, occupied_until, '[)') WITH &&)` for active rows; `occupied_until = end + buffer`, stored at insert. | `409 SLOT_TAKEN` |
@@ -327,7 +328,7 @@ All rule values come from the resolver in FR-CAT-05. "Local" = venue time zone.
 | **BR-13** | Transitions: `HELD → CONFIRMED`, `HELD → CANCELLED`, `HELD → EXPIRED`, `CONFIRMED → CANCELLED`; `[P7]` `CONFIRMED → NO_SHOW` after end. `CANCELLED`, `EXPIRED`, `NO_SHOW` are terminal. | `409 INVALID_STATE` |
 | **BR-14** | Rule order (first failure is returned): BR-01, BR-06, BR-09, BR-05, BR-07, BR-02, BR-03, BR-04, BR-08, then insert (BR-10, BR-11). | — |
 
-**Buffer note (Gym Trainer).** With a 60-minute grid and a 15-minute buffer, a booking 10:00–11:00 occupies 10:00–11:15, so the next bookable start is 12:00. See **[A-08]**.
+**Buffer note (Gym Trainer).** 15-minute grid, 45-minute sessions, 15-minute buffer: a session 10:00–10:45 occupies 10:00–11:00, so the next session can start at 11:00 (one client per hour); starts at 10:15–10:45 are rejected by the overlap constraint. See **[A-08]**.
 
 ## 7. Capacity rules `[P2]` (CAP)
 
@@ -351,7 +352,7 @@ Applies to Gym classes (type CLASS) and library reading halls (type HALL).
 - **CXL-04** Cancelling a booking whose end has passed → `409 INVALID_STATE`.
 - **CXL-05** Cancellation frees the slot (or seat) immediately in the same transaction.
 - **CXL-06** Cancelling an already cancelled booking → `409 INVALID_STATE`.
-- **CXL-07** `[P3]` A cancellation (or expiry) triggers waitlist promotion **inside the same booking-service transaction** (WL-04), so a promotion can never be lost. (Recommended in ARCHITECTURE.md D-03; confirm at the start of P3.)
+- **CXL-07** `[P3]` A cancellation (or expiry) triggers waitlist promotion **inside the same booking-service transaction** (WL-04), so a promotion can never be lost. (ARCHITECTURE.md D-03, confirmed by the owner 2026-11-05.)
 - **CXL-08** `[P5]` Refund policy: cancellation by the member before the cutoff = full refund; by ADMIN = full refund; no partial refunds **[A-15]**. Refunds are triggered through an outbox event (EVT).
 - **CXL-09** `[P7]` A no-show cannot be cancelled afterwards.
 
@@ -581,7 +582,9 @@ Not routed by the gateway: `/actuator/**` (except the gateway's own health), `/i
 
 ## 17. Assumptions
 
-Each item needs the owner's confirmation. Items carried over from PROJECT.md §10 are marked (PROJECT).
+Items carried over from PROJECT.md §10 are marked (PROJECT).
+
+**Owner review M0.3 (2026-11-05):** confirmed A-02, A-03, A-05, A-09, A-12, A-23, A-24, A-25, A-27, A-28 as written; **changed** A-06 (per-weekday hours now), A-07 (7 days), A-08 (45 + 15 on a 15-minute grid). Items not listed here are confirmed when their phase starts.
 
 | ID | Assumption |
 |---|---|
@@ -590,9 +593,9 @@ Each item needs the owner's confirmation. Items carried over from PROJECT.md §1
 | A-03 | Accessing another member's booking returns 404, not 403. |
 | A-04 | (PROJECT) Hold duration is 5 minutes in P1; P5 checkout holds may differ (decided in P5). |
 | A-05 | The hold-expiry job runs every 30 seconds. |
-| A-06 | Operating hours are the same every day in P1; a booking may not cross local midnight (no overnight parking in P1). |
-| A-07 | Booking horizon is 14 days (category column). |
-| A-08 | The Gym Trainer buffer (15 min) with a 60-minute grid allows one session every 2 hours per trainer; change seed data if not intended. |
+| A-06 | Opening hours are defined **per weekday** from P1 (one interval per day; a weekday without hours is closed; a bookable may replace the venue's weekly hours with its own). A booking may not cross local midnight (no overnight parking in P1). |
+| A-07 | Booking horizon is 7 days (category column). |
+| A-08 | Gym Trainer: 15-minute grid, 45-minute sessions, 15-minute buffer, so one client per hour per trainer. |
 | A-09 | The per-member limit counts HELD and CONFIRMED bookings that have not ended, per category. |
 | A-10 | A member can be on at most 5 waitlists at once. |
 | A-11 | Offers are capped at the slot start and are not made within 5 minutes of the start. |
@@ -607,12 +610,12 @@ Each item needs the owner's confirmation. Items carried over from PROJECT.md §1
 | A-20 | Recurring occurrences keep the same local wall-clock time across DST changes. |
 | A-21 | No-show penalty: 3 no-shows within 30 days blocks new bookings for 7 days. |
 | A-22 | Email notifications in P8 are simulated (stored and shown), never sent. |
-| A-23 | Library seats: 60-minute grid, up to 4 hours per booking. |
+| A-23 | Library seats: 60-minute grid, up to 4 hours per booking (confirmed). |
 | A-24 | Refresh tokens live 7 days, cookie `SameSite=Strict`, `Path=/api/v1/auth`; CSRF defence = Origin check + `X-GridReserve-Client` header; frontend and gateway on the same site in prod. |
 | A-25 | Resilience defaults in RES-01..05 (timeouts 1 s / 2 s / 5 s, breaker window 20 and 50 %, open 30 s, 3 retries from 200 ms, bulkhead 10, rate limiter 20/s). Tuned after measuring. |
 | A-26 | Reading-hall sessions default to 2-hour blocks; capacity is set per session by the admin. |
 | A-27 | JWT signing uses RS256 with a key ID (`kid`); key rotation is manual in P1 (new key pair, both public keys served during overlap). |
-| A-28 | Default JVM heap ≤ 256 MB per service; the deploy host must fit about 5 JVMs plus PostgreSQL in Phase 1. |
+| A-28 | Default JVM heap ≤ 256 MB per service (confirmed); the deploy host must fit about 5 JVMs plus PostgreSQL in Phase 1. |
 
 ## 18. Failure scenarios (FS)
 

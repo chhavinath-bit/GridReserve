@@ -248,6 +248,8 @@ erDiagram
     CATEGORY ||--o{ BOOKABLE_TYPE : defines
     CATEGORY ||--o{ VENUE : groups
     COUNTRY_TIME_ZONE }o--|| VENUE : "zone must match country"
+    VENUE ||--o{ VENUE_OPENING_HOURS : "open on"
+    BOOKABLE ||--o{ BOOKABLE_OPENING_HOURS : "own hours (optional)"
     VENUE ||--o{ BOOKABLE : has
     BOOKABLE_TYPE ||--o{ BOOKABLE : "typed as"
     BOOKABLE ||--o{ BOOKING : "EXCLUSIVE bookings"
@@ -280,7 +282,7 @@ CREATE TABLE category (
   cancellation_cutoff_minutes     int NOT NULL DEFAULT 120,
   max_active_bookings_per_member  int NOT NULL DEFAULT 3,
   offer_ttl_minutes               int NOT NULL DEFAULT 10,
-  booking_horizon_days            int NOT NULL DEFAULT 14
+  booking_horizon_days            int NOT NULL DEFAULT 7
 );
 
 CREATE TABLE bookable_type (
@@ -311,14 +313,22 @@ CREATE TABLE venue (
   address_line     varchar(200),
   country_code     char(2)     NOT NULL,
   time_zone        varchar(64) NOT NULL,
-  opens_at_minute  int NOT NULL CHECK (opens_at_minute BETWEEN 0 AND 1439),    -- minutes from local midnight (D-16)
-  closes_at_minute int NOT NULL CHECK (closes_at_minute BETWEEN 1 AND 1440),   -- 1440 = 24:00
   active           boolean NOT NULL DEFAULT true,
   version          bigint  NOT NULL DEFAULT 0,
   created_at       timestamptz NOT NULL,
   updated_at       timestamptz NOT NULL,
   CONSTRAINT fk_venue_country_zone FOREIGN KEY (country_code, time_zone)
-      REFERENCES country_time_zone (country_code, time_zone),
+      REFERENCES country_time_zone (country_code, time_zone)
+);
+
+-- Weekly opening hours (A-06). One interval per ISO weekday; no row = closed that day.
+-- Minutes from local midnight (D-16a): 0..1439 open, 1..1440 close (1440 = 24:00).
+CREATE TABLE venue_opening_hours (
+  venue_id          bigint   NOT NULL REFERENCES venue(id),
+  iso_weekday       smallint NOT NULL CHECK (iso_weekday BETWEEN 1 AND 7),   -- 1 = Monday
+  opens_at_minute   int      NOT NULL CHECK (opens_at_minute BETWEEN 0 AND 1439),
+  closes_at_minute  int      NOT NULL CHECK (closes_at_minute BETWEEN 1 AND 1440),
+  PRIMARY KEY (venue_id, iso_weekday),
   CHECK (opens_at_minute < closes_at_minute)
 );
 
@@ -332,13 +342,22 @@ CREATE TABLE bookable (
   min_duration_minutes  int,
   max_duration_minutes  int,
   buffer_minutes        int,
-  opens_at_minute       int,
-  closes_at_minute      int,
   version               bigint NOT NULL DEFAULT 0,
   created_at            timestamptz NOT NULL,
   updated_at            timestamptz NOT NULL
 );
 -- "type belongs to the venue's category" (FR-CAT-08) is checked in the service; a trigger is not used.
+
+-- Optional own weekly hours for a bookable. If a bookable has any rows here, they replace the venue's
+-- weekly hours entirely (FR-CAT-04); otherwise the venue's hours apply.
+CREATE TABLE bookable_opening_hours (
+  bookable_id       bigint   NOT NULL REFERENCES bookable(id),
+  iso_weekday       smallint NOT NULL CHECK (iso_weekday BETWEEN 1 AND 7),
+  opens_at_minute   int      NOT NULL CHECK (opens_at_minute BETWEEN 0 AND 1439),
+  closes_at_minute  int      NOT NULL CHECK (closes_at_minute BETWEEN 1 AND 1440),
+  PRIMARY KEY (bookable_id, iso_weekday),
+  CHECK (opens_at_minute < closes_at_minute)
+);
 
 CREATE TABLE booking (
   id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -856,7 +875,8 @@ flowchart LR
 |---|---|---|
 | D-01 | One `booking` table for EXCLUSIVE and seat bookings (nullable `session_id`) | 2026-10-26 (design), confirmed by microservice split |
 | D-02 | Per-member limit via row lock on the local `member` row | 2026-11-04 |
-| D-03 | Waitlist promotion synchronous in the releasing transaction (confirm at P3 start) | recommended; applied to CXL-07 2026-11-04 |
+| D-03 | Waitlist promotion synchronous in the releasing transaction | 2026-11-05 (owner, M0.3) |
+| D-32 | Per-weekday opening hours in P1 (`venue_opening_hours`, optional `bookable_opening_hours`); booking horizon 7 days; Trainer 45 + 15 on a 15-minute grid | 2026-11-05 (owner, M0.3) |
 | D-04 | Outbox introduced in P5 with HTTP push, no broker | 2026-11-04 |
 | D-12 | Access token in memory + rotating refresh-token cookie | 2026-10-26 |
 | D-13a | React Router; Vitest + RTL + Playwright | 2026-10-26 |
@@ -897,7 +917,7 @@ flowchart LR
 | # | Where | Issue | Resolution |
 |---|---|---|---|
 | 1 | v0.1 §17 items 1–7 (generated column, promotion after commit, member stale holds, DB clock, idempotency lease, `STALE_UPDATE`, router) | — | **Resolved** in REQUIREMENTS.md v0.2 and this document (2026-11-04). |
-| 2 | REQUIREMENTS.md CXL-07 / D-03 | Synchronous promotion is applied as the requirement but marked "confirm at P3 start" | Owner to confirm at P3. |
+| 2 | REQUIREMENTS.md CXL-07 / D-03 | Synchronous promotion was marked "confirm at P3 start" | **Resolved** 2026-11-05: confirmed by the owner. |
 | 3 | REQUIREMENTS.md NFR-SEC-06 / A-14 | "Login 5 per minute per (IP, email)" — the gateway limiter cannot key on the email without reading the body | Proposal: gateway limits per IP; identity-service adds per-email failed-login throttling (P4). Needs a REQUIREMENTS update when P4 starts. |
 | 4 | Memory budget (A-28) vs free hosting tiers | ~5 JVMs may not fit common free tiers | Resolve with D-15 at M1.10. |
 | 5 | Resilience4j Boot 4 support | Not confirmed when written | M1.1 spike (D-21). |

@@ -6,6 +6,7 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 |---|---|---|---|
 | M0.1 Environment inspection | Done | 2026-11-05 | `3f44318` (recorded in the initial commit) |
 | M0.2 Repositories | Done | 2026-11-05 | `3f44318` app repo, `a346654` config repo; results recorded in the next commit |
+| M0.3 Confirm decisions and assumptions | Done (merged via pull request) | 2026-11-05 | branch `m0.3-confirm-assumptions` |
 
 ---
 
@@ -58,6 +59,31 @@ Verification (actual results):
 Note: the first secret-scan command had a wrong argument order (`--cached` after the pattern) and errored; it was re-run correctly with the results above.
 
 Links: https://github.com/chhavinath-bit/GridReserve · https://github.com/chhavinath-bit/gridreserve-config
+
+## M0.3 Confirm decisions and assumptions — Done (2026-11-05)
+
+Owner review in three batches. Recorded in REQUIREMENTS.md v0.4 (§2.3, §6, §17), ARCHITECTURE.md (§5.3 schema, §19 D-03 and D-32, §20), CLAUDE.md §15, IMPLEMENTATION_PLAN.md (M1.2, M1.4, M1.7, P3, P7) and DESIGN_SYSTEM.md (`DateStrip`).
+
+| Item | Decision |
+|---|---|
+| A-23 Library seats | Confirmed: 60-minute grid, up to 4 h |
+| A-06 Opening hours | **Changed**: per-weekday hours from Phase 1 (`venue_opening_hours`, optional `bookable_opening_hours`; no row = closed); still no booking across local midnight |
+| A-07 Booking horizon | **Changed**: 7 days (was 14) |
+| A-08 Gym Trainer | **Changed**: 15-minute grid, 45-minute sessions, 15-minute buffer (one client per hour) |
+| A-02 / A-24 Tokens | Confirmed: access 15 min, refresh 7 days; cookie HttpOnly, Secure (prod), `SameSite=Strict`, path `/api/v1/auth`; Origin + `X-GridReserve-Client` checks |
+| A-03 Other member's booking | Confirmed: 404 |
+| A-27 Key rotation | Confirmed: manual, with `kid` |
+| A-25 Resilience defaults | Confirmed as proposed |
+| A-28 Memory | Confirmed: 256 MB heap per service |
+| A-05 / A-09 / A-12 | Confirmed: expiry job 30 s; limit counts HELD + CONFIRMED not yet ended; idempotency keys 24 h |
+| 2026-11-04 doc fixes (B-2) incl. D-03 | Confirmed; D-03 (promotion inside the releasing transaction) now decided |
+
+Verification (actual results):
+
+| Check | Command | Result |
+|---|---|---|
+| Every edit applied exactly once | Python replace script asserting one match per change | "all edits applied" |
+| No stale values left | `grep -n "14 days\|default 14\|DEFAULT 14\|60 / 60 / 60 / 15\|Trainer 60\|confirm at P3\|confirm D-03\|same every day" *.md` | one match, the intentional "resolved" note in ARCHITECTURE.md §20 |
 
 ## Open issues
 

@@ -59,7 +59,7 @@ M1.1 platform skeleton + CI + Boot 4 spikes ─► M1.2 booking schema & constra
 | # | Decision | Needed by | Status / recommendation |
 |---|---|---|---|
 | B-1 | Repository location | M0.2 | **Decided**: own repo in this folder. Note: on 2026-11-04 this folder was no longer inside any Git repository, so the "ignore in parent repo" step may be unnecessary; re-check in M0.1. |
-| B-2 | Doc fixes from ARCHITECTURE v0.1 §17 | — | **Applied** in the v0.2 documents (2026-11-04); owner to confirm in M0.3. |
+| B-2 | Doc fixes from ARCHITECTURE v0.1 §17 | — | **Confirmed** by the owner in M0.3 (2026-11-05). |
 | B-3/4/5 | Router, frontend tests, token storage | — | **Decided** (React Router; Vitest + RTL + Playwright; refresh-token cookie). |
 | B-6 | Deploy host, backups, rollback (D-15); must fit ~5 JVMs + PostgreSQL | M1.10 | Decide at M1.10 after checking current limits. |
 | B-7 | Load-test tool (D-13b) | M1.14 | JUnit harness first. |
@@ -91,7 +91,7 @@ M1.1 platform skeleton + CI + Boot 4 spikes ─► M1.2 booking schema & constra
 ### M0.3 Confirm decisions and assumptions `S`
 
 1. **Objective.** The owner confirms the 2026-11-04 doc changes and the open assumptions that affect Phase 1 (A-23 seat defaults, A-24 refresh-token details, A-25 resilience defaults, A-27 key rotation, A-28 memory budget).
-2. **Tasks.** Review; record answers in REQUIREMENTS.md §17 and CLAUDE.md §14.
+2. **Tasks.** Review; record answers in REQUIREMENTS.md §17, ARCHITECTURE.md §19 and CLAUDE.md §15.
 3. **Files.** `REQUIREMENTS.md`, `ARCHITECTURE.md`, `CLAUDE.md`.
 4. **Dependencies.** M0.2.
 5. **Tests.** Docs consistent (no contradictions found by a search for the changed items; the word "resource" unused).
@@ -124,10 +124,10 @@ Phase goal (PROJECT.md §8): EXCLUSIVE booking end to end through the gateway; 5
 ### M1.2 Booking schema, constraints and seed data — prove the guarantee in the database `M`
 
 1. **Objective.** The full P1 `booking_db` schema exists, and the database itself rejects double-booking and member overlap.
-2. **Tasks.** Flyway in booking-service: `V1__baseline` (`btree_gist`), `V2__core_schema` (`member`, `category`, `bookable_type`, `country_time_zone`, `venue`, `bookable`, `booking` with both exclusion constraints, ARCHITECTURE §5.3), `V3__seed_countries` (from IANA `zone1970.tab`/`zone.tab`), `V4__seed_catalog` (5 categories, bookable types table 2.3, Central Library with rooms and ≥ 10 seats, Sunrise Turf, Palm Apartments, CityCare Clinic, IronWorks; fictional; country + zone). JPA entities and repositories.
+2. **Tasks.** Flyway in booking-service: `V1__baseline` (`btree_gist`), `V2__core_schema` (`member`, `category`, `bookable_type`, `country_time_zone`, `venue`, `venue_opening_hours`, `bookable`, `bookable_opening_hours`, `booking` with both exclusion constraints, ARCHITECTURE §5.3), `V3__seed_countries` (from IANA `zone1970.tab`/`zone.tab`), `V4__seed_catalog` (5 categories, bookable types table 2.3, Central Library with rooms and ≥ 10 seats, Sunrise Turf, Palm Apartments, CityCare Clinic, IronWorks; fictional; country + zone). JPA entities and repositories.
 3. **Files/modules.** `services/booking-service/src/main/resources/db/migration/V1..V4`, `catalog/domain`, `booking/domain`, `member`, repositories.
 4. **Dependencies.** M1.1.
-5. **Tests.** `MigrationIT`; `BookingConstraintsIT` with plain SQL: overlap → `23P01` on `ex_booking_bookable_overlap` (BR-10); back-to-back allowed (BR-12); Trainer buffer blocks next slot (A-08); cancelled/expired don't block; same member on two bookables overlapping → `ex_booking_member_overlap` (BR-11); seat and room by the same member at the same time → rejected; HELD without `expires_at` → check violation; venue with a zone of another country → FK violation. `SeedDataIT`: categories, types, labels, ≥ 10 seats.
+5. **Tests.** `MigrationIT`; `BookingConstraintsIT` with plain SQL: overlap → `23P01` on `ex_booking_bookable_overlap` (BR-10); back-to-back allowed (BR-12); Trainer 10:00–10:45 + 15-min buffer blocks starts until 11:00 (A-08); opening-hours checks reject `opens >= closes` and weekday outside 1–7; cancelled/expired don't block; same member on two bookables overlapping → `ex_booking_member_overlap` (BR-11); seat and room by the same member at the same time → rejected; HELD without `expires_at` → check violation; venue with a zone of another country → FK violation. `SeedDataIT`: categories, types, labels, ≥ 10 seats.
 6. **Acceptance.** All pass in CI; `occupied_until` approach confirmed.
 7. **Done.** Merged; PROGRESS lists each constraint test.
 
@@ -147,7 +147,7 @@ Phase goal (PROJECT.md §8): EXCLUSIVE booking end to end through the gateway; 5
 2. **Tasks.** `RuleResolver` (bookable → venue hours → type → category, FR-CAT-05); `LocalSlotGrid`; catalog read endpoints (FR-CAT-06); `GET /countries`, `/countries/{code}/time-zones` (FR-CAT-14); availability (FR-AV-01..06) incl. stale holds as FREE and horizon check.
 3. **Files/modules.** booking-service `catalog`, `availability`, `common/time`.
 4. **Dependencies.** M1.3.
-5. **Tests.** Unit: resolver (each override layer), slot grid (30/60 grids, edges, a DST zone date doesn't crash). Integration: only active items for members; labels from type; availability TAKEN/FREE/PAST, buffer, stale hold FREE, beyond horizon 422; countries list and single-zone country.
+5. **Tests.** Unit: resolver (each override layer), slot grid (15/30/60 grids, edges, per-weekday hours, closed weekday, bookable hours replacing venue hours, a DST zone date doesn't crash). Integration: only active items for members; labels from type; availability TAKEN/FREE/PAST, buffer, stale hold FREE, closed weekday → `closed: true`, beyond 7-day horizon 422; countries list and single-zone country.
 6. **Acceptance.** FR-CAT-01..06, FR-CAT-14, FR-AV-01..06 covered; no per-category or per-type `if`s.
 7. **Done.** Merged; README example requests through the gateway; PROGRESS updated.
 
@@ -177,7 +177,7 @@ Phase goal (PROJECT.md §8): EXCLUSIVE booking end to end through the gateway; 5
 2. **Tasks.** BR-02, 03, 04, 07, 08, 14; CXL-01..06; `SchedulingConfig` (bounded `gr-sched-*`); `HoldExpiryJob` with `SKIP LOCKED` and per-row transactions; metrics by expiry layer; graceful shutdown.
 3. **Files/modules.** booking-service `booking/service/*`, `common/config`.
 4. **Dependencies.** M1.6.
-5. **Tests.** Table-driven `BookingRulesTest` per rule and per type default (Room 30/3h, Seat 60/4h, Doctor 30 exact, Bay 12h, Trainer 60 + buffer), boundaries, order; `HoldExpiryJobIT` (two job runs in parallel do not double-process); `CancellationIT` with a fixed clock.
+5. **Tests.** Table-driven `BookingRulesTest` per rule and per type default (Room 30/3h, Seat 60/4h, Doctor 30 exact, Bay 12h, Trainer 45 + 15 buffer on a 15-min grid, booking on a closed weekday, booking outside that weekday's hours), boundaries, order; `HoldExpiryJobIT` (two job runs in parallel do not double-process); `CancellationIT` with a fixed clock.
 6. **Acceptance.** BR-01..14, CXL-01..06, FR-EXP-01..04 covered by named tests.
 7. **Done.** Merged; README lists defaults per type; PROGRESS updated.
 
@@ -284,7 +284,7 @@ Each phase: settle its `D-xx`, agree a detailed milestone plan, implement, then 
 ### Phase 3 — Waitlist and offers `L`
 
 1. **Objective.** Fair FIFO waitlists with expiring offers.
-2. **Milestones.** M3.0 confirm D-03, spike D-05. M3.1 `waitlist_entry`, join/leave/list. M3.2 `PromotionService` via `SlotReleasedListener` in the releasing transaction; offers as HELD bookings; skip/cascade. M3.3 close job, accept/decline. M3.4 concurrency (WL-10, CONC-07), deadlock regression test, two instances. M3.5 frontend. M3.6 close.
+2. **Milestones.** M3.0 spike D-05 (D-03 decided in M0.3). M3.1 `waitlist_entry`, join/leave/list. M3.2 `PromotionService` via `SlotReleasedListener` in the releasing transaction; offers as HELD bookings; skip/cascade. M3.3 close job, accept/decline. M3.4 concurrency (WL-10, CONC-07), deadlock regression test, two instances. M3.5 frontend. M3.6 close.
 3. **Modules.** booking-service `waitlist/**`; frontend `features/waitlist/**`.
 4. **Dependencies.** Phase 2.
 5. **Tests.** `WaitlistIT`, `PromotionIT`, FS-26/27, deadlock test 50×.
@@ -324,7 +324,7 @@ Each phase: settle its `D-xx`, agree a detailed milestone plan, implement, then 
 ### Phase 7 — Recurring bookings and no-shows `L`
 
 1. **Objective.** Weekly series with skip-and-report; no-show penalties.
-2. **Milestones.** M7.1 per-weekday hours (A-06 follow-up) if approved. M7.2 `booking_series`, local wall-clock occurrences across DST (A-20, D-16b), skip-and-report, idempotent creation (IDEM-09). M7.3 no-shows and block rule (A-21). M7.4 frontend; close.
+2. **Milestones.** (Per-weekday hours moved to Phase 1, A-06.) M7.1 holiday/closure dates (optional, if approved). M7.2 `booking_series`, local wall-clock occurrences across DST (A-20, D-16b), skip-and-report, idempotent creation (IDEM-09). M7.3 no-shows and block rule (A-21). M7.4 frontend; close.
 3. **Modules.** booking-service `recurring/**`, `catalog`; frontend.
 4. **Dependencies.** Phase 6.
 5. **Tests.** FS-30, FS-31, series idempotency, block window with a fixed clock.
