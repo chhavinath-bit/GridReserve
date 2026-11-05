@@ -302,8 +302,9 @@ Do this at the start of every session, before proposing or changing anything:
 - Cancellation cutoff: 2 hours before start. Max 3 active future bookings per member (per category). Both configurable per category.
 - Admins can cancel any booking but not book on behalf of members.
 - Deactivating a bookable or venue is a **soft close** (2026-11-05, replaces the old 409 rule): it stops new bookings at once (`422 BOOKABLE_INACTIVE`, hidden from members); existing HELD and CONFIRMED bookings are never cancelled or changed by it; Phase 3 waitlists for it are closed. Bookables and venues are never deleted.
-- Hold duration: 5 minutes.
-- Bookable types and defaults (slot / min / max / buffer): Study Room 30 / 30 / 3 h / 0; Study Seat 60 / 60 / 4 h / 0; Sports Court 60 / 60 / 2 h / 0; Parking Bay 60 / 60 / 12 h / 0; Clinic Doctor 30 / 30 / 30 / 0; Gym Trainer 60 / 60 / 60 / 15 min; Study Hall and Gym Class are CAPACITY (Phase 2).
+- Hold duration: 5 minutes. Booking horizon: 7 days. Opening hours per weekday (one interval per day, no row = closed); no booking crosses local midnight in Phase 1.
+- (2026-11-05, M0.3) Confirmed: tokens 15 min / refresh 7 days; refresh cookie `SameSite=Strict` + Origin and `X-GridReserve-Client` checks; another member's booking → 404; manual key rotation with `kid`; resilience defaults as in REQUIREMENTS.md §13; 256 MB heap per service; hold-expiry job every 30 s; limit counts HELD + CONFIRMED not yet ended; idempotency keys 24 h; waitlist promotion inside the releasing transaction (D-03).
+- Bookable types and defaults (slot / min / max / buffer): Study Room 30 / 30 / 3 h / 0; Study Seat 60 / 60 / 4 h / 0; Sports Court 60 / 60 / 2 h / 0; Parking Bay 60 / 60 / 12 h / 0; Clinic Doctor 30 / 30 / 30 / 0; Gym Trainer 15 / 45 / 45 / 15 min; Study Hall and Gym Class are CAPACITY (Phase 2).
 - A member can never hold two overlapping active bookings, in any category.
 - Payments (Phase 5): fully mocked behind a `PaymentProvider` interface.
 - Waitlist offers (Phase 3): 10 minutes by default, per category.
@@ -319,11 +320,10 @@ Do not assume an answer for these. When a milestone reaches one, present options
 
 | Item | Needed by | Where described |
 |---|---|---|
-| Confirm the 2026-11-04 doc changes and Phase 1 assumptions (A-23 seat defaults, A-24 refresh-token details, A-25 resilience defaults, A-27 key rotation, A-28 memory budget) | M0.3 | REQUIREMENTS.md §17 |
 | Resilience4j on Boot 4 (D-21), gateway variant (D-22), config server lookup (D-20), shared library scope (D-27) | M1.1 spikes | ARCHITECTURE.md §19 |
 | Service-to-service authentication (D-19) | M1.3 / M1.9 | ARCHITECTURE.md §16 |
 | Deploy host, backups, rollback; must fit ~5 JVMs + PostgreSQL (D-15) | M1.10 | IMPLEMENTATION_PLAN.md §3 |
 | UI supporting packages (D-UI-3) and axe accessibility checks (D-UI-4) | M1.6 / M1.13 | DESIGN_SYSTEM.md §10 |
 | Load-test tool (D-13b) | M1.14 | ARCHITECTURE.md §19 |
-| Remaining `D-xx` items (e.g. D-03 confirm at P3, D-05, D-07, D-24 tracing, D-25 membership credits, D-26) | Phase listed in ARCHITECTURE.md §19 | ARCHITECTURE.md §19 |
+| Remaining `D-xx` items (e.g. D-05, D-07, D-24 tracing, D-25 membership credits, D-26) | Phase listed in ARCHITECTURE.md §19 | ARCHITECTURE.md §19 |
 | WireMock for Feign client tests (D-28) | M1.9 (first Feign client) | ARCHITECTURE.md §19 |
