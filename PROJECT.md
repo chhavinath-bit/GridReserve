@@ -1,6 +1,7 @@
 # GridReserve
 
 > Version 0.3 (draft). Product spec. No application code exists yet.
+> Change (owner decision, 2026-11-05): the roadmap has a **core path** (Phases 1, 2, 4) that makes the project complete and showable; Phases 3 and 5–8 become **optional extensions**, built only if time allows alongside the job search (section 9).
 > Changes from v0.2 (owner decisions, 2026-11-04): libraries support individually bookable seats (EXCLUSIVE, Phase 1) and unassigned reading halls (CAPACITY, Phase 2); bookable types per category carry labels and default rules; venues store a country plus a time zone; microservices architecture from the start (Config Server, Eureka discovery, API Gateway, identity and booking services) on Spring Boot 4 and Spring Cloud; fault-tolerance patterns (retry, rate limiter, bulkhead, circuit breaker); `dev` and `prod` profiles; refresh-token login; section 10 open questions answered.
 > Changes from v0.1: renamed SlotLock to GridReserve; replaced "resource" with Category / Venue / Bookable; merged five booking domains into one app; added a two-model booking engine (EXCLUSIVE and CAPACITY); replaced the "postponed" list with a phased roadmap in which nothing is dropped.
 > Items marked **[ASSUMPTION]** need the owner's confirmation (section 10).
@@ -104,7 +105,9 @@ Included: section 5, roles MEMBER and ADMIN, EXCLUSIVE booking model only, all f
 
 Success criteria: the 50-parallel-request test passes (exactly 1 success, 49 conflicts for one slot), including through the gateway with two booking-service instances; resilience tests pass; CI is green; the app is deployed; and the README explains how to run and test it.
 
-## 9. Phased roadmap (nothing is dropped)
+## 9. Phased roadmap: core path and optional extensions
+
+**Core path: Phase 1 → 2 → 4.** When these are done, GridReserve is complete: deployed, tested and documented, with both booking models, the platform and the Redis cache and rate limits. **Optional extensions: Phases 3, 5, 6, 7, 8**, taken one at a time after the core path, only if time allows alongside the job search; their designs stay in the documents so the data model never blocks them.
 
 Every phase ends with: all tests passing, CI green, deployed, README updated. No phase begins until the previous one is complete.
 
@@ -112,12 +115,12 @@ Every phase ends with: all tests passing, CI green, deployed, README updated. No
 |---|---|---|---|
 | 1 | Core engine and platform | Section 5 | Exclusion constraint, holds, rules, concurrency test; config server, discovery, gateway, resilience patterns |
 | 2 | Capacity model | Gym group classes and library reading halls with N seats | Atomic seat claim, last-seat contention test, concurrent cancellations |
-| 3 | Waitlist and offers | Waitlist for both models; auto-offer to next person on cancellation; offers expire | Promotion under concurrency, expiring offers |
+| 3 (optional) | Waitlist and offers | Waitlist for both models; auto-offer to next person on cancellation; offers expire | Promotion under concurrency, expiring offers |
 | 4 | Redis | Availability cache (cache-aside, short TTL, invalidated on change); rate limiting on login and booking at the gateway (build the cache first) | Cache invalidation, distributed rate limits, graceful fallback when Redis is down |
-| 5 | Payments and refunds | Payment service; checkout holds; mock payment provider (no real money, no real card data); webhook with idempotency; refunds by cancellation policy; transactional outbox with HTTP push | Idempotent webhooks, payment state machine, reliable events between services |
-| 6 | Memberships and venue managers | Membership service: plans, per-plan limits and class credits; VENUE_MANAGER role scoped to venues | Quota logic across services (saga), scoped authorization |
-| 7 | Recurring and no-shows | Recurring availability and recurring bookings; no-show marking and penalties | Date/recurrence handling, time zones and DST |
-| 8 | Queue, notifications, polish | Walk-in queue (clinic); notification service with in-app and simulated email notifications; admin analytics; OpenAPI docs | Queue ordering, event-driven notifications |
+| 5 (optional) | Payments and refunds | Payment service; checkout holds; mock payment provider (no real money, no real card data); webhook with idempotency; refunds by cancellation policy; transactional outbox with HTTP push | Idempotent webhooks, payment state machine, reliable events between services |
+| 6 (optional) | Memberships and venue managers | Membership service: plans, per-plan limits and class credits; VENUE_MANAGER role scoped to venues | Quota logic across services (saga), scoped authorization |
+| 7 (optional) | Recurring and no-shows | Recurring availability and recurring bookings; no-show marking and penalties | Date/recurrence handling, time zones and DST |
+| 8 (optional) | Queue, notifications, polish | Walk-in queue (clinic); notification service with in-app and simulated email notifications; admin analytics; OpenAPI docs | Queue ordering, event-driven notifications |
 
 Hard rule across all phases: PostgreSQL is the source of truth. Redis never decides a booking, and the app must work correctly if Redis is down. A booking decision is always made inside one booking-service database transaction, never across services.
 

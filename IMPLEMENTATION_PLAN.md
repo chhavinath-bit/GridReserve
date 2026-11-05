@@ -269,6 +269,8 @@ Phase goal (PROJECT.md §8): EXCLUSIVE booking end to end through the gateway; 5
 
 ## 6. Phases 2–8
 
+**Core path: Phases 1, 2, 4. Phases 3, 5, 6, 7, 8 are optional extensions** (owner decision 2026-11-05, PROJECT.md §9), taken after the core path only if time allows; Phase 4 therefore depends on Phase 2, not on Phase 3.
+
 Each phase: settle its `D-xx`, agree a detailed milestone plan, implement, then close with tests, CI, deploy, README, CHANGELOG, tag.
 
 ### Phase 2 — Capacity model (gym classes and reading halls) `L`
@@ -296,7 +298,7 @@ Each phase: settle its `D-xx`, agree a detailed milestone plan, implement, then 
 1. **Objective.** Faster availability and distributed rate limiting; Redis optional for correctness.
 2. **Milestones.** (Cache first.) M4.0 decide D-06/D-07; add Redis to Compose/Testcontainers (approval). M4.1 booking-service `AvailabilityCache` with generation counter, after-commit bump, CircuitBreaker + timeout, fallback. M4.2 Redis-down tests (FS-20). M4.3 gateway `RequestRateLimiter` (login by IP, booking by user), `429` + `Retry-After` in the standard error format; identity-service per-email failed-login throttling (ARCHITECTURE §20 item 3). M4.4 deploy with Redis; close.
 3. **Modules.** booking-service `cache/**`; api-gateway; identity-service; config repo.
-4. **Dependencies.** Phase 3.
+4. **Dependencies.** Phase 2 (core path; Phase 3 is optional). If Phase 3 is built later, its offer and promotion changes also bump the cache generation.
 5. **Tests.** Cache hit/miss/invalidation/stale-writer race; `RedisDownIT` and system test; rate-limit tests; perf with Redis on/off.
 6. **Acceptance.** Same results with Redis on, off or failing; NFR-REL-01, NFR-SEC-06.
 7. **Done.** Tag `phase-4-complete`.
@@ -358,7 +360,7 @@ Before merging:
 - [ ] Actual test output in `docs/PROGRESS.md` (never claim a pass without running it)
 - [ ] README / CLAUDE.md commands / affected docs / config repo updated
 - [ ] CI green
-- [ ] Review guide `docs/reviews/M<x.y>-review.md` written (key files, commands, explain-it-back questions, gaps)
+- [ ] Short review guide `docs/reviews/M<x.y>-review.md` written (one page: ~5 key files, commands, ~5 questions, gaps)
 - [ ] Owner has reviewed the code, rerun the tests and acceptance checks, and signed off
 
 After merging:
