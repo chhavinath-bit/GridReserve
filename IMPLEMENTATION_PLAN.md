@@ -358,6 +358,8 @@ Before merging:
 - [ ] Actual test output in `docs/PROGRESS.md` (never claim a pass without running it)
 - [ ] README / CLAUDE.md commands / affected docs / config repo updated
 - [ ] CI green
+- [ ] Review guide `docs/reviews/M<x.y>-review.md` written (key files, commands, explain-it-back questions, gaps)
+- [ ] Owner has reviewed the code, rerun the tests and acceptance checks, and signed off
 
 After merging:
 - [ ] Deployed (from M1.10) and smoke-tested
