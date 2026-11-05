@@ -36,7 +36,14 @@ public class RequestIdWebFilter implements WebFilter, Ordered {
                 .build();
         ServerWebExchange withId = exchange.mutate().request(request).build();
         withId.getAttributes().put(ATTRIBUTE, requestId);
-        withId.getResponse().getHeaders().set(HEADER, requestId);
+        // Routed responses already carry the service's X-Request-Id (same value); add it only when
+        // missing, e.g. for the gateway's own 404s and fallbacks, so the header never appears twice.
+        withId.getResponse().beforeCommit(() -> {
+            if (!withId.getResponse().getHeaders().containsHeader(HEADER)) {
+                withId.getResponse().getHeaders().set(HEADER, requestId);
+            }
+            return Mono.empty();
+        });
         return chain.filter(withId);
     }
 
