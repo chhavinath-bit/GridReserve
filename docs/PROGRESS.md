@@ -6,7 +6,8 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 |---|---|---|---|
 | M0.1 Environment inspection | Done | 2026-11-05 | `3f44318` (recorded in the initial commit) |
 | M0.2 Repositories | Done | 2026-11-05 | `3f44318` app repo, `a346654` config repo; results recorded in the next commit |
-| M0.3 Confirm decisions and assumptions | Done (merged via pull request) | 2026-11-05 | branch `m0.3-confirm-assumptions` |
+| M0.3 Confirm decisions and assumptions | Done | 2026-11-05 | `74ea039` (merge of PR #1) |
+| M1.1 Platform skeleton, CI and Boot 4 spikes | Built; CI green; **awaiting owner review** ([review guide](reviews/M1.1-review.md)) | 2026-11-05 | branch `m1.1-platform-skeleton`; config repo branch `m1.1-initial-config` |
 
 ---
 
@@ -84,6 +85,64 @@ Verification (actual results):
 |---|---|---|
 | Every edit applied exactly once | Python replace script asserting one match per change | "all edits applied" |
 | No stale values left | `grep -n "14 days\|default 14\|DEFAULT 14\|60 / 60 / 60 / 15\|Trainer 60\|confirm at P3\|confirm D-03\|same every day" *.md` | one match, the intentional "resolved" note in ARCHITECTURE.md §20 |
+
+## M1.1 Platform skeleton, CI and Boot 4 spikes — Built, awaiting owner review (2026-11-05)
+
+The results below are Claude's first pass. Owner verification: [docs/reviews/M1.1-review.md](reviews/M1.1-review.md).
+
+**Versions** (checked on Maven Central the same day): Spring Boot 4.1.2, Spring Cloud 2025.1.4 (Config 5.0.6, Netflix 5.0.3, Gateway 5.0.4, OpenFeign 5.0.4, CircuitBreaker 5.0.3 with Resilience4j 2.3.0), Maven wrapper 3.10.0, Java 21. Release candidates (Boot 4.2.0-RC1, Cloud 2026.0.0-RC1) not used.
+
+**Built:** `backend/` parent POM (BOM-managed versions), `libs/common-web` (error JSON, request IDs, UTC clock via auto-configuration), `platform/config-server`, `platform/discovery-server` (Eureka, local config), `platform/api-gateway` (WebFlux; request IDs, JSON errors, circuit-breaker fallback), `services/identity-service` and `services/booking-service` skeletons with a temporary ping (`/api/v1/ping` on booking, `/api/v1/auth/ping` on identity) and a Feign spike client; one `backend/Dockerfile` (`MODULE` build arg, non-root); `infra/compose.yaml` and `infra/postgres/init-databases.sh`; `.github/workflows/ci.yml`. Config repo: shared, dev, prod, gateway and service files.
+
+### Automated tests
+
+| Command | Result |
+|---|---|
+| `cd backend && ./mvnw -B verify` | BUILD SUCCESS; 7 reactor modules; **16 tests, 0 failures, 0 errors, 0 skipped** (common-web 8, config-server 1, discovery-server 1, api-gateway 2, identity-service 2, booking-service 2) |
+| `./mvnw -pl services/booking-service -am test` | BUILD SUCCESS (8 + 2 tests) |
+| `./mvnw -pl services/booking-service -am test -Dtest=BookingServiceApplicationTest -Dsurefire.failIfNoSpecifiedTests=false` | BUILD SUCCESS (2 tests) |
+
+### Compose stack (`cd infra && docker compose up -d --build --wait`)
+
+| Check | Result |
+|---|---|
+| All containers healthy | postgres, config-server, discovery-server, api-gateway, identity-service, booking-service: healthy |
+| Eureka registry (`/eureka/apps`) | API-GATEWAY, IDENTITY-SERVICE, BOOKING-SERVICE: UP |
+| Config server `GET /booking-service/dev` | serves `application-dev.yml`, `booking-service.yml`, `application.yml` |
+| `curl -i localhost:8080/api/v1/ping` | 200 from booking-service, one `X-Request-Id` header |
+| Request ID round trip | sent `X-Request-Id: trace-m11-0003` → returned unchanged by booking-service; none sent → gateway generates a UUID |
+| Unknown path `/api/v1/does-not-exist` | 404 standard error JSON from booking-service (ISO timestamp, requestId) |
+| Unknown path `/nope` | 404 standard error JSON from the gateway |
+| Explicit routes (review change, 2026-11-05; 3 identity + 3 booking instances) | `/api/v1/ping` → booking 200; `/api/v1/auth/ping` → identity 200, 6 calls rotate over 3 instances; `/api/v1/bookings` → routed to booking (404, proxied: `transfer-encoding: chunked`); `/api/v1/bokings`, `/api/v1/unknown`, `/api/v1/admin/users`, `/internal/ping`, `/actuator/env` → gateway's own 404 (`content-length`). Booking-down check left to the owner review (B3) |
+| Databases | `booking_db` owner `booking`, `identity_db` owner `identity` |
+| Two booking instances (`--scale booking-service=2`) | both registered UP; 8 pings → **4 / 4** split (round robin) |
+
+### Spikes
+
+| Spike | Result |
+|---|---|
+| S1 OpenFeign on Boot 4 | **Pass.** `GET /api/v1/ping/identity` → booking calls identity through Eureka + Feign → identity's instance ID |
+| S2 Resilience4j (Feign circuit breaker) | **Pass.** identity stopped → 3 calls returned the fallback in ~1.0 s each (1 s connect timeout to the stale instance); recovered automatically ~20 s after identity restarted |
+| S3 Gateway circuit breaker | **Pass.** booking stopped → `503 SERVICE_UNAVAILABLE` standard JSON in 3.4 s (after 2 GET retries) |
+| S4 Jackson 3 | **Pass.** timestamps serialize as ISO-8601 UTC strings (`2026-11-05T10:15:30Z`) in unit tests and in the running services |
+| S5 Artifact names for M1.2 | On Boot 4.1.2 BOM: Flyway 12.4.0, PostgreSQL driver 42.7.14, Testcontainers 2.0.5 (exact artifact IDs to confirm when added in M1.2) |
+| S6 Config client fail fast + retry | Fail fast works; **no in-app retry** without `spring-retry` + `spring-boot-starter-aspectj`. Owner decision: no new dependencies, rely on container restart with backoff; verified that identity-service recovered on its own once the config server returned. PLAT-07 updated |
+
+### Problems found and fixed during the milestone
+
+1. Boot 4 moved `ErrorWebExceptionHandler` to `org.springframework.boot.webflux.error` (compile error, fixed).
+2. With `spring.cloud.config.enabled=false`, a `configserver:` import fails to resolve, so tests could not start. Fixed with an overridable import `${CONFIG_IMPORT:configserver:…}`; tests set an optional empty location.
+3. Config Server with a Git `file:` URI works inside the mounted folder (lock files, checkouts, fetch from GitHub) and failed on the read-only mount. Dev now uses the `native` backend; prod keeps Git (D-33).
+4. Gateway answered 503 "No servers available" for up to a minute after start (30 s registry fetch, 35 s load-balancer cache). Dev now refreshes both every 5 s (config repo `application-dev.yml`).
+5. Routed responses had two `X-Request-Id` headers. The gateway now adds it only when the service didn't.
+
+### Decisions settled
+D-20 fixed config-server URL; D-21 Resilience4j via Spring Cloud CircuitBreaker works on Boot 4; D-22 gateway WebFlux; D-27 thin servlet-only `common-web`; D-33 native backend in dev, fail fast + container restart.
+
+### Open issues for later milestones
+- booking-service does not yet forward `X-Request-Id` on Feign calls (Feign request interceptor, M1.9).
+- Gateway logs Hibernate Validator deprecation warnings (`@Valid` on containers) from Spring Cloud Gateway's own classes; harmless, upstream.
+- Spring Cloud LoadBalancer warns that its default cache is for development; decide on Caffeine (new dependency) before production (M1.10).
 
 ## Open issues
 

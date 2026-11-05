@@ -124,7 +124,7 @@ Do this at the start of every session, before proposing or changing anything:
 │   │   │           src/test/java/... (mirrors main)
 │   │   └── libs/common-web/
 │   ├── frontend/                src/{app,api,features/<feature>,components/{ui,patterns},styles,lib}, e2e/
-│   ├── infra/                   compose.yaml, .env (git-ignored), .env.example, postgres/init.sql
+│   ├── infra/                   compose.yaml, .env (git-ignored), .env.example, postgres/init-databases.sh
 │   ├── scripts/refresh-config.sh
 │   ├── .github/workflows/
 │   ├── docs/PROGRESS.md
@@ -134,7 +134,7 @@ Do this at the start of every session, before proposing or changing anything:
 ```
 
 - Backend module paths in the docs (`platform/…`, `services/…`, `libs/…`) are relative to `backend/`.
-- The Config Server reads `CONFIG_REPO_URI`: in `dev` the local clone mounted by Compose (`file:///config-repo`, committed changes only); in `prod` the GitHub URL (public, no token).
+- Config Server backends: in `dev` the `native` backend reads the sibling clone mounted by Compose at `/config-repo` (the checked-out branch, uncommitted edits included); in `prod` the Git backend reads `CONFIG_REPO_URI` (the public GitHub URL, no token).
 
 ```
 ```
@@ -210,7 +210,7 @@ Do this at the start of every session, before proposing or changing anything:
 - **Configuration** comes from the Config Server (`gridreserve-config` Git repo) with profiles `dev` and `prod`; the `test` profile disables the config client and Eureka. **Never put secrets in the config repo**; use environment variables.
 - **Refresh:** refreshable settings are `@ConfigurationProperties` or `@RefreshScope` beans; apply changes with `scripts/refresh-config.sh` (Eureka lookup → `POST /actuator/refresh` per instance). Booking rules are database data, not configuration. Datasources, ports and keys are not refreshable.
 - **Discovery:** services register with Eureka under their service ID; callers use `lb://service-id`; never hard-code instance hosts or ports in code.
-- **Startup:** fail fast (with retry) if the Config Server is unreachable; health-based ordering in Compose, no fixed sleeps.
+- **Startup:** fail fast if the Config Server is unreachable; the container platform restarts with backoff (no in-app retry, PLAT-07). Health-based ordering in Compose, no fixed sleeps. New apps imported from config must keep the `${CONFIG_IMPORT:configserver:…}` form so tests can run without a Config Server.
 
 ## 10. Testing requirements
 
@@ -249,19 +249,20 @@ Do this at the start of every session, before proposing or changing anything:
 
 ## 13. Commands
 
-**Planned commands.** Nothing is scaffolded yet. Verify each command when it first becomes real (M1.1 onward) and keep this list accurate.
+Rows marked ✓ were run successfully in M1.1 (2026-11-05); the others are planned. Verify a command when it first becomes real and keep this list accurate.
 
 | Task | Command | Notes |
 |---|---|---|
-| Start the whole stack (dev) | `cd infra && docker compose up -d` | Postgres (per-service DBs), config server (mounts `../../gridreserve-config`), discovery, gateway, services (+ Redis in P4); reads `infra/.env` |
+| Start the whole stack (dev) ✓ | `cd infra && docker compose up -d --build --wait` | Postgres (per-service DBs), config server (`native`, mounts `../../gridreserve-config`), discovery, gateway, services (+ Redis in P4); reads `infra/.env`. Routing can take ~15 s after all are healthy |
 | Start only infrastructure | `cd infra && docker compose up -d postgres config-server discovery-server` | Then run services from the IDE/Maven |
-| Two booking instances | `cd infra && docker compose up -d --scale booking-service=2` | Load-balancing and CONC-10 demos |
-| Stop | `cd infra && docker compose down` | Add `-v` only with my approval (deletes data) |
-| Eureka dashboard | `http://localhost:8761` | |
+| Two booking instances ✓ | `cd infra && docker compose up -d --scale booking-service=2 --wait` | Load-balancing and CONC-10 demos |
+| Stop ✓ | `cd infra && docker compose down` | Add `-v` only with my approval (deletes data) |
+| Eureka dashboard ✓ | `http://localhost:8761` (JSON: `curl -H 'Accept: application/json' localhost:8761/eureka/apps`) | |
+| Smoke test ✓ | `curl -i localhost:8080/api/v1/ping` | Temporary M1.1 endpoint through the gateway |
 | Run one service locally | `cd backend && ./mvnw -pl services/booking-service spring-boot:run -Dspring-boot.run.profiles=dev` | Needs config server + Postgres |
-| Build and test everything | `cd backend && ./mvnw verify` | Docker must be running for Testcontainers |
-| Test one module | `cd backend && ./mvnw -pl services/booking-service -am test` | |
-| Single test | `cd backend && ./mvnw -pl services/booking-service -am test -Dtest=BookingConstraintsIT -Dsurefire.failIfNoSpecifiedTests=false` | |
+| Build and test everything ✓ | `cd backend && ./mvnw -B verify` | Docker must be running for Testcontainers |
+| Test one module ✓ | `cd backend && ./mvnw -pl services/booking-service -am test` | `-am` also builds `common-web` |
+| Single test ✓ | `cd backend && ./mvnw -pl services/booking-service -am test -Dtest=BookingServiceApplicationTest -Dsurefire.failIfNoSpecifiedTests=false` | |
 | Refresh config on all instances | `scripts/refresh-config.sh [service-id]` | Needs admin/service credential from env |
 | Install frontend deps | `cd frontend && npm ci` | |
 | Run frontend | `cd frontend && npm run dev` | Vite proxies `/api` to the gateway on `:8080` |
@@ -320,7 +321,6 @@ Do not assume an answer for these. When a milestone reaches one, present options
 
 | Item | Needed by | Where described |
 |---|---|---|
-| Resilience4j on Boot 4 (D-21), gateway variant (D-22), config server lookup (D-20), shared library scope (D-27) | M1.1 spikes | ARCHITECTURE.md §19 |
 | Service-to-service authentication (D-19) | M1.3 / M1.9 | ARCHITECTURE.md §16 |
 | Deploy host, backups, rollback; must fit ~5 JVMs + PostgreSQL (D-15) | M1.10 | IMPLEMENTATION_PLAN.md §3 |
 | UI supporting packages (D-UI-3) and axe accessibility checks (D-UI-4) | M1.6 / M1.13 | DESIGN_SYSTEM.md §10 |
