@@ -46,6 +46,24 @@ Do this at the start of every session, before proposing or changing anything:
 - **Explain as you go**, briefly: the design decision, why, and the alternative you didn't take. This is for interview preparation.
 - **Pending decisions** (section 15.2) are not settled. When work reaches one, stop and ask.
 
+### Division of work: Claude implements, I engineer
+
+| Claude | Me (the owner) | Together |
+|---|---|---|
+| Generate modules, Maven dependencies and configuration, boilerplate, DTOs and entities, Dockerfiles, Compose, CI, first tests, compile fixes | Review important code, run tests myself, verify acceptance criteria, merge | Architecture and security decisions, debugging production-like failures |
+
+- **Your checks are a first pass, not the verification.** Report them honestly, then hand over; never present a milestone as done before I have reviewed it.
+- **Say what tests actually execute.** For every milestone, separate behavior tests from smoke tests and list what is only checked manually. A green build is not evidence by itself.
+- **No silent architecture changes.** Any significant decision (structure, communication, data ownership, security, a changed requirement) is explained with its reason and alternatives and waits for my approval, even when it looks like a small fix.
+- **No unnecessary dependencies.** Every new library needs a reason, the alternative without it, and my approval.
+- **Commit after every working step** with a meaningful message, so the history reads as a story.
+- **End every milestone with a review guide** in `docs/reviews/M<x.y>-review.md` (see `docs/reviews/M1.1-review.md`):
+  - Part A: the files that carry the design, what to look for, what to challenge;
+  - Part B: commands for me to run myself, with expected results;
+  - Part C: explain-it-back questions with collapsible answers (what an interviewer could ask);
+  - Part D: what is *not* proven yet and when it will be;
+  - a sign-off checklist. The PR is merged only after my sign-off.
+
 ### Never claim a test passed without running it
 
 - Report **actual** results only: the command you ran and the real outcome (counts of tests run, passed, failed, skipped, and the relevant failure output).
