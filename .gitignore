@@ -1,0 +1,37 @@
+# --- Java / Maven ---
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+hs_err_pid*.log
+
+# --- Node / frontend ---
+node_modules/
+dist/
+coverage/
+.vite/
+playwright-report/
+test-results/
+blob-report/
+*.tsbuildinfo
+
+# --- Environment and secrets (only *.example files are committed) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- IDE / editor ---
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log
+logs/
