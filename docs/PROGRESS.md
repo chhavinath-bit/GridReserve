@@ -7,7 +7,8 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 | M0.1 Environment inspection | Done | 2026-11-05 | `3f44318` (recorded in the initial commit) |
 | M0.2 Repositories | Done | 2026-11-05 | `3f44318` app repo, `a346654` config repo; results recorded in the next commit |
 | M0.3 Confirm decisions and assumptions | Done | 2026-11-05 | `74ea039` (merge of PR #1) |
-| M1.1 Platform skeleton, CI and Boot 4 spikes | Built; CI green; **awaiting owner review** ([review guide](reviews/M1.1-review.md)) | 2026-11-05 | branch `m1.1-platform-skeleton`; config repo branch `m1.1-initial-config` |
+| M1.1 Platform skeleton, CI and Boot 4 spikes | Done (owner reviewed; [review guide](reviews/M1.1-review.md)) | 2026-11-05 | `9d636e0` (merge of PR #2); config repo `ae47541` (merge of PR #1); CI on `main` green, 16 tests |
+| M1.2 Booking schema, constraints and seed data | In progress | 2026-11-05 | branch `m1.2-booking-schema`; config repo branch `m1.2-booking-datasource` |
 
 ---
 
@@ -86,7 +87,7 @@ Verification (actual results):
 | Every edit applied exactly once | Python replace script asserting one match per change | "all edits applied" |
 | No stale values left | `grep -n "14 days\|default 14\|DEFAULT 14\|60 / 60 / 60 / 15\|Trainer 60\|confirm at P3\|confirm D-03\|same every day" *.md` | one match, the intentional "resolved" note in ARCHITECTURE.md §20 |
 
-## M1.1 Platform skeleton, CI and Boot 4 spikes — Built, awaiting owner review (2026-11-05)
+## M1.1 Platform skeleton, CI and Boot 4 spikes — Done (2026-11-05)
 
 The results below are Claude's first pass. Owner verification: [docs/reviews/M1.1-review.md](reviews/M1.1-review.md).
 
