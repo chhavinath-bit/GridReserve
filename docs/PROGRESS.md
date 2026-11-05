@@ -7,7 +7,7 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 | M0.1 Environment inspection | Done | 2026-11-05 | `3f44318` (recorded in the initial commit) |
 | M0.2 Repositories | Done | 2026-11-05 | `3f44318` app repo, `a346654` config repo; results recorded in the next commit |
 | M0.3 Confirm decisions and assumptions | Done | 2026-11-05 | `74ea039` (merge of PR #1) |
-| M1.1 Platform skeleton, CI and Boot 4 spikes | Done (pending PR merge and green CI) | 2026-11-05 | branch `m1.1-platform-skeleton`; config repo branch `m1.1-initial-config` |
+| M1.1 Platform skeleton, CI and Boot 4 spikes | Built; CI green; **awaiting owner review** ([review guide](reviews/M1.1-review.md)) | 2026-11-05 | branch `m1.1-platform-skeleton`; config repo branch `m1.1-initial-config` |
 
 ---
 
@@ -86,7 +86,9 @@ Verification (actual results):
 | Every edit applied exactly once | Python replace script asserting one match per change | "all edits applied" |
 | No stale values left | `grep -n "14 days\|default 14\|DEFAULT 14\|60 / 60 / 60 / 15\|Trainer 60\|confirm at P3\|confirm D-03\|same every day" *.md` | one match, the intentional "resolved" note in ARCHITECTURE.md §20 |
 
-## M1.1 Platform skeleton, CI and Boot 4 spikes — Done (2026-11-05)
+## M1.1 Platform skeleton, CI and Boot 4 spikes — Built, awaiting owner review (2026-11-05)
+
+The results below are Claude's first pass. Owner verification: [docs/reviews/M1.1-review.md](reviews/M1.1-review.md).
 
 **Versions** (checked on Maven Central the same day): Spring Boot 4.1.2, Spring Cloud 2025.1.4 (Config 5.0.6, Netflix 5.0.3, Gateway 5.0.4, OpenFeign 5.0.4, CircuitBreaker 5.0.3 with Resilience4j 2.3.0), Maven wrapper 3.10.0, Java 21. Release candidates (Boot 4.2.0-RC1, Cloud 2026.0.0-RC1) not used.
 
