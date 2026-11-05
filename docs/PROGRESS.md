@@ -92,7 +92,7 @@ The results below are Claude's first pass. Owner verification: [docs/reviews/M1.
 
 **Versions** (checked on Maven Central the same day): Spring Boot 4.1.2, Spring Cloud 2025.1.4 (Config 5.0.6, Netflix 5.0.3, Gateway 5.0.4, OpenFeign 5.0.4, CircuitBreaker 5.0.3 with Resilience4j 2.3.0), Maven wrapper 3.10.0, Java 21. Release candidates (Boot 4.2.0-RC1, Cloud 2026.0.0-RC1) not used.
 
-**Built:** `backend/` parent POM (BOM-managed versions), `libs/common-web` (error JSON, request IDs, UTC clock via auto-configuration), `platform/config-server`, `platform/discovery-server` (Eureka, local config), `platform/api-gateway` (WebFlux; request IDs, JSON errors, circuit-breaker fallback), `services/identity-service` and `services/booking-service` skeletons with a temporary `/api/v1/ping` and a Feign spike client; one `backend/Dockerfile` (`MODULE` build arg, non-root); `infra/compose.yaml` and `infra/postgres/init-databases.sh`; `.github/workflows/ci.yml`. Config repo: shared, dev, prod, gateway and service files.
+**Built:** `backend/` parent POM (BOM-managed versions), `libs/common-web` (error JSON, request IDs, UTC clock via auto-configuration), `platform/config-server`, `platform/discovery-server` (Eureka, local config), `platform/api-gateway` (WebFlux; request IDs, JSON errors, circuit-breaker fallback), `services/identity-service` and `services/booking-service` skeletons with a temporary ping (`/api/v1/ping` on booking, `/api/v1/auth/ping` on identity) and a Feign spike client; one `backend/Dockerfile` (`MODULE` build arg, non-root); `infra/compose.yaml` and `infra/postgres/init-databases.sh`; `.github/workflows/ci.yml`. Config repo: shared, dev, prod, gateway and service files.
 
 ### Automated tests
 
@@ -113,6 +113,7 @@ The results below are Claude's first pass. Owner verification: [docs/reviews/M1.
 | Request ID round trip | sent `X-Request-Id: trace-m11-0003` → returned unchanged by booking-service; none sent → gateway generates a UUID |
 | Unknown path `/api/v1/does-not-exist` | 404 standard error JSON from booking-service (ISO timestamp, requestId) |
 | Unknown path `/nope` | 404 standard error JSON from the gateway |
+| Explicit routes (review change, 2026-11-05; 3 identity + 3 booking instances) | `/api/v1/ping` → booking 200; `/api/v1/auth/ping` → identity 200, 6 calls rotate over 3 instances; `/api/v1/bookings` → routed to booking (404, proxied: `transfer-encoding: chunked`); `/api/v1/bokings`, `/api/v1/unknown`, `/api/v1/admin/users`, `/internal/ping`, `/actuator/env` → gateway's own 404 (`content-length`). Booking-down check left to the owner review (B3) |
 | Databases | `booking_db` owner `booking`, `identity_db` owner `identity` |
 | Two booking instances (`--scale booking-service=2`) | both registered UP; 8 pings → **4 / 4** split (round robin) |
 

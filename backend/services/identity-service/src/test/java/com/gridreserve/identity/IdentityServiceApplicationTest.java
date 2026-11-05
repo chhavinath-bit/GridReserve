@@ -33,7 +33,7 @@ class IdentityServiceApplicationTest {
     @Test
     @DisplayName("M1.1: the service starts and answers the ping")
     void pingAnswers() throws Exception {
-        HttpResponse<String> response = get("/api/v1/ping");
+        HttpResponse<String> response = get("/api/v1/auth/ping");
 
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(response.body()).contains("\"service\":\"identity-service\"");

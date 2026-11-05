@@ -93,7 +93,7 @@ flowchart LR
 ### 2.2 Request path
 
 1. Browser → gateway (`/api/v1/...`). Gateway adds `X-Request-Id`, checks CORS, verifies the JWT signature and expiry for protected routes, applies route resilience (and rate limits in P4).
-2. Gateway resolves the target service ID through Eureka and picks an instance (round robin).
+2. Gateway matches the path against its routes. Each service lists the path prefixes it owns (booking: `/api/v1/categories`, `/countries`, `/venues`, `/bookables`, `/bookings`, `/admin/bookings`; identity: `/api/v1/auth`, `/api/v1/me`); there is **no catch-all**, so route order does not matter, a new service cannot be swallowed by another's route, and an unknown path gets the gateway's own 404 (decided 2026-11-05 in the M1.1 review). It then resolves the target service ID through Eureka and picks an instance (round robin).
 3. The service verifies the JWT again (defence in depth), runs its logic and transaction, and returns DTOs or the standard error JSON.
 4. If the service needs data from another service (booking → identity for member emails in admin lists), it calls it through a load-balanced, resilience-wrapped `RestClient`, **outside** any open transaction.
 

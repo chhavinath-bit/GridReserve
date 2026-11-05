@@ -18,7 +18,8 @@ public class PingController {
         this.instance = instance;
     }
 
-    @GetMapping("/api/v1/ping")
+    /** Under /api/v1/auth because that is a prefix the gateway routes to identity-service. */
+    @GetMapping("/api/v1/auth/ping")
     public PingResponse ping() {
         return new PingResponse("identity-service", instance);
     }
