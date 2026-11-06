@@ -10,6 +10,8 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
@@ -40,6 +42,7 @@ class SecurityConfig {
                         .requestMatchers("/internal/**").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(server -> server
+                        .bearerTokenResolver(bearerTokenOutsideAuthPaths())
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtConverter))
                         .authenticationEntryPoint(errors)
                         .accessDeniedHandler(errors))
@@ -47,6 +50,17 @@ class SecurityConfig {
                         .authenticationEntryPoint(errors)
                         .accessDeniedHandler(errors));
         return http.build();
+    }
+
+    /**
+     * Spring checks any Bearer token it finds, even on public paths, and refuses a bad one with 401.
+     * On the auth endpoints that would break refresh: a client that sends its expired access token
+     * along would get {@code TOKEN_EXPIRED} from the very call meant to fix it. So the header is not
+     * read there; these endpoints never use it. The gateway does the same.
+     */
+    private static BearerTokenResolver bearerTokenOutsideAuthPaths() {
+        DefaultBearerTokenResolver bearer = new DefaultBearerTokenResolver();
+        return request -> request.getRequestURI().startsWith("/api/v1/auth/") ? null : bearer.resolve(request);
     }
 
     /** BCrypt with cost 10 (FR-AUTH-03). */

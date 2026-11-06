@@ -20,6 +20,7 @@ import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
+import org.springframework.security.oauth2.jwt.JwtValidationException;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
@@ -32,7 +33,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * How every servlet service checks an access token locally, with the public keys only
+ * How every service, and the gateway, checks an access token locally, with the public keys only
  * (FR-AUTH-06: no call to identity-service). A token is accepted when all of these hold:
  * <ol>
  *   <li>its header names a {@code kid} we know, and the RS256 signature matches that key;</li>
@@ -92,6 +93,21 @@ public final class AccessTokenVerification {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(authorities);
         return converter;
+    }
+
+    /**
+     * True when a token was refused only because it expired, so the client gets {@code TOKEN_EXPIRED}
+     * and refreshes, instead of {@code UNAUTHENTICATED}. Spring wraps the validation error, so the
+     * cause chain is searched.
+     */
+    public static boolean isExpired(Throwable ex) {
+        for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+            if (cause instanceof JwtValidationException invalid) {
+                return invalid.getErrors().stream()
+                        .anyMatch(error -> TOKEN_EXPIRED.equals(error.getErrorCode()));
+            }
+        }
+        return false;
     }
 
     /** Own expiry check, so an expired token gets its own error code (the client then refreshes). */

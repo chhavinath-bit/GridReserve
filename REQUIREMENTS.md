@@ -1,6 +1,7 @@
 # GridReserve — Requirements
 
-> Version 0.7 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Version 0.8 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Changes from v0.7 (M1.3c, 2026-11-06, D-38): FR-ROLE-01 states which gateway paths are public and that the auth endpoints ignore the `Authorization` header (an expired access token sent along must not block a refresh).
 > Changes from v0.6 (owner decision, 2026-11-06, D-37): the refresh token is **not rotated**. One opaque token per login, stored hashed, with a sliding 7-day expiry; logout deletes it (FR-AUTH-09..11); reuse detection and token families are dropped (FS-39 withdrawn). PROJECT.md §5 still says "rotating refresh token"; this owner decision replaces it, PROJECT.md itself is unchanged.
 > Changes from v0.5 (owner decisions, 2026-11-06): registering starts a session like login (FR-AUTH-01, D-36, built in M1.3b); **sign-in with Google and GitHub** added to Phase 1 (US-30, FR-AUTH-15..19, FS-42..44, D-35, built in M1.3d). This extends PROJECT.md §5 (email and password) by owner decision; PROJECT.md itself is unchanged.
 > Changes from v0.4 (M1.1 spike S6, 2026-11-05): PLAT-07 startup behavior is fail fast + container restart with backoff (no in-app retry).
@@ -123,7 +124,7 @@ This document turns the product spec into **specific, testable requirements**. E
 
 ### 3.2 Authorization rules
 
-- **FR-ROLE-01** Roles shall be enforced by Spring Security in **every service** at the endpoint level; the gateway shall also reject requests without a valid access token to protected routes. Ownership (is this my booking?) shall be checked in the owning service's service layer.
+- **FR-ROLE-01** Roles shall be enforced by Spring Security in **every service** at the endpoint level; the gateway shall also reject requests without a valid access token to protected routes. Ownership (is this my booking?) shall be checked in the owning service's service layer. Public at the gateway: `/api/v1/auth/**`, the gateway's health; every other path needs a valid token. The auth endpoints ignore any `Authorization` header (D-38).
 - **FR-ROLE-02** A request without a valid token to a protected endpoint shall return `401 UNAUTHENTICATED`.
 - **FR-ROLE-03** A MEMBER calling an ADMIN endpoint shall receive `403 FORBIDDEN`.
 - **FR-ROLE-04** A MEMBER reading, confirming or cancelling another member's booking shall receive `404 NOT_FOUND`. **[ASSUMPTION A-03]**

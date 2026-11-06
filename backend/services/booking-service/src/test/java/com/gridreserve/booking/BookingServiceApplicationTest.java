@@ -1,6 +1,7 @@
 package com.gridreserve.booking;
 
 import com.gridreserve.booking.support.ServiceIntegrationTest;
+import com.gridreserve.booking.support.TestJwtKeys;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,9 +22,12 @@ class BookingServiceApplicationTest {
 
     private final HttpClient http = HttpClient.newHttpClient();
 
-    private HttpResponse<String> get(String path) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).build();
-        return http.send(request, HttpResponse.BodyHandlers.ofString());
+    private HttpResponse<String> get(String path, String... headers) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path));
+        if (headers.length > 0) {
+            request.headers(headers);
+        }
+        return http.send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 
     @Test
@@ -38,7 +42,9 @@ class BookingServiceApplicationTest {
     @Test
     @DisplayName("API-05/PLAT-12: an unknown path returns the standard error JSON with a request ID (common-web is active)")
     void unknownPathUsesStandardFormat() throws Exception {
-        HttpResponse<String> response = get("/api/v1/does-not-exist");
+        // With a valid token: without one, security answers 401 first (BookingSecurityIT).
+        HttpResponse<String> response = get("/api/v1/does-not-exist",
+                "Authorization", "Bearer " + TestJwtKeys.memberToken());
 
         assertThat(response.statusCode()).isEqualTo(404);
         assertThat(response.headers().firstValue("X-Request-Id")).isPresent();

@@ -10,7 +10,8 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 | M1.1 Platform skeleton, CI and Boot 4 spikes | Done (owner reviewed; [review guide](reviews/M1.1-review.md)) | 2026-11-05 | `9d636e0` (merge of PR #2); config repo `ae47541` (merge of PR #1); CI on `main` green, 16 tests |
 | M1.2 Booking schema, constraints and seed data | Done (owner reviewed; [review guide](reviews/M1.2-review.md)) | 2026-11-05 | `fae582d` (merge of PR #5); config repo `4209388` (merge of PR #2); CI on `main` (`793a526`) green; local `verify` on `main` 2026-11-06: 16 + 29 tests, 0 failures |
 | M1.3a Identity core (register, login, `/me`, RS256 tokens) | Done (owner reviewed; [review guide](reviews/M1.3a-review.md)) | 2026-11-06 | `6dc7ce6` (merge of PR #6); config repo `fd64800` (merge of PR #3); CI on `main` (`6dc7ce6`) green; local `verify` on `main` 2026-11-06: 32 + 44 tests, 0 failures |
-| M1.3b Refresh tokens, logout, register logs in | Built; **awaiting owner review** ([review guide](reviews/M1.3b-review.md)) | 2026-11-06 | branch `m1.3b-refresh-tokens`; config repo branch `m1.3b-refresh-cookie` |
+| M1.3b Refresh tokens, logout, register logs in | Done (owner reviewed; [review guide](reviews/M1.3b-review.md)) | 2026-11-06 | `7b7edb9` (merge of PR #7); config repo `aa5775a` (merge of PR #4); CI on `main` (`7b7edb9`) green, 36 + 60 tests |
+| M1.3c Token checks in the gateway and booking-service | Built; **awaiting owner review** ([review guide](reviews/M1.3c-review.md)) | 2026-11-06 | branch `m1.3c-token-verification`; no config repo change |
 
 ---
 
@@ -196,7 +197,59 @@ What the 29 integration tests execute (real `postgres:16` Testcontainer, plain S
 - The readiness check does not include the database (Boot default); decide in M1.9 whether `db` belongs in readiness.
 - `BookingServiceApplicationTest` now needs Docker (it starts the Testcontainer) although it is a `*Test`; rename to `*IT` if you want the naming rule strict (renames need your approval).
 
-## M1.3b Refresh tokens — Built, awaiting owner review (2026-11-06)
+## M1.3c Token checks in the gateway and booking-service — Built, awaiting owner review (2026-11-06)
+
+**Built:**
+- api-gateway: Spring Security (reactive) with `common-web`'s `AccessTokenVerification` wrapped as a `ReactiveJwtDecoder`. Public: `/api/v1/auth/**`, `/api/v1/ping/**`, `/actuator/health/**`, `/actuator/info`, `/fallback/**`; every other path (unknown ones included) needs a valid token. 401 in the standard error JSON (`UNAUTHENTICATED`, `TOKEN_EXPIRED`). No role checks at the gateway; the `Authorization` header is forwarded unchanged.
+- booking-service: resource-server starter (switches on `common-web`'s verification) and `config/SecurityConfig`: ping and health public, `/api/v1/admin/**` → ADMIN, everything else signed in. `member/service/MemberProvisioner.ensure` (`INSERT … ON CONFLICT DO NOTHING`), called from hold creation in M1.5.
+- `common-web`: `spring-boot-starter-webmvc` is now optional (services declare it themselves), so the gateway stays reactive; `isExpired` moved to `AccessTokenVerification` and is shared by both error handlers.
+- **Bug fixed (from M1.3b):** Spring's Bearer filter checked a token sent to public paths too, so an expired access token sent along with `/api/v1/auth/refresh` got `401 TOKEN_EXPIRED` and blocked the refresh. The gateway and identity-service now ignore the `Authorization` header on `/api/v1/auth/**`. Found by the gateway mutation check below.
+- Docs: D-38 (and D-27 amended), REQUIREMENTS v0.8 (FR-ROLE-01), ARCHITECTURE §16, TECH_STACK, IMPLEMENTATION_PLAN M1.3 tests, CLAUDE.md §15.1, README, review guide, learning file.
+
+**Dependencies added (approved 2026-11-06, option A):** api-gateway: `common-web`, `spring-boot-starter-security-oauth2-resource-server`. booking-service: `spring-boot-starter-security-oauth2-resource-server`. Both BOM-managed; no new library. `./mvnw -pl platform/api-gateway -am dependency:tree` shows no webmvc or Tomcat in the gateway.
+
+### Test results
+
+`cd backend && ./mvnw -B verify` on 2026-11-06: **BUILD SUCCESS**, 114 tests, 0 failures, 0 skipped.
+
+| Module | Surefire (`*Test`) | Failsafe (`*IT`) |
+|---|---|---|
+| common-web | 20 | — |
+| config-server / discovery-server | 1 / 1 | — |
+| api-gateway | 2 (`GatewayErrorHandlingTest`, now sends a token to reach the 404) | 8 (new `GatewayTokenCheckIT`) |
+| identity-service | 10 | 32 (new `RefreshFlowIT.staleAccessTokenIgnored_FRAUTH10`) |
+| booking-service | 2 (unknown-path test now sends a token) | 38 (new `BookingSecurityIT` 7, `MemberProvisionerIT` 2) |
+
+What the new tests execute (behavior): gateway forwards a valid token unchanged to a stub upstream (JDK `HttpServer`); no token, garbage, tampered, foreign key, unknown `kid`, no `kid` → 401 `UNAUTHENTICATED`; expired → 401 `TOKEN_EXPIRED`; auth paths and ping pass without a token and with a stale one; `/me` needs a token; health public. booking: no token / foreign key → 401, expired → `TOKEN_EXPIRED`, member token passes (404, no endpoint yet), MEMBER on `/api/v1/admin/bookings` → 403, ADMIN → 404 (passed security), health and ping public. Member row: created once, second call no change; 10 parallel calls → exactly one creator and one row.
+
+**Repeated runs (CLAUDE.md §8.3):** `MemberProvisionerIT` run 20 times with `-am`: **20 of 20 passed**.
+
+**Mutation checks (all reverted):**
+- Gateway `.anyExchange().authenticated()` → `permitAll()`: fails `missingTokenRejected_FS14` and `meNeedsToken`. The bad- and expired-token tests still passed, which showed Spring checks presented tokens even on public paths, and led to the refresh bug fix above (new failing test first, then the fix).
+- booking: removing `hasRole("ADMIN")` fails only `memberOnAdminPathForbidden_FS16`.
+- Removing ` ON CONFLICT (id) DO NOTHING` fails both `MemberProvisionerIT` tests (duplicate key).
+
+**Through the Compose stack** (`docker compose up -d --build --wait`, all six healthy):
+
+| Check | Result |
+|---|---|
+| `/categories` without a token / with `x.y.z` | 401 `UNAUTHENTICATED` from the gateway |
+| `/categories` with Alice's token | first two calls 503 (gateway routing not ready right after the restart, known), then 404 from booking-service (security passed) |
+| `/admin/bookings` Alice / admin | 403 `FORBIDDEN` / 404 |
+| `/me` Alice; `/ping`; `/actuator/health` | 200 (id 2, MEMBER); 200; 200 |
+| refresh with cookie + headers + a bad `Authorization` header | 200 |
+| booking-service called directly inside the Docker network, no token | 401 (it does not rely on the gateway) |
+| identity-service stopped: `/categories` / `/admin/bookings` with Alice's token | 404 / 403: booking still verifies tokens locally (RES-07); `/me` → 503 fallback |
+
+### Not covered yet
+- `MemberProvisioner` is not called from a request until hold creation (M1.5).
+- No real admin endpoint yet; the 403 is proven on the URL rule.
+- CORS and browser preflight at the gateway (M1.6); service tokens for `/internal/**` (M1.9).
+
+### Open issues for later milestones
+- PROJECT.md §6 says roles are "checked early at the gateway"; the gateway checks only the token (D-38). PROJECT.md unchanged by rule; tell the owner.
+
+## M1.3b Refresh tokens — Done (2026-11-06)
 
 **Built:**
 - identity-service: Flyway `V3__refresh_token` (`pk_refresh_token`, `fk_refresh_token_user`, `uq_refresh_token_hash`, `ix_refresh_token_expires`, `ix_refresh_token_user`). One row per login; only the SHA-256 of the 256-bit token is stored.
