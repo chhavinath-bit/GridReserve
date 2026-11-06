@@ -16,6 +16,7 @@ import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -231,6 +232,17 @@ class RefreshFlowIT {
             }
             assertThat(jdbc.queryForObject("SELECT count(*) FROM refresh_token WHERE token_hash = ?",
                     Integer.class, RefreshTokens.hash(token))).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("FR-AUTH-10: a stale Authorization header sent along does not block refresh or logout")
+        void staleAccessTokenIgnored_FRAUTH10() {
+            String token = registerAndGetRefreshToken();
+            Map<String, String> withStaleHeader = new HashMap<>(fromOurApp(token));
+            withStaleHeader.put("Authorization", "Bearer not-a-valid-access-token");
+
+            assertThat(http.post(REFRESH, "", withStaleHeader).status()).isEqualTo(200);
+            assertThat(http.post(LOGOUT, "", withStaleHeader).status()).isEqualTo(204);
         }
 
         @Test

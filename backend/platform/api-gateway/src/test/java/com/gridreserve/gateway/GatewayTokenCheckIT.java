@@ -138,6 +138,18 @@ class GatewayTokenCheckIT {
     }
 
     @Test
+    @DisplayName("FR-AUTH-10: an expired or broken access token sent along to the auth endpoints is ignored, so refresh still works")
+    void authPathsIgnoreAccessToken_FRAUTH10() {
+        String expired = sign(KEYS, KEY_ID, claims(Instant.now().minusSeconds(3600)).build());
+        for (String token : new String[] {expired, "not-a-jwt"}) {
+            client.post().uri("/api/v1/auth/refresh")
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .exchange()
+                    .expectStatus().isOk();
+        }
+    }
+
+    @Test
     @DisplayName("FR-ROLE-01: /api/v1/me is not public; it needs a token at the gateway")
     void meNeedsToken() {
         client.get().uri("/api/v1/me").exchange().expectStatus().isUnauthorized();

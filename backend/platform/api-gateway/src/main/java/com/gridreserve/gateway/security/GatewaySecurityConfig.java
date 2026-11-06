@@ -8,7 +8,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
+import org.springframework.security.oauth2.server.resource.web.server.authentication.ServerBearerTokenAuthenticationConverter;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.security.web.server.authentication.ServerAuthenticationConverter;
 import org.springframework.security.web.server.context.NoOpServerSecurityContextRepository;
 import reactor.core.publisher.Mono;
 
@@ -25,6 +27,8 @@ import java.time.Clock;
 @EnableConfigurationProperties(JwtProperties.class)
 class GatewaySecurityConfig {
 
+    private static final String AUTH_PATH_PREFIX = "/api/v1/auth/";
+
     @Bean
     SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http, ReactiveJwtDecoder decoder,
                                                   GatewaySecurityErrorHandler errors) {
@@ -37,7 +41,7 @@ class GatewaySecurityConfig {
                 .authorizeExchange(exchange -> exchange
                         // Register, login, refresh and logout have no access token yet; identity-service
                         // checks them itself (refresh and logout: cookie + Origin check, FR-AUTH-12).
-                        .pathMatchers("/api/v1/auth/**").permitAll()
+                        .pathMatchers(AUTH_PATH_PREFIX + "**").permitAll()
                         // Temporary M1.1 smoke test.
                         .pathMatchers("/api/v1/ping/**").permitAll()
                         .pathMatchers("/actuator/health/**", "/actuator/info").permitAll()
@@ -46,6 +50,7 @@ class GatewaySecurityConfig {
                         // Everything else, unknown paths included: a valid token first.
                         .anyExchange().authenticated())
                 .oauth2ResourceServer(server -> server
+                        .bearerTokenConverter(bearerTokenOutsideAuthPaths())
                         .jwt(jwt -> jwt.jwtDecoder(decoder))
                         .authenticationEntryPoint(errors)
                         .accessDeniedHandler(errors))
@@ -53,6 +58,19 @@ class GatewaySecurityConfig {
                         .authenticationEntryPoint(errors)
                         .accessDeniedHandler(errors));
         return http.build();
+    }
+
+    /**
+     * Spring checks any Bearer token it finds, even on public paths, and refuses a bad one with 401.
+     * On the auth endpoints that would break refresh: a client that sends its expired access token
+     * along would get {@code TOKEN_EXPIRED} from the very call meant to fix it. So the header is not
+     * read there; these endpoints never use it.
+     */
+    private static ServerAuthenticationConverter bearerTokenOutsideAuthPaths() {
+        ServerBearerTokenAuthenticationConverter bearer = new ServerBearerTokenAuthenticationConverter();
+        return exchange -> exchange.getRequest().getPath().value().startsWith(AUTH_PATH_PREFIX)
+                ? Mono.empty()
+                : bearer.convert(exchange);
     }
 
     /**
