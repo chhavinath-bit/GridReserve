@@ -1,9 +1,9 @@
 package com.gridreserve.identity;
 
+import com.gridreserve.identity.support.ServiceIntegrationTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.test.context.SpringBootTest;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -13,11 +13,7 @@ import java.net.http.HttpResponse;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** Starts the service without Config Server or Eureka and calls it over real HTTP. */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
-        "CONFIG_IMPORT=optional:classpath:/no-config-server.yml",
-        "spring.cloud.config.enabled=false",
-        "eureka.client.enabled=false"
-})
+@ServiceIntegrationTest
 class IdentityServiceApplicationTest {
 
     @Value("${local.server.port}")
@@ -26,8 +22,25 @@ class IdentityServiceApplicationTest {
     private final HttpClient http = HttpClient.newHttpClient();
 
     private HttpResponse<String> get(String path) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).build();
-        return http.send(request, HttpResponse.BodyHandlers.ofString());
+        return get(path, null);
+    }
+
+    private HttpResponse<String> get(String path, String bearerToken) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path));
+        if (bearerToken != null) {
+            request.header("Authorization", "Bearer " + bearerToken);
+        }
+        return http.send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private String demoToken() throws Exception {
+        HttpRequest login = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/v1/auth/login"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                        "{\"email\":\"alice@gridreserve.test\",\"password\":\"demo-alice-pass\"}"))
+                .build();
+        String body = http.send(login, HttpResponse.BodyHandlers.ofString()).body();
+        return body.replaceAll(".*\"accessToken\":\"([^\"]+)\".*", "$1");
     }
 
     @Test
@@ -42,7 +55,8 @@ class IdentityServiceApplicationTest {
     @Test
     @DisplayName("API-05/PLAT-12: an unknown path returns the standard error JSON with a request ID (common-web is active)")
     void unknownPathUsesStandardFormat() throws Exception {
-        HttpResponse<String> response = get("/api/v1/does-not-exist");
+        // Signed in: since M1.3a every path except the public ones needs a token first (else 401).
+        HttpResponse<String> response = get("/api/v1/does-not-exist", demoToken());
 
         assertThat(response.statusCode()).isEqualTo(404);
         assertThat(response.headers().firstValue("X-Request-Id")).isPresent();
