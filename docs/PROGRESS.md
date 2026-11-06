@@ -11,7 +11,8 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 | M1.2 Booking schema, constraints and seed data | Done (owner reviewed; [review guide](reviews/M1.2-review.md)) | 2026-11-05 | `fae582d` (merge of PR #5); config repo `4209388` (merge of PR #2); CI on `main` (`793a526`) green; local `verify` on `main` 2026-11-06: 16 + 29 tests, 0 failures |
 | M1.3a Identity core (register, login, `/me`, RS256 tokens) | Done (owner reviewed; [review guide](reviews/M1.3a-review.md)) | 2026-11-06 | `6dc7ce6` (merge of PR #6); config repo `fd64800` (merge of PR #3); CI on `main` (`6dc7ce6`) green; local `verify` on `main` 2026-11-06: 32 + 44 tests, 0 failures |
 | M1.3b Refresh tokens, logout, register logs in | Done (owner reviewed; [review guide](reviews/M1.3b-review.md)) | 2026-11-06 | `7b7edb9` (merge of PR #7); config repo `aa5775a` (merge of PR #4); CI on `main` (`7b7edb9`) green, 36 + 60 tests |
-| M1.3c Token checks in the gateway and booking-service | Built; **awaiting owner review** ([review guide](reviews/M1.3c-review.md)) | 2026-11-06 | branch `m1.3c-token-verification`; no config repo change |
+| M1.3c Token checks in the gateway and booking-service | Done (owner reviewed; [review guide](reviews/M1.3c-review.md)) | 2026-11-06 | `2792e21` (merge of PR #8); no config repo change; CI on `main` (`2792e21`) green, 36 + 78 tests |
+| M1.3d Sign-in with Google and GitHub | **Dropped** (owner, 2026-11-06): too much work for its value; optional extension, design kept in the docs (D-35 withdrawn). M1.3 is complete with a, b, c. | 2026-11-06 | — |
 
 ---
 
@@ -197,7 +198,7 @@ What the 29 integration tests execute (real `postgres:16` Testcontainer, plain S
 - The readiness check does not include the database (Boot default); decide in M1.9 whether `db` belongs in readiness.
 - `BookingServiceApplicationTest` now needs Docker (it starts the Testcontainer) although it is a `*Test`; rename to `*IT` if you want the naming rule strict (renames need your approval).
 
-## M1.3c Token checks in the gateway and booking-service — Built, awaiting owner review (2026-11-06)
+## M1.3c Token checks in the gateway and booking-service — Done (2026-11-06)
 
 **Built:**
 - api-gateway: Spring Security (reactive) with `common-web`'s `AccessTokenVerification` wrapped as a `ReactiveJwtDecoder`. Public: `/api/v1/auth/**`, `/api/v1/ping/**`, `/actuator/health/**`, `/actuator/info`, `/fallback/**`; every other path (unknown ones included) needs a valid token. 401 in the standard error JSON (`UNAUTHENTICATED`, `TOKEN_EXPIRED`). No role checks at the gateway; the `Authorization` header is forwarded unchanged.
@@ -358,7 +359,7 @@ What the new tests execute (behavior, not smoke): cookie attributes; only the ha
 - The login timing equality (dummy BCrypt hash) is a code-review item, not measured by a test.
 
 ### Open issues for later milestones
-- Social login: **decided 2026-11-06** (D-35): sign-in with Google and GitHub as M1.3d, after M1.3c; link by verified email only. Register starts a session (D-36) in M1.3b. REQUIREMENTS v0.6, ARCHITECTURE §5.4/§16/§19, IMPLEMENTATION_PLAN M1.3, TECH_STACK and CLAUDE.md updated.
+- Social login: decided 2026-11-06 (D-35) as M1.3d, then **dropped the same day** by the owner (too much work for its value); kept as an optional extension, not planned. REQUIREMENTS v0.9. Register starts a session (D-36) in M1.3b. REQUIREMENTS v0.6, ARCHITECTURE §5.4/§16/§19, IMPLEMENTATION_PLAN M1.3, TECH_STACK and CLAUDE.md updated.
 - Possible extension: let accounts created through Google or GitHub set a password (A-29).
 
 ---

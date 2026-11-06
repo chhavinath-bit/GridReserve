@@ -233,7 +233,7 @@ frontend/
 
 | Database | Owner | Main tables |
 |---|---|---|
-| `identity_db` | identity-service | `app_user`, `refresh_token`, `user_identity` (M1.3d), (P6) `venue_manager_assignment` |
+| `identity_db` | identity-service | `app_user`, `refresh_token`, (P6) `venue_manager_assignment` |
 | `booking_db` | booking-service | `member`, `category`, `bookable_type`, `country_time_zone`, `venue`, `bookable`, `booking`, `booking_audit`, `idempotency_record`, (P2) `session`, (P3) `waitlist_entry`, (P5) `outbox_event`, `processed_event`, (P7) `booking_series`, (P8) `queue_entry` |
 | `payment_db` | payment-service (P5) | `payment`, `payment_webhook_event`, `refund`, `outbox_event`, `processed_event` |
 | `membership_db` | membership-service (P6) | `membership_plan`, `membership`, `credit_reservation`, `processed_event` |
@@ -455,7 +455,7 @@ CREATE TABLE refresh_token (
 CREATE INDEX ix_refresh_token_expires ON refresh_token (expires_at);
 CREATE INDEX ix_refresh_token_user ON refresh_token (user_id);
 
--- M1.3d (planned): sign-in with Google / GitHub (D-35). New migration; app_user.password_hash becomes nullable.
+-- Optional extension, NOT planned (D-35 withdrawn 2026-11-06): sign-in with Google / GitHub. Would need a new migration; app_user.password_hash would become nullable.
 CREATE TABLE user_identity (
   id                bigint GENERATED ALWAYS AS IDENTITY,
   user_id           bigint NOT NULL,
@@ -853,7 +853,7 @@ sequenceDiagram
 - **Refresh tokens (D-37):** opaque 256-bit value, stored as SHA-256, one row per login, **not rotated**; refresh slides the expiry to 7 days from now, logout deletes the row, a disabled user is refused at refresh (FR-AUTH-09..13); CSRF checks (FR-AUTH-12). Expired rows are deleted at login, so no cleanup job. SHA-256 rather than BCrypt: the value is random and high-entropy (nothing to brute-force) and must be found by an indexed lookup. Rejected: rotation with token families and reuse detection (more state, a multi-tab race, a cleanup job; judged too heavy for this project), a stateless JWT refresh token (logout could not end a copied token).
 - **Service-to-service authentication** for `/internal/**` and actuator refresh (**D-19, settled 2026-11-06**): short-lived service JWTs signed by identity-service (client-credentials style), verified with the same public keys; built in M1.9 with the first internal call. Rejected: a shared HMAC header per service pair (one more secret per pair, no expiry), network isolation only (no defence if one container is compromised).
 - **Register starts a session (D-36):** `/register` answers like `/login` (access token + refresh cookie); both call one `startSession(user)` (M1.3b).
-- **Sign-in with Google and GitHub (D-35, M1.3d):** Spring Security's OAuth2 client in identity-service. Flow: `/api/v1/auth/oauth2/authorization/{provider}` → provider → `/api/v1/auth/oauth2/callback/{provider}` → find or link or create the user (verified email only) → `startSession` → redirect to the frontend, which calls `/refresh`. No token in URLs; the authorization request lives in a short-lived cookie, not a session, so several identity instances work. The paths sit under `/api/v1/auth/**`, which the gateway already routes. Rejected: tokens in the redirect URL (leak through history and logs), linking by unverified email (account takeover), a server session for the login state (breaks with several instances).
+- **Sign-in with Google and GitHub (optional extension, not planned; D-35 withdrawn 2026-11-06):** design kept for later. Spring Security's OAuth2 client in identity-service. Flow: `/api/v1/auth/oauth2/authorization/{provider}` → provider → `/api/v1/auth/oauth2/callback/{provider}` → find or link or create the user (verified email only) → `startSession` → redirect to the frontend, which calls `/refresh`. No token in URLs; the authorization request lives in a short-lived cookie, not a session, so several identity instances work. The paths sit under `/api/v1/auth/**`, which the gateway already routes. Rejected: tokens in the redirect URL (leak through history and logs), linking by unverified email (account takeover), a server session for the login state (breaks with several instances).
 - **Library (D-34):** Spring Security's OAuth2 resource server with Nimbus JOSE. `common-web` provides the decoder (known `kid`, RS256 signature, expiry by the injected `Clock` with 30 s skew, issuer, audience, `sub`, `role`) and the JSON `401`/`403` handler; each service writes its own `SecurityFilterChain`.
 - **Gateway pre-check and defence in depth (D-38, M1.3c):** the gateway refuses requests without a valid token on every path except `/api/v1/auth/**`, the ping, health/info and the fallbacks (unknown paths included), using the same decoder wrapped for WebFlux. It does not check roles. booking-service and identity-service verify the token again and enforce roles (`/api/v1/admin/**` → ADMIN), because they can be reached inside the network without the gateway. Spring checks any Bearer token it sees, even on public paths, so the auth endpoints ignore the `Authorization` header: otherwise an expired access token sent along with `/refresh` would block the refresh.
 
@@ -905,7 +905,7 @@ flowchart LR
 | D-27 | `common-web` stays thin (error format, request ID, clock; access-token verification from M1.3a) and is wired by Spring Boot auto-configuration; the reactive gateway has its own small equivalents for errors and request IDs. *Amended by D-38:* the gateway uses `common-web`'s token verification | 2026-11-05 (M1.1) |
 | D-19 | Service-to-service authentication: short-lived service JWTs signed by identity-service; built in M1.9 | 2026-11-06 (owner, M1.3) |
 | D-34 | JWT library: Spring Security OAuth2 resource server + Nimbus JOSE instead of jjwt (jjwt-jackson needs Jackson 2 next to Boot 4's Jackson 3; built-in Bearer filters for servlet and reactive) | 2026-11-06 (owner, M1.3) |
-| D-35 | Sign-in with Google (OIDC) and GitHub (OAuth2) through Spring Security's OAuth2 client; link to existing accounts only by verified email; session handed to the SPA through the refresh cookie; built as M1.3d | 2026-11-06 (owner, M1.3) |
+| D-35 | *Withdrawn 2026-11-06 (owner): dropped from Phase 1 as too much work for its value; optional extension.* Was: sign-in with Google (OIDC) and GitHub (OAuth2) through Spring Security's OAuth2 client; link to existing accounts only by verified email; session handed to the SPA through the refresh cookie | 2026-11-06 (owner, M1.3) |
 | D-36 | Registering starts a session like login (one `startSession` used by register, login and provider sign-in); built in M1.3b | 2026-11-06 (owner, M1.3) |
 | D-33 | Config Server: `native` backend on the mounted local clone in `dev`, Git backend on GitHub in `prod`; startup = fail fast + container restart with backoff, no Spring Retry (spike S6) | 2026-11-05 (M1.1) |
 | D-32 | Per-weekday opening hours in P1 (`venue_opening_hours`, optional `bookable_opening_hours`); booking horizon 7 days; Trainer 45 + 15 on a 15-minute grid | 2026-11-05 (owner, M0.3) |
