@@ -38,7 +38,7 @@ public class UserService {
     public UserResponse register(RegisterRequest request) {
         if (!Credentials.fitsBcrypt(request.password())) {
             throw new DomainException(CommonErrorCode.VALIDATION_FAILED,
-                    "The password is too long. Use at most 72 bytes (fewer characters with accents or emoji).");
+                    "The password is too long.");
         }
         AppUser user = new AppUser(Credentials.normalizeEmail(request.email()),
                 passwordEncoder.encode(request.password()), request.displayName().trim(), Role.MEMBER,

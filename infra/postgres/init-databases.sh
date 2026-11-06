@@ -2,6 +2,8 @@
 # Runs once, when the PostgreSQL data volume is first created (docker-entrypoint-initdb.d).
 # Creates one database and one owner per service (PLAT-08: database per service).
 # Credentials come from infra/.env; psql variables (:"name" / :'value') quote them safely.
+
+# ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" means use this superuser to create the database and owner.
 set -euo pipefail
 
 create_service_database() {
