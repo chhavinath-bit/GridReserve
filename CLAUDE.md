@@ -94,7 +94,7 @@ Do this at the start of every session, before proposing or changing anything:
 ## 5. Fixed stack (do not change or add without asking)
 
 - **Frontend:** React + TypeScript, Vite, Tailwind CSS, TanStack Query, React Router, **shadcn/ui components on Radix primitives** (DESIGN_SYSTEM.md). Tests: Vitest + React Testing Library; Playwright for end-to-end tests. Supporting UI packages (D-UI-3: cva, clsx, tailwind-merge, lucide-react, tw-animate-css, sonner, react-day-picker, TanStack Table, self-hosted Inter) and axe (D-UI-4) are listed but **need approval at install time**.
-- **Backend:** Java 21, **Spring Boot 4.x**, Maven multi-module (wrapper `./mvnw`), Spring Security, JWT with jjwt (RS256), Spring Data JPA (Hibernate), Spring Boot Actuator + Micrometer.
+- **Backend:** Java 21, **Spring Boot 4.x**, Maven multi-module (wrapper `./mvnw`), Spring Security, JWT (RS256) with Spring Security's OAuth2 resource server + Nimbus JOSE (replaced jjwt, 2026-11-06), Spring Data JPA (Hibernate), Spring Boot Actuator + Micrometer.
 - **Microservice platform:** Spring Cloud release train compatible with the Boot version (verify on the official compatibility table): Config Server (Git backend), Netflix Eureka, Gateway, LoadBalancer, CircuitBreaker with **Resilience4j** (Retry, RateLimiter, Bulkhead, CircuitBreaker, TimeLimiter). Service-to-service calls with **Spring Cloud OpenFeign** (`@FeignClient`, resolved through Eureka and load-balanced), wrapped in Resilience4j via an adapter class.
 - **Database:** PostgreSQL 16, **one database per service** on one server; migrations with Flyway per service.
 - **Redis:** Phase 4 only. Never the source of truth.
@@ -335,6 +335,7 @@ Rows marked ✓ were run successfully in M1.1 (2026-11-05); the others are plann
 - (2026-11-05) Repository layout: `backend/` (platform, services, libs), `frontend/`, `infra/`; config repo as a sibling folder, read from the local clone in `dev` and from GitHub in `prod`; packages feature-then-layer (`controller`, `dto`, `service`, `entity`, `repository`, `mapper`, `config`); service-to-service calls with Spring Cloud OpenFeign; `gh` CLI installed and logged in.
 - (2026-11-04) Microservices from the start; booking core in one service; database per service; outbox + HTTP push (no broker); Config Server with `dev`/`prod`; per-instance refresh script; Spring Boot 4; Resilience4j patterns; venue country + zone; library seats EXCLUSIVE, reading halls CAPACITY.
 - Keep the build host-agnostic (Dockerfiles + environment variables + config server); the deploy host is chosen before the first Phase 1 deployment.
+- (2026-11-06, M1.3) Tokens are signed and verified with Spring Security's OAuth2 resource server and Nimbus JOSE (`NimbusJwtEncoder` / `NimbusJwtDecoder`) instead of jjwt: Boot-managed versions, no second Jackson, built-in Bearer filters for servlet services and the reactive gateway (D-34). Service-to-service authentication: short-lived service JWTs signed by identity-service, built with the first internal call in M1.9 (D-19). M1.3 is delivered as three PRs: M1.3a identity core, M1.3b refresh tokens, M1.3c verification in gateway and booking.
 
 ### 15.2 Pending decisions: ask before acting
 
@@ -342,7 +343,6 @@ Do not assume an answer for these. When a milestone reaches one, present options
 
 | Item | Needed by | Where described |
 |---|---|---|
-| Service-to-service authentication (D-19) | M1.3 / M1.9 | ARCHITECTURE.md §16 |
 | Deploy host, backups, rollback; must fit ~5 JVMs + PostgreSQL (D-15) | M1.10 | IMPLEMENTATION_PLAN.md §3 |
 | UI supporting packages (D-UI-3) and axe accessibility checks (D-UI-4) | M1.6 / M1.13 | DESIGN_SYSTEM.md §10 |
 | Load-test tool (D-13b) | M1.14 | ARCHITECTURE.md §19 |

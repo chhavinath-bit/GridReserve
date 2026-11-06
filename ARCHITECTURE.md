@@ -425,7 +425,9 @@ CREATE INDEX ix_idempotency_expiry ON idempotency_record (expires_at);
 
 **Why a local `member` table?** The per-member limit (BR-08) needs a row to lock (`SELECT … FOR UPDATE`), and the member-overlap constraint needs a member column. The user table lives in `identity_db`, which the booking service must not touch. A tiny local row (ID only, no personal data) gives a lock target and keeps RES-07 (booking works while identity is down). It is created on first use with `INSERT … ON CONFLICT DO NOTHING`.
 
-### 5.4 Proposed identity_db schema (Phase 1)
+### 5.4 identity_db schema (Phase 1)
+
+> `app_user` implemented in M1.3a (`V1__user_schema.sql`, plus `ck_app_user_email_lower`; constraints named `pk_app_user`, `uq_app_user_email`, `ck_app_user_role`), demo users in `V2__seed_demo_users.sql`. `refresh_token` follows in M1.3b. The migrations are the source of truth.
 
 ```sql
 CREATE TABLE app_user (
@@ -836,7 +838,8 @@ sequenceDiagram
 - **Verification:** gateway (early rejection) and every service (defence in depth) verify signature, `exp`, issuer and audience.
 - **Authorization:** roles via Spring Security in each service; ownership in services (`404` for others' bookings); admins never book for others; VENUE_MANAGER scope (P6) from a `venueIds` claim or lookup (D-26).
 - **Refresh tokens:** opaque, hashed, rotated, family revocation on reuse (FR-AUTH-10), CSRF checks (FR-AUTH-12), revoked on logout and on user disable.
-- **Service-to-service authentication** for `/internal/**` and actuator refresh: **unresolved (D-19)**. Options: (a) short-lived service JWTs signed by identity-service (client-credentials style); (b) a shared HMAC header per service pair; (c) network isolation only. Recommendation: (a), since the signing and verification code already exists.
+- **Service-to-service authentication** for `/internal/**` and actuator refresh (**D-19, settled 2026-11-06**): short-lived service JWTs signed by identity-service (client-credentials style), verified with the same public keys; built in M1.9 with the first internal call. Rejected: a shared HMAC header per service pair (one more secret per pair, no expiry), network isolation only (no defence if one container is compromised).
+- **Library (D-34):** Spring Security's OAuth2 resource server with Nimbus JOSE. `common-web` provides the decoder (known `kid`, RS256 signature, expiry by the injected `Clock` with 30 s skew, issuer, audience, `sub`, `role`) and the JSON `401`/`403` handler; each service writes its own `SecurityFilterChain`.
 
 ## 17. Observability and performance testing
 
@@ -883,7 +886,9 @@ flowchart LR
 | D-20 | Config server reached by a fixed URL (`CONFIG_SERVER_URL`), not through Eureka | 2026-11-05 (M1.1) |
 | D-21 | Resilience4j through Spring Cloud CircuitBreaker 5.0.3 (Resilience4j 2.3.0) works on Spring Boot 4.1.2: Feign circuit breaker with fallback (spike S2) and gateway route breaker with JSON fallback (S3) verified | 2026-11-05 (M1.1) |
 | D-22 | Gateway: Spring Cloud Gateway Server WebFlux | 2026-11-05 (M1.1) |
-| D-27 | `common-web` stays thin and servlet-only (error format, request ID, clock) and is wired by Spring Boot auto-configuration; the reactive gateway has its own small equivalents | 2026-11-05 (M1.1) |
+| D-27 | `common-web` stays thin and servlet-only (error format, request ID, clock; access-token verification from M1.3a) and is wired by Spring Boot auto-configuration; the reactive gateway has its own small equivalents | 2026-11-05 (M1.1) |
+| D-19 | Service-to-service authentication: short-lived service JWTs signed by identity-service; built in M1.9 | 2026-11-06 (owner, M1.3) |
+| D-34 | JWT library: Spring Security OAuth2 resource server + Nimbus JOSE instead of jjwt (jjwt-jackson needs Jackson 2 next to Boot 4's Jackson 3; built-in Bearer filters for servlet and reactive) | 2026-11-06 (owner, M1.3) |
 | D-33 | Config Server: `native` backend on the mounted local clone in `dev`, Git backend on GitHub in `prod`; startup = fail fast + container restart with backoff, no Spring Retry (spike S6) | 2026-11-05 (M1.1) |
 | D-32 | Per-weekday opening hours in P1 (`venue_opening_hours`, optional `bookable_opening_hours`); booking horizon 7 days; Trainer 45 + 15 on a 15-minute grid | 2026-11-05 (owner, M0.3) |
 | D-04 | Outbox introduced in P5 with HTTP push, no broker | 2026-11-04 |
@@ -910,7 +915,6 @@ flowchart LR
 | D-15 | Deploy host, backups, rollback (must fit ~5 JVMs) | Depends on host | Decide at M1.10 with current limits | M1.10 |
 | D-16b | DST-ambiguous local times in the slot grid | first occurrence / both / skip | Show both with UTC offset | P7 |
 | D-17 | Overlapping sessions on one CAPACITY bookable | forbid / allow | Forbid | P2 |
-| D-19 | Service-to-service authentication | service JWT / HMAC / network only | Service JWT signed by identity | M1.3 (actuator refresh), P5 (events) |
 | D-23 | Public-key distribution | config repo / JWKS endpoint | Config repo in P1, JWKS later | P1 / later |
 | D-24 | Distributed tracing | Micrometer Tracing + Zipkin / OTLP / none | Add when approved | P5+ |
 | D-25 | Membership credits | reservation saga / keep credits in booking-service | Decide at P6 start | P6 |

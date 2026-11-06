@@ -23,7 +23,7 @@
 | Data access | Spring Data JPA (Hibernate) + explicit SQL where needed | Entities, repositories, transactions | P1 |
 | Migrations | Flyway, per service | Versioned SQL schema and seed data | P1 |
 | Security | Spring Security | Filter chains, roles, BCrypt, CORS | P1 |
-| Tokens | jjwt (RS256) | Sign (identity) and verify (all) JWT access tokens | P1 |
+| Tokens | Spring Security OAuth2 resource server + Nimbus JOSE (RS256) | Sign (identity) and verify (all) JWT access tokens (replaced jjwt, D-34) | P1 |
 | Frontend | React + TypeScript + Tailwind CSS | Single-page app | P1 |
 | Frontend tooling | Vite, TanStack Query, React Router | Build, server state, routing | P1 |
 | UI components | shadcn/ui (copied into the repo) on Radix primitives; design tokens as CSS variables | Accessible, reusable, themeable components (DESIGN_SYSTEM.md) | P1 |
@@ -88,7 +88,7 @@ Each section: **role**, **why**, **how it interacts**, **alternatives rejected**
 
 ### 3.2 Maven (multi-module)
 
-- **Role.** One parent `backend/pom.xml` inherits the Spring Boot parent and imports the Spring Cloud BOM in `<dependencyManagement>`, so module POMs declare dependencies **without versions**; libraries no BOM covers (e.g. jjwt) are pinned once as properties in the parent; plugin versions live in `<pluginManagement>`. Modules: `platform/config-server`, `platform/discovery-server`, `platform/api-gateway`, `services/identity-service`, `services/booking-service`, later services, and `libs/common-web` (shared error format, request ID, JWT verification, event envelope).
+- **Role.** One parent `backend/pom.xml` inherits the Spring Boot parent and imports the Spring Cloud BOM in `<dependencyManagement>`, so module POMs declare dependencies **without versions**; libraries no BOM covers are pinned once as properties in the parent; plugin versions live in `<pluginManagement>`. Modules: `platform/config-server`, `platform/discovery-server`, `platform/api-gateway`, `services/identity-service`, `services/booking-service`, later services, and `libs/common-web` (shared error format, request ID, JWT verification, event envelope).
 - **Why.** One command builds and tests everything (`./mvnw verify`); versions are consistent across services; Maven is the default in Spring docs.
 - **Interactions.** CI builds all modules; each service module produces its own executable JAR and Docker image.
 - **Alternatives rejected.** *Gradle*: flexible but extra learning cost. *Repo per service*: owner decision D6 (monorepo).
@@ -166,14 +166,14 @@ Each section: **role**, **why**, **how it interacts**, **alternatives rejected**
 - **Rules.** Never the source of truth; never decides a booking; short timeouts; failures fall back (cache → PostgreSQL; rate limiting fails open) and are covered by a CircuitBreaker (NFR-REL-01).
 - **Alternatives rejected.** *In-process cache only*: not shared across instances. *Redis locks for booking*: unsafe and unnecessary.
 
-### 3.12 Spring Security and jjwt
+### 3.12 Spring Security and JWT (resource server + Nimbus JOSE)
 
 - **Identity service:** BCrypt password hashing; login issues an **RS256** access token (15 min) signed with the private key (environment variable) and sets the rotating **refresh-token cookie** (httpOnly, `SameSite=Strict`, path `/api/v1/auth`); refresh and logout endpoints with Origin + custom-header CSRF checks (FR-AUTH-09..12).
 - **Gateway:** verifies the JWT signature and expiry before routing (cheap early rejection); applies CORS.
-- **All services:** stateless Spring Security filter chain with a JWT filter that verifies the token with the **public key** (from config) and builds the principal (`userId`, `role`); URL and method security; ownership checks in services; `401/403` in the shared error format.
+- **All services:** stateless Spring Security filter chain; Spring's Bearer-token filter verifies the token with the **public keys** (from config, keyed by `kid`) through a decoder built in `common-web`, and the principal carries `sub` (user ID) and the `role` authority; URL and method security; ownership checks in services; `401/403` in the shared error format (`401 TOKEN_EXPIRED` for an expired token).
 - **Why RS256 now (was HS256).** With several services verifying tokens, a shared HMAC secret would let any service mint tokens. With RS256 only the identity service can sign; everyone else verifies.
-- **Why jjwt.** Explicit, readable API; supports RS256 and key IDs.
-- **Alternatives considered.** *Spring Authorization Server* (full OAuth2): more than this project needs. *Spring Security's built-in OAuth2 JWT support (Nimbus) with a JWKS endpoint*: a good option for automatic key rotation; kept as a later improvement (D-23).
+- **Why Spring's resource server + Nimbus (D-34, 2026-11-06; replaced jjwt).** It is the standard Spring Security way; versions are managed by Spring Boot; the Bearer filter exists for servlet services and for the reactive gateway, so we write no token filter ourselves; signing uses `NimbusJwtEncoder`. jjwt's JSON module needs Jackson 2, which would sit next to Boot 4's Jackson 3.
+- **Alternatives considered.** *jjwt*: explicit API, but two Jackson versions and hand-written filters (servlet and reactive). *Spring Authorization Server* (full OAuth2): more than this project needs. *A JWKS endpoint* on identity for automatic key rotation: a later improvement (D-23); keys come from the config repo for now.
 
 ### 3.13 React, TypeScript, Tailwind, Vite, TanStack Query, React Router
 
@@ -247,7 +247,7 @@ Each section: **role**, **why**, **how it interacts**, **alternatives rejected**
 | Redis | 7 (P4) | — |
 | Node.js | Current LTS | — |
 | React, React Router, TanStack Query, Tailwind, Vite, Vitest, Playwright | Latest stable | — |
-| jjwt, Flyway, Testcontainers | Latest stable, managed by BOMs where possible | Artifact names may differ on Boot 4 |
+| Nimbus JOSE, Flyway, Testcontainers | Latest stable, managed by BOMs where possible | Artifact names may differ on Boot 4 |
 
 ## 6. Note on CLAUDE.md
 

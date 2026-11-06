@@ -87,6 +87,21 @@ services:
       args:
         MODULE: services/identity-service
     image: gridreserve/identity-service:dev
+    environment:
+      <<: *java-env
+      # identity-service owns identity_db (PLAT-08) and alone holds the signing key (NFR-SEC-02);
+      # all from infra/.env.
+      DB_HOST: postgres
+      IDENTITY_DB_USER: ${IDENTITY_DB_USER}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fs", "http://localhost:8081/actuator/health/readiness"]
       interval: 5s

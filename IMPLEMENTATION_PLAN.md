@@ -64,7 +64,7 @@ M1.1 platform skeleton + CI + Boot 4 spikes ─► M1.2 booking schema & constra
 | B-6 | Deploy host, backups, rollback (D-15); must fit ~5 JVMs + PostgreSQL | M1.10 | Decide at M1.10 after checking current limits. |
 | B-7 | Load-test tool (D-13b) | M1.14 | JUnit harness first. |
 | B-8 | Resilience4j on Spring Boot 4 (D-21), gateway variant (D-22), config lookup (D-20), shared lib scope (D-27) | M1.1 | Settle by the M1.1 spike. |
-| B-9 | Service-to-service authentication (D-19) | M1.3 / M1.9 | Service JWT signed by identity (recommended). |
+| B-9 | Service-to-service authentication (D-19) | M1.3 / M1.9 | **Decided** 2026-11-06: service JWTs signed by identity, built in M1.9. |
 
 ## 4. Phase 0 — Environment and repositories
 
@@ -132,6 +132,8 @@ Phase goal (PROJECT.md §8): EXCLUSIVE booking end to end through the gateway; 5
 7. **Done.** Merged; PROGRESS lists each constraint test.
 
 ### M1.3 Identity service and token verification `L`
+
+Delivered as three PRs (owner decision 2026-11-06): **M1.3a** identity core (identity_db `app_user` + demo users, register, login with access token, `/me`, RS256 signing, shared verification in `common-web`); **M1.3b** refresh tokens (`refresh_token` table, cookie, rotation, family revocation, logout, CSRF checks); **M1.3c** verification in the gateway and booking-service, `MemberProvisioner`. Tokens use Spring Security's resource server + Nimbus JOSE (D-34).
 
 1. **Objective.** Register, login, refresh, logout work through the gateway; access tokens are verified by the gateway and the booking service; the booking service provisions local member rows.
 2. **Tasks.** identity_db migrations (`app_user`, `refresh_token`, seeded ADMIN + 2 MEMBERs with BCrypt hashes); `JwtSigner` (RS256, `kid`, private key from env); refresh tokens (opaque, hashed, rotation with conditional UPDATE, family revocation, cookie attributes, Origin + `X-GridReserve-Client` check); `/auth/register|login|refresh|logout`, `/me`; JWT verification filter in `common-web` (public key from config) used by booking-service; gateway JWT pre-check filter; `MemberProvisioner` (`INSERT … ON CONFLICT DO NOTHING`); decide D-19 (service credentials) for later internal calls.

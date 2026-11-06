@@ -9,6 +9,7 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 | M0.3 Confirm decisions and assumptions | Done | 2026-11-05 | `74ea039` (merge of PR #1) |
 | M1.1 Platform skeleton, CI and Boot 4 spikes | Done (owner reviewed; [review guide](reviews/M1.1-review.md)) | 2026-11-05 | `9d636e0` (merge of PR #2); config repo `ae47541` (merge of PR #1); CI on `main` green, 16 tests |
 | M1.2 Booking schema, constraints and seed data | Done (owner reviewed; [review guide](reviews/M1.2-review.md)) | 2026-11-05 | `fae582d` (merge of PR #5); config repo `4209388` (merge of PR #2); CI on `main` (`793a526`) green; local `verify` on `main` 2026-11-06: 16 + 29 tests, 0 failures |
+| M1.3a Identity core (register, login, `/me`, RS256 tokens) | Built; **awaiting owner review** ([review guide](reviews/M1.3a-review.md)) | 2026-11-06 | branch `m1.3a-identity-core`; config repo branch `m1.3a-identity-jwt` |
 
 ---
 
@@ -193,6 +194,63 @@ What the 29 integration tests execute (real `postgres:16` Testcontainer, plain S
 ### Open issues for later milestones
 - The readiness check does not include the database (Boot default); decide in M1.9 whether `db` belongs in readiness.
 - `BookingServiceApplicationTest` now needs Docker (it starts the Testcontainer) although it is a `*Test`; rename to `*IT` if you want the naming rule strict (renames need your approval).
+
+## M1.3a Identity core — Built, awaiting owner review (2026-11-06)
+
+**Built:**
+- `common-web`: shared access-token verification (`AccessTokenVerification`, `JwtProperties`, `PemKeys`, `JsonSecurityErrorHandler`, `CommonWebSecurityAutoConfiguration`). A token is accepted only with a known `kid`, a valid RS256 signature, not expired by the injected `Clock` (30 s skew), our issuer and audience, and `sub` + `role`. Security failures use the standard error JSON: `401 UNAUTHENTICATED`, `401 TOKEN_EXPIRED`, `403 FORBIDDEN`. Active only in services that declare the resource-server starter (optional dependency), so booking-service is unchanged until M1.3c.
+- identity-service: Flyway `V1__user_schema` (`app_user`; `pk_app_user`, `uq_app_user_email`, `ck_app_user_email_lower`, `ck_app_user_role`), `V2__seed_demo_users` (ADMIN + 2 MEMBERs, BCrypt cost 10). `POST /api/v1/auth/register` (always MEMBER, email lower-cased, duplicate → `409 EMAIL_TAKEN` decided by the unique constraint), `POST /api/v1/auth/login` (access token only; identical `401 INVALID_CREDENTIALS` and one BCrypt check for unknown email, wrong password and disabled account), `GET /api/v1/me`. RS256 signing with `kid` (`NimbusJwtEncoder`); startup fails if `JWT_PRIVATE_KEY` does not match the published public key. Stateless security; `ddl-auto: validate`, `open-in-view: false`.
+- Config repo: `gridreserve.jwt` (issuer, audience, dev public key `dev-2026-11`) in `application.yml`; identity datasource and signing settings in `identity-service.yml` (placeholders only). Compose passes the identity DB credentials and `JWT_PRIVATE_KEY`; `.env.example` explains how to generate a key pair.
+
+**Dependencies added (approved 2026-11-06):** identity-service: `spring-boot-starter-security-oauth2-resource-server`, `spring-boot-starter-data-jpa`, `spring-boot-starter-flyway`, `flyway-database-postgresql`, `postgresql`; test: `spring-boot-starter-security-test`, `spring-boot-testcontainers`, `testcontainers-postgresql`, `testcontainers-junit-jupiter`. common-web: `spring-boot-starter-security-oauth2-resource-server` (optional). All BOM-managed: Spring Security 7.1.2, Nimbus JOSE 10.9.1. (`spring-boot-starter-oauth2-resource-server` is deprecated in Boot 4 in favour of the `-security-` name used here.)
+
+**Decisions settled:** D-34 JWT library = Spring Security resource server + Nimbus JOSE instead of jjwt; D-19 service-to-service auth = service JWTs signed by identity, built in M1.9; M1.3 split into three PRs (a, b, c). CLAUDE.md, TECH_STACK.md, ARCHITECTURE.md and IMPLEMENTATION_PLAN.md updated.
+
+### Test results
+
+`cd backend && ./mvnw -B verify` on 2026-11-06: **BUILD SUCCESS**, 76 tests, 0 failures, 0 skipped.
+
+| Module | Surefire (`*Test`) | Failsafe (`*IT`) |
+|---|---|---|
+| common-web | 20 (9 new in `AccessTokenVerificationTest`, 3 in `JsonSecurityErrorHandlerTest`) | — |
+| config-server / discovery-server / api-gateway | 1 / 1 / 2 | — |
+| identity-service | 6 (`IdentityServiceApplicationTest` 2, `JwtSigningConfigTest` 4) | 15 (`AuthFlowIT` 13, `UserSchemaIT` 2) |
+| booking-service | 2 | 29 (unchanged) |
+
+| Class | What it proves |
+|---|---|
+| `AccessTokenVerificationTest` | valid token accepted with `ROLE_MEMBER`; expired → `token_expired`; 29 s past expiry still accepted, 31 s not; tampered payload, wrong key under a known `kid`, unknown `kid`, missing `kid`, wrong issuer, wrong audience, missing `role` all rejected; PEM with literal `\n` |
+| `JsonSecurityErrorHandlerTest` | 401 `UNAUTHENTICATED` (with `WWW-Authenticate: Bearer`, no reason leaked), 401 `TOKEN_EXPIRED`, 403 `FORBIDDEN`, all with path and request ID |
+| `JwtSigningConfigTest` | matching key pair builds the signer; mismatched private key and unpublished `kid` stop startup; the key never appears in messages or `toString` |
+| `AuthFlowIT` · registration | 201 MEMBER even when the body says `"role":"ADMIN"`; email lower-cased; no hash or password in the response; other-case duplicate → 409; **10 parallel registrations of one email → exactly one 201, nine 409**; short password and invalid email → 400 field errors; 40 × `é` (80 bytes) → 400, not 500 |
+| `AuthFlowIT` · login | 15-minute RS256 token with `kid`, `sub` = user ID, `role`, no email or name; wrong password and unknown email give identical status, code and message; all three demo accounts log in, admin token says ADMIN |
+| `AuthFlowIT` · `/me` | 200 with the token's user; no token → 401 with request ID; expired → `TOKEN_EXPIRED`; foreign key → 401; validly signed token for a missing user → 401 |
+| `UserSchemaIT` | demo accounts seeded with `$2a$10$` hashes; the database rejects a non-lower-case email (`ck_app_user_email_lower`) |
+
+### Checks that the tests bite
+
+| Experiment | Result |
+|---|---|
+| Changed the constraint name in `ConstraintViolations` to `uq_typo` (reverted) | exactly `duplicateEmailInOtherCase_FRAUTH02` and `concurrentRegistrationsOneWinner_FRAUTH02` fail (duplicate becomes a 500) |
+
+### Compose stack (dev key generated locally; private key only in `infra/.env`)
+
+| Check | Result |
+|---|---|
+| `docker compose up -d --build --wait` | all six containers healthy; identity log: `identity-db-pool` started, Flyway applied V1–V2 to `identity_db` |
+| `POST /api/v1/auth/login` (alice) through the gateway | 200, token of 538 characters |
+| `GET /api/v1/me` with / without token | 200 `{"id":2,"email":"alice@gridreserve.test",…,"role":"MEMBER"}` / 401 `UNAUTHENTICATED` with `WWW-Authenticate: Bearer` |
+| wrong password | 401 `INVALID_CREDENTIALS` |
+| register `Carol.Demo@Example.test`, then `carol.demo@example.test` | 201 (stored lower-cased) / 409 `EMAIL_TAKEN` |
+
+### Not covered yet
+- The gateway does not check tokens yet, and booking-service has no security (M1.3c, FS-14/16 at both layers).
+- No refresh token or cookie; login returns only the access token (M1.3b).
+- `/internal/**` is still open inside the network (D-19, M1.9).
+- The login timing equality (dummy BCrypt hash) is a code-review item, not measured by a test.
+
+### Open issues for later milestones
+- Social login (Google, GitHub) raised by the owner on 2026-11-06: not in PROJECT.md or REQUIREMENTS.md; needs a scope decision (see the M1.3a PR discussion).
 
 ---
 
