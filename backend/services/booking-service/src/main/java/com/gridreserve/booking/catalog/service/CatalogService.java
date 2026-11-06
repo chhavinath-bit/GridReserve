@@ -27,6 +27,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -64,9 +65,13 @@ public class CatalogService {
         this.rules = rules;
     }
 
-    /** All categories with their types: two queries, however many there are. */
+    /**
+     * All categories with their types: two queries, however many there are. Types that can be booked
+     * now (EXCLUSIVE) come first, then by label; seed IDs carry no meaningful order.
+     */
     public List<CategoryResponse> categories() {
-        Map<Long, List<BookableType>> typesByCategory = types.findAllByOrderByIdAsc().stream()
+        Map<Long, List<BookableType>> typesByCategory = types.findAll().stream()
+                .sorted(Comparator.comparing(BookableType::getBookingModel).thenComparing(BookableType::getLabel))
                 .collect(Collectors.groupingBy(type -> type.getCategory().getId()));
         return categories.findAll(Sort.by("id")).stream()
                 .map(category -> CatalogMapper.toResponse(category,
