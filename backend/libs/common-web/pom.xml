@@ -13,7 +13,7 @@
 
     <artifactId>common-web</artifactId>
     <name>common-web</name>
-    <description>Shared web plumbing for servlet services: error format, request ID, clock. No business code.</description>
+    <description>Shared web plumbing for servlet services: error format, request ID, clock, access-token verification. No business code.</description>
 
     <dependencies>
         <dependency>
@@ -23,6 +23,14 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <!-- Access-token verification (Spring Security resource server, Nimbus JOSE). Optional: a service
+             gets it only by declaring the starter itself, and the security auto-configuration stays off
+             in services without it. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
+            <optional>true</optional>
         </dependency>
 
         <dependency>
