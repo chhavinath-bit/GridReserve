@@ -18,7 +18,7 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | Lambdas and method references | `x -> x + 1`, `AppUser::getEmail`: short functions passed as arguments. | Everywhere in Spring config (`auth -> auth.requestMatchers(...)`) and AssertJ | M1.1 |
 | Streams | `list.stream().map(...).filter(...).toList()`: transform collections without loops. | `GlobalExceptionHandler` field errors, `AccessTokenVerification` key list | M1.1 |
 | Text blocks | `"""` multi-line strings; used for SQL and JSON in tests. | `SeedDataIT`, `AuthFlowIT` | M1.2 |
-| Pattern matching `instanceof` | `if (x instanceof Foo foo)` checks the type and casts in one step. | `ConstraintViolations`, `JsonSecurityErrorHandler.isExpired` | M1.3a |
+| Pattern matching `instanceof` | `if (x instanceof Foo foo)` checks the type and casts in one step. | `ConstraintViolations`, `AccessTokenVerification.isExpired` | M1.3a |
 | Annotations and meta-annotations | `@Something` attaches metadata; an annotation can carry other annotations, so `@ServiceIntegrationTest` bundles several. `@Retention(RUNTIME)` keeps it visible to frameworks. | `ServiceIntegrationTest` | M1.2 |
 | UTF-8 bytes vs characters | `"é".length()` is 1 character but 2 bytes. Matters when a limit is in bytes (BCrypt: 72). | `Credentials.fitsBcrypt` | M1.3a |
 | `BigInteger`, `KeyFactory`, key specs | Java's crypto API: turn encoded bytes (X.509 / PKCS#8) into `RSAPublicKey` / `RSAPrivateKey`; compare modulus to check a key pair. | `PemKeys`, `JwtSigningConfig.belongTogether` | M1.3a |
@@ -39,6 +39,7 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | Docker multi-stage build | Stage 1 compiles with the JDK; stage 2 copies only the jar into a smaller JRE image and runs as a non-root user. | `backend/Dockerfile` | M1.1 |
 | Docker Compose | Starts all containers on one network. `depends_on: condition: service_healthy` + `healthcheck` = start order by health, not sleeps. `${VAR}` comes from `infra/.env`. YAML anchors (`&java-env`, `<<: *java-env`) reuse blocks. | `infra/compose.yaml` | M1.1 |
 | GitHub Actions | A workflow runs `./mvnw -B verify` on every push and PR; Docker is available, so Testcontainers works in CI. | `.github/workflows/ci.yml` | M1.1 |
+| Optional dependency used to keep an app reactive | If a jar puts both the servlet (webmvc/Tomcat) and the reactive (WebFlux/Netty) stack on the classpath, Spring Boot starts a servlet app. Marking webmvc `optional` in `common-web` means the gateway gets only the token code it needs. Check with `./mvnw -pl platform/api-gateway -am dependency:tree`. | `libs/common-web/pom.xml`, `platform/api-gateway/pom.xml` | M1.3c |
 
 ## 3. Spring core and Spring Boot
 
@@ -94,6 +95,8 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | `@Modifying` JPQL `UPDATE` / `DELETE` | A repository method that runs one bulk statement and returns how many rows it changed, without loading entities. The count is the answer (1 = done, 0 = refused). | `RefreshTokenRepository.extend`, `deleteByTokenHash`, `deleteExpired` | M1.3b |
 | Conditional `UPDATE` as check-and-act | `UPDATE … WHERE <still valid>`: checking and changing happen in one statement, so no other request can slip in between. | `RefreshTokenRepository.extend` (`expires_at > :now`) | M1.3b |
 | `char(n)` vs `varchar`, `@JdbcTypeCode` | `char(64)` is fixed length. Hibernate assumes `varchar` for a `String`; `@JdbcTypeCode(SqlTypes.CHAR)` tells it otherwise, or `ddl-auto: validate` refuses to start. | `RefreshToken.tokenHash` | M1.3b |
+| `INSERT … ON CONFLICT DO NOTHING` | Insert a row unless one with the same key exists, in one statement. Under parallel calls PostgreSQL lets exactly one insert win; the others do nothing instead of failing. Returns 1 or 0 rows. | `MemberRepository.insertIfAbsent` | M1.3c |
+| Native `@Query` | `nativeQuery = true` sends plain PostgreSQL SQL instead of JPQL, needed for PostgreSQL-only syntax such as `ON CONFLICT`. | `MemberRepository` | M1.3c |
 
 ## 6. Spring Cloud and the platform
 
@@ -106,6 +109,7 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | OpenFeign | Declarative HTTP client: an interface with `@FeignClient(name=...)`, resolved through Eureka, with a fallback class. | `IdentityClient`, `IdentityClientFallback` | M1.1 |
 | Resilience4j CircuitBreaker | Stops calling a failing downstream for a while and uses the fallback. | gateway route breaker, Feign spike | M1.1 |
 | Actuator health probes | `/actuator/health/liveness` and `/readiness`; Compose waits on readiness. | config repo `management`, Compose healthchecks | M1.1 |
+| `Mono.fromCallable` | Wraps a normal method call as a reactive result. Fine on the event loop only if the call does no waiting (network, disk); checking a token with in-memory keys is pure computation. | `GatewaySecurityConfig.reactiveJwtDecoder` | M1.3c |
 
 ## 7. Security (identity and tokens)
 
@@ -131,6 +135,11 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | CSRF with cookies; Origin + custom header | A browser attaches cookies even to requests another site triggers. Other sites cannot set our `Origin`, and a custom header from another site needs CORS approval, so checking both proves the call came from our app. | `ClientCheck` | M1.3b |
 | SHA-256 vs BCrypt for stored secrets | BCrypt is slow and salted, for guessable passwords. A random 256-bit token cannot be guessed, and we must find it by its hash, so a fast unsalted SHA-256 is right. | `RefreshTokens.hash` | M1.3b |
 | Stateful sessions vs stateless tokens | Access tokens are checked without a database (fast, but cannot be revoked); the refresh token has a row (can be ended at logout). We use both: short stateless + long stateful. | `AccessTokenIssuer` vs `RefreshTokenService` | M1.3b |
+| Reactive Spring Security (`SecurityWebFilterChain`, `ServerHttpSecurity`) | The WebFlux version of the filter chain: `authorizeExchange` + `pathMatchers` instead of `authorizeHttpRequests` + `requestMatchers`; `ServerAuthenticationEntryPoint` / `ServerAccessDeniedHandler` instead of the servlet handlers. | `GatewaySecurityConfig`, `GatewaySecurityErrorHandler` | M1.3c |
+| Defence in depth | Check at the edge (gateway) **and** at the service. The gateway rejects early and cheaply; the service still verifies because it can be reached without the gateway, and only it knows which roles its endpoints need. | `GatewaySecurityConfig`, booking `SecurityConfig` | M1.3c |
+| `hasRole("ADMIN")` and 403 vs 404 | A URL rule needing the `ROLE_ADMIN` authority. Security runs before Spring MVC looks for a controller, so a MEMBER gets 403 even where no endpoint exists yet, and an ADMIN gets 404. | booking `SecurityConfig`, `BookingSecurityIT` | M1.3c |
+| Bearer token resolver / converter | The part of Spring Security that reads `Authorization: Bearer …`. Spring checks any token it finds, even on public paths, and answers 401 for a bad one, so we switch it off on `/api/v1/auth/**` (an expired token must not block `/refresh`). | `GatewaySecurityConfig.bearerTokenOutsideAuthPaths`, identity `SecurityConfig` | M1.3c |
+| `NoOpServerSecurityContextRepository` | Tells reactive Spring Security not to store who the caller is between requests: stateless, every request brings its token. | `GatewaySecurityConfig` | M1.3c |
 
 ## 8. Testing
 
@@ -147,6 +156,8 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | `MockHttpServletRequest` | A fake request object from `spring-test`, to unit-test code that reads headers without starting a server. | `ClientCheckTest` | M1.3b |
 | Changing the database directly in a test | Instead of waiting 7 days, the test sets `expires_at` with `JdbcTemplate`; time-based behavior is tested without sleeping. | `RefreshFlowIT.setExpiresAt` | M1.3b |
 | Mutation check (by hand) | Break one rule on purpose and confirm a test fails; proves the test really covers that rule. | review guides, "Make it fail on purpose" | M1.3b |
+| Stub upstream with the JDK `HttpServer` | `com.sun.net.httpserver.HttpServer` (built into the JDK) stands in for a service behind the gateway, so a gateway test needs no other service and no new library. | `GatewayTokenCheckIT` | M1.3c |
+| `@DynamicPropertySource` | Adds properties whose value is known only at runtime (the stub's random port) before the Spring context starts. | `GatewayTokenCheckIT` | M1.3c |
 
 ## 9. Architecture ideas behind the code
 

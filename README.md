@@ -2,7 +2,7 @@
 
 One booking platform for many kinds of venues: library rooms and seats, sports courts, parking bays, clinic appointments and gym sessions. A member picks a category, a venue and a bookable, holds a time slot for five minutes and confirms it. Double-booking is impossible, even under heavy concurrent load and with several service instances running.
 
-> **Status: Phase 1, M1.3b.** Config server, Eureka, gateway, identity and booking services run together. identity-service registers users (and logs them in at once), issues RS256 access tokens plus a refresh-token cookie (sliding 7 days, logout ends it) and answers `/api/v1/me`; booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. Token checks in the gateway and booking-service (M1.3c) and sign-in with Google and GitHub (M1.3d) are next; no booking API yet. Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
+> **Status: Phase 1, M1.3c.** Config server, Eureka, gateway, identity and booking services run together. identity-service registers users (and logs them in at once), issues RS256 access tokens plus a refresh-token cookie (sliding 7 days, logout ends it) and answers `/api/v1/me`. The gateway refuses requests without a valid access token, and booking-service checks the token and the role again itself, without calling identity-service. booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. Sign-in with Google and GitHub (M1.3d) is next; no booking API yet. Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## What this project demonstrates
 
@@ -83,6 +83,11 @@ TOKEN=$(curl -s localhost:8080/api/v1/auth/login -H 'Content-Type: application/j
 curl -s localhost:8080/api/v1/me -H "Authorization: Bearer $TOKEN"     # 200, Alice
 curl -s localhost:8080/api/v1/me                                      # 401 UNAUTHENTICATED
 
+# The gateway checks the token before routing; booking-service checks it, and the role, again
+curl -s localhost:8080/api/v1/categories                                       # 401 from the gateway
+curl -s localhost:8080/api/v1/categories -H "Authorization: Bearer $TOKEN"     # passes; 404 until the catalog API (M1.4)
+curl -s localhost:8080/api/v1/admin/bookings -H "Authorization: Bearer $TOKEN" # 403 FORBIDDEN: Alice is a MEMBER
+
 # Register a new member (always MEMBER; the email is stored lower-cased). Registering also logs in:
 # the answer is the same as for login (access token + refresh cookie).
 curl -s localhost:8080/api/v1/auth/register -H 'Content-Type: application/json' \
@@ -114,7 +119,7 @@ cd backend
 ./mvnw -B verify
 ```
 
-`verify` runs unit tests (`*Test`, Surefire) and integration tests against a real PostgreSQL 16 in a Testcontainer (`*IT`, Failsafe). The schema guarantees are proven in `services/booking-service/src/test/java/com/gridreserve/booking/schema/BookingConstraintsIT.java`; registration, login and tokens in `services/identity-service/src/test/java/com/gridreserve/identity/auth/AuthFlowIT.java`; the refresh cookie, logout and the CSRF check in `RefreshFlowIT.java` next to it. Tests generate throwaway keys; no key is needed to run them.
+`verify` runs unit tests (`*Test`, Surefire) and integration tests against a real PostgreSQL 16 in a Testcontainer (`*IT`, Failsafe). The schema guarantees are proven in `services/booking-service/src/test/java/com/gridreserve/booking/schema/BookingConstraintsIT.java`; registration, login and tokens in `services/identity-service/src/test/java/com/gridreserve/identity/auth/AuthFlowIT.java`; the refresh cookie, logout and the CSRF check in `RefreshFlowIT.java` next to it. The gateway's token check is in `platform/api-gateway/src/test/java/com/gridreserve/gateway/GatewayTokenCheckIT.java`, booking-service's in `services/booking-service/src/test/java/com/gridreserve/booking/config/BookingSecurityIT.java`. Tests generate throwaway keys; no key is needed to run them.
 
 All demo data is fictional.
 
