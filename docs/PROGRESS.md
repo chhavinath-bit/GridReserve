@@ -9,7 +9,7 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 | M0.3 Confirm decisions and assumptions | Done | 2026-11-05 | `74ea039` (merge of PR #1) |
 | M1.1 Platform skeleton, CI and Boot 4 spikes | Done (owner reviewed; [review guide](reviews/M1.1-review.md)) | 2026-11-05 | `9d636e0` (merge of PR #2); config repo `ae47541` (merge of PR #1); CI on `main` green, 16 tests |
 | M1.2 Booking schema, constraints and seed data | Done (owner reviewed; [review guide](reviews/M1.2-review.md)) | 2026-11-05 | `fae582d` (merge of PR #5); config repo `4209388` (merge of PR #2); CI on `main` (`793a526`) green; local `verify` on `main` 2026-11-06: 16 + 29 tests, 0 failures |
-| M1.3a Identity core (register, login, `/me`, RS256 tokens) | Built; **awaiting owner review** ([review guide](reviews/M1.3a-review.md)) | 2026-11-06 | branch `m1.3a-identity-core`; config repo branch `m1.3a-identity-jwt` |
+| M1.3a Identity core (register, login, `/me`, RS256 tokens) | Done (owner reviewed; [review guide](reviews/M1.3a-review.md)) | 2026-11-06 | `6dc7ce6` (merge of PR #6); config repo `fd64800` (merge of PR #3); CI on `main` (`6dc7ce6`) green; local `verify` on `main` 2026-11-06: 32 + 44 tests, 0 failures |
 
 ---
 
@@ -195,7 +195,7 @@ What the 29 integration tests execute (real `postgres:16` Testcontainer, plain S
 - The readiness check does not include the database (Boot default); decide in M1.9 whether `db` belongs in readiness.
 - `BookingServiceApplicationTest` now needs Docker (it starts the Testcontainer) although it is a `*Test`; rename to `*IT` if you want the naming rule strict (renames need your approval).
 
-## M1.3a Identity core — Built, awaiting owner review (2026-11-06)
+## M1.3a Identity core — Done (2026-11-06)
 
 **Built:**
 - `common-web`: shared access-token verification (`AccessTokenVerification`, `JwtProperties`, `PemKeys`, `JsonSecurityErrorHandler`, `CommonWebSecurityAutoConfiguration`). A token is accepted only with a known `kid`, a valid RS256 signature, not expired by the injected `Clock` (30 s skew), our issuer and audience, and `sub` + `role`. Security failures use the standard error JSON: `401 UNAUTHENTICATED`, `401 TOKEN_EXPIRED`, `403 FORBIDDEN`. Active only in services that declare the resource-server starter (optional dependency), so booking-service is unchanged until M1.3c.
