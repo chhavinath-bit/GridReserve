@@ -1,10 +1,13 @@
 package com.gridreserve.gateway;
 
+import com.gridreserve.gateway.support.TestJwtKeys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
 /**
@@ -16,6 +19,7 @@ import org.springframework.test.web.reactive.server.WebTestClient;
         "spring.cloud.config.enabled=false",
         "eureka.client.enabled=false"
 })
+@ContextConfiguration(initializers = TestJwtKeys.class)
 class GatewayErrorHandlingTest {
 
     @Value("${local.server.port}")
@@ -31,7 +35,9 @@ class GatewayErrorHandlingTest {
     @Test
     @DisplayName("API-05/PLAT-12: an unknown path returns 404 in the standard error format with a request ID")
     void unknownPathUsesStandardFormat() {
+        // With a valid token: without one, the token check (GatewayTokenCheckIT) answers 401 first.
         client.get().uri("/api/v1/does-not-exist").header("X-Request-Id", "test-1")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + TestJwtKeys.memberToken())
                 .exchange()
                 .expectStatus().isNotFound()
                 .expectHeader().valueEquals("X-Request-Id", "test-1")

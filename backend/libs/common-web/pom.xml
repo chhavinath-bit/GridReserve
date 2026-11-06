@@ -13,12 +13,16 @@
 
     <artifactId>common-web</artifactId>
     <name>common-web</name>
-    <description>Shared web plumbing for servlet services: error format, request ID, clock, access-token verification. No business code.</description>
+    <description>Shared web plumbing: error format, request ID, clock (servlet services) and access-token verification (servlet services and the reactive gateway). No business code.</description>
 
     <dependencies>
+        <!-- Optional: servlet services declare webmvc themselves, and the reactive gateway uses only the
+             token verification. A non-optional webmvc would make the gateway start as a servlet app.
+             The servlet auto-configurations only switch on in servlet applications. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc</artifactId>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

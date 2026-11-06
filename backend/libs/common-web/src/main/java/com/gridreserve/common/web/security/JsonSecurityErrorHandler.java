@@ -10,7 +10,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
-import org.springframework.security.oauth2.jwt.JwtValidationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import tools.jackson.databind.json.JsonMapper;
@@ -42,7 +41,7 @@ public class JsonSecurityErrorHandler implements AuthenticationEntryPoint, Acces
     public void commence(HttpServletRequest request, HttpServletResponse response,
                          AuthenticationException ex) throws IOException {
         response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
-        if (isExpired(ex)) {
+        if (AccessTokenVerification.isExpired(ex)) {
             write(request, response, CommonErrorCode.TOKEN_EXPIRED, "Your session has expired.");
         } else {
             write(request, response, CommonErrorCode.UNAUTHENTICATED, "Sign in to continue.");
@@ -62,15 +61,5 @@ public class JsonSecurityErrorHandler implements AuthenticationEntryPoint, Acces
         response.setStatus(code.status().value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         jsonMapper.writeValue(response.getOutputStream(), body);
-    }
-
-    private static boolean isExpired(Throwable ex) {
-        for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
-            if (cause instanceof JwtValidationException invalid) {
-                return invalid.getErrors().stream()
-                        .anyMatch(error -> AccessTokenVerification.TOKEN_EXPIRED.equals(error.getErrorCode()));
-            }
-        }
-        return false;
     }
 }
