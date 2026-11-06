@@ -362,7 +362,8 @@ Before merging:
 - [ ] Actual test output in `docs/PROGRESS.md` (never claim a pass without running it)
 - [ ] README / CLAUDE.md commands / affected docs / config repo updated
 - [ ] CI green
-- [ ] Short review guide `docs/reviews/M<x.y>-review.md` written (one page: ~5 key files, commands, ~5 questions, gaps)
+- [ ] Short review guide `docs/reviews/M<x.y>-review.md` written (~5 key files, commands, ~5 questions, gaps, and a **Learn first** table of the concepts new in this milestone)
+- [ ] `docs/learning/phase-<n>.md` updated with those concepts
 - [ ] Owner has reviewed the code, rerun the tests and acceptance checks, and signed off
 
 After merging:

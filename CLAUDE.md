@@ -61,8 +61,10 @@ Do this at the start of every session, before proposing or changing anything:
   - about 5 files that carry the design, with one thing to look for in each;
   - a few commands for me to run myself, with expected results;
   - about 5 explain-it-back questions with short collapsible answers;
-  - what is *not* proven yet.
+  - what is *not* proven yet;
+  - **Learn first** (owner rule 2026-11-06): every Java feature, Spring/Spring Cloud mechanism, library, database feature, security or testing concept that appears for the first time in this milestone's code, so I can understand every line. One row each: what it is in one or two plain sentences, why we use it here, and the file where it appears. This section may make the guide longer than one page.
   The PR is merged only after I have reviewed and run it.
+- **Keep `docs/learning/phase-<n>.md` up to date** (owner rule 2026-11-06): the cumulative list of everything needed to read the current phase's code, grouped by topic and tagged with the milestone that introduced it. Each milestone adds its new rows in the same PR.
 
 ### Never claim a test passed without running it
 
