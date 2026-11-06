@@ -177,7 +177,7 @@ com.gridreserve.booking
 └── queue/               [P8] walk-in queue
 ```
 
-`identity-service` (`com.gridreserve.identity`): `user`, `auth` (login, refresh, logout, `JwtSigner`), `refresh` (refresh token store, rotation), `security`, later `venuemanager` (P6).
+`identity-service` (`com.gridreserve.identity`): `user`, `auth` (login, refresh, logout, `JwtSigner`), `refresh` (refresh token store, sliding expiry), `security`, later `venuemanager` (P6).
 
 **Rules inside a service** (unchanged from v0.1): modules call each other only through services and DTOs; no cycles (lower modules define SPIs such as `SlotReleasedListener`); only the `booking` module writes the `booking` table; layer folders `controller` / `dto` / `service` / `entity` / `repository` / `mapper` inside each feature.
 
@@ -427,7 +427,7 @@ CREATE INDEX ix_idempotency_expiry ON idempotency_record (expires_at);
 
 ### 5.4 identity_db schema (Phase 1)
 
-> `app_user` implemented in M1.3a (`V1__user_schema.sql`, plus `ck_app_user_email_lower`; constraints named `pk_app_user`, `uq_app_user_email`, `ck_app_user_role`), demo users in `V2__seed_demo_users.sql`. `refresh_token` follows in M1.3b. The migrations are the source of truth.
+> `app_user` implemented in M1.3a (`V1__user_schema.sql`, plus `ck_app_user_email_lower`; constraints named `pk_app_user`, `uq_app_user_email`, `ck_app_user_role`), demo users in `V2__seed_demo_users.sql`. `refresh_token` in M1.3b (`V3__refresh_token.sql`). The migrations are the source of truth.
 
 ```sql
 CREATE TABLE app_user (
@@ -441,18 +441,19 @@ CREATE TABLE app_user (
   CONSTRAINT uq_app_user_email UNIQUE (email)
 );
 
+-- One row per login (D-37): not rotated; refresh moves expires_at; logout deletes the row.
 CREATE TABLE refresh_token (
-  id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  user_id       bigint NOT NULL REFERENCES app_user(id),
-  family_id     uuid   NOT NULL,          -- all rotations of one login share a family
-  token_hash    char(64) NOT NULL,        -- SHA-256 of the opaque token
-  issued_at     timestamptz NOT NULL,
-  expires_at    timestamptz NOT NULL,
-  rotated_at    timestamptz,              -- set when exchanged for a new token
-  revoked_at    timestamptz,
+  id            bigint GENERATED ALWAYS AS IDENTITY,
+  user_id       bigint NOT NULL,
+  token_hash    char(64) NOT NULL,        -- SHA-256 (hex) of the opaque token; the token itself is never stored
+  created_at    timestamptz NOT NULL,
+  expires_at    timestamptz NOT NULL,     -- slides to now + 7 days on every refresh
+  CONSTRAINT pk_refresh_token PRIMARY KEY (id),
+  CONSTRAINT fk_refresh_token_user FOREIGN KEY (user_id) REFERENCES app_user(id),
   CONSTRAINT uq_refresh_token_hash UNIQUE (token_hash)
 );
-CREATE INDEX ix_refresh_token_family ON refresh_token (family_id);
+CREATE INDEX ix_refresh_token_expires ON refresh_token (expires_at);
+CREATE INDEX ix_refresh_token_user ON refresh_token (user_id);
 
 -- M1.3d (planned): sign-in with Google / GitHub (D-35). New migration; app_user.password_hash becomes nullable.
 CREATE TABLE user_identity (
@@ -553,7 +554,7 @@ WHERE id = :id AND member_id = :memberId AND status = 'HELD' AND expires_at > :n
 | Deactivate vs hold (CONC-09) | no hold created after deactivation commits; earlier holds stay valid | hold: `FOR SHARE` on venue and bookable + re-check `active`; deactivate: `FOR UPDATE` | `422 BOOKABLE_INACTIVE` |
 | Waitlist promotion (P3) | one offer per freed slot/seat | promotion in the releasing transaction under the bookable/session lock | — |
 | Admin edits | no lost update | `@Version` | `409 STALE_UPDATE` |
-| Refresh-token rotation (identity) | one successor per token | conditional `UPDATE refresh_token SET rotated_at = :now WHERE id = ? AND rotated_at IS NULL AND revoked_at IS NULL` | `401 REFRESH_TOKEN_REUSED` (family revoked) |
+| Refresh vs expiry / logout (identity) | an expired or logged-out token is never revived | one conditional `UPDATE refresh_token SET expires_at = :now + 7d WHERE token_hash = ? AND expires_at > :now`; parallel refreshes of the same token all succeed (no rotation, D-37) | `401 REFRESH_TOKEN_INVALID` |
 | **Several booking-service instances** | all of the above (CONC-10) | everything is in PostgreSQL; nothing depends on instance memory | — |
 
 ### 8.2 Walk-through: 50 members, one slot, two instances
@@ -616,7 +617,6 @@ Global order in booking-service: (0) venue row, when locked (hold creation `FOR 
 |---|---|---|---|
 | `HoldExpiryJob` | booking | 30 s | `FOR UPDATE SKIP LOCKED`, per-row transactions |
 | `IdempotencyCleanupJob` | booking | hourly | idempotent deletes |
-| `RefreshTokenCleanupJob` | identity | daily | idempotent deletes |
 | `WaitlistCloseJob` (P3) | booking | 60 s | conditional UPDATE |
 | `OutboxRelay` (P5) | each producer | 1 s | `SKIP LOCKED` |
 
@@ -843,14 +843,14 @@ sequenceDiagram
     Note over B: access token expires
     B->>GW: POST /api/v1/auth/refresh (cookie, Origin, X-GridReserve-Client)
     GW->>ID: route
-    ID->>ID: hash token, find row, conditional rotate (one winner), issue new pair
-    ID-->>B: 200 {new accessToken} + new cookie
+    ID->>ID: hash token, UPDATE expires_at = now + 7d WHERE hash matches AND not expired (1 row = valid)
+    ID-->>B: 200 {new accessToken} + same cookie with fresh Max-Age
 ```
 
 - **Keys:** identity holds the RS256 private key (env var); the public key(s) with `kid` are distributed through the config repo (not secret). Rotation is manual in P1 (A-27); a JWKS endpoint is a later option (D-23).
 - **Verification:** gateway (early rejection) and every service (defence in depth) verify signature, `exp`, issuer and audience.
 - **Authorization:** roles via Spring Security in each service; ownership in services (`404` for others' bookings); admins never book for others; VENUE_MANAGER scope (P6) from a `venueIds` claim or lookup (D-26).
-- **Refresh tokens:** opaque, hashed, rotated, family revocation on reuse (FR-AUTH-10), CSRF checks (FR-AUTH-12), revoked on logout and on user disable.
+- **Refresh tokens (D-37):** opaque 256-bit value, stored as SHA-256, one row per login, **not rotated**; refresh slides the expiry to 7 days from now, logout deletes the row, a disabled user is refused at refresh (FR-AUTH-09..13); CSRF checks (FR-AUTH-12). Expired rows are deleted at login, so no cleanup job. SHA-256 rather than BCrypt: the value is random and high-entropy (nothing to brute-force) and must be found by an indexed lookup. Rejected: rotation with token families and reuse detection (more state, a multi-tab race, a cleanup job; judged too heavy for this project), a stateless JWT refresh token (logout could not end a copied token).
 - **Service-to-service authentication** for `/internal/**` and actuator refresh (**D-19, settled 2026-11-06**): short-lived service JWTs signed by identity-service (client-credentials style), verified with the same public keys; built in M1.9 with the first internal call. Rejected: a shared HMAC header per service pair (one more secret per pair, no expiry), network isolation only (no defence if one container is compromised).
 - **Register starts a session (D-36):** `/register` answers like `/login` (access token + refresh cookie); both call one `startSession(user)` (M1.3b).
 - **Sign-in with Google and GitHub (D-35, M1.3d):** Spring Security's OAuth2 client in identity-service. Flow: `/api/v1/auth/oauth2/authorization/{provider}` → provider → `/api/v1/auth/oauth2/callback/{provider}` → find or link or create the user (verified email only) → `startSession` → redirect to the frontend, which calls `/refresh`. No token in URLs; the authorization request lives in a short-lived cookie, not a session, so several identity instances work. The paths sit under `/api/v1/auth/**`, which the gateway already routes. Rejected: tokens in the redirect URL (leak through history and logs), linking by unverified email (account takeover), a server session for the login state (breaks with several instances).
@@ -909,7 +909,8 @@ flowchart LR
 | D-33 | Config Server: `native` backend on the mounted local clone in `dev`, Git backend on GitHub in `prod`; startup = fail fast + container restart with backoff, no Spring Retry (spike S6) | 2026-11-05 (M1.1) |
 | D-32 | Per-weekday opening hours in P1 (`venue_opening_hours`, optional `bookable_opening_hours`); booking horizon 7 days; Trainer 45 + 15 on a 15-minute grid | 2026-11-05 (owner, M0.3) |
 | D-04 | Outbox introduced in P5 with HTTP push, no broker | 2026-11-04 |
-| D-12 | Access token in memory + rotating refresh-token cookie | 2026-10-26 |
+| D-12 | Access token in memory + refresh-token cookie (rotation removed by D-37) | 2026-10-26 |
+| D-37 | Refresh token: opaque, hashed, one row per login, sliding 7-day expiry, not rotated; logout deletes the row; expired rows deleted at login | 2026-11-06 (owner, M1.3b) |
 | D-13a | React Router; Vitest + RTL + Playwright | 2026-10-26 |
 | D-14 | `409 STALE_UPDATE` for optimistic-lock conflicts | 2026-11-04 |
 | D-16a | Opening hours stored as minutes from local midnight (0–1440) | 2026-11-04 |
