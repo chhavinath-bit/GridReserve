@@ -7,8 +7,8 @@ import org.springframework.http.HttpStatus;
 public enum BookingErrorCode implements ErrorCode {
 
     BEYOND_HORIZON(HttpStatus.UNPROCESSABLE_CONTENT),
-    // CAPACITY bookables (halls, classes) are listed in Phase 1 but bookable only from Phase 2.
-    BOOKING_MODEL_NOT_SUPPORTED(HttpStatus.UNPROCESSABLE_CONTENT);
+    // Time-slot booking and availability only work for EXCLUSIVE bookables (BR-09); CAPACITY from Phase 2.
+    WRONG_BOOKING_MODEL(HttpStatus.UNPROCESSABLE_CONTENT);
 
     private final HttpStatus status;
 

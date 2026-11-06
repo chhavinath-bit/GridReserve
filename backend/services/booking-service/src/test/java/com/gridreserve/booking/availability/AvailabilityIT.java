@@ -233,7 +233,7 @@ class AvailabilityIT {
     }
 
     @Test
-    @DisplayName("FR-CAT-01: a CAPACITY bookable → 422 BOOKING_MODEL_NOT_SUPPORTED until Phase 2")
+    @DisplayName("FR-CAT-01: a CAPACITY bookable → 422 WRONG_BOOKING_MODEL until Phase 2")
     void capacityNotSupported_FRCAT01() {
         jdbc.update("""
                 INSERT INTO bookable (venue_id, bookable_type_id, name, created_at, updated_at)
@@ -244,7 +244,7 @@ class AvailabilityIT {
         try {
             Response response = availability(bookable("Test Reading Hall"), LocalDate.now(KOLKATA).plusDays(1));
             assertThat(response.status()).isEqualTo(422);
-            assertThat(response.code()).isEqualTo("BOOKING_MODEL_NOT_SUPPORTED");
+            assertThat(response.code()).isEqualTo("WRONG_BOOKING_MODEL");
         } finally {
             jdbc.update("DELETE FROM bookable WHERE name = 'Test Reading Hall'");
         }

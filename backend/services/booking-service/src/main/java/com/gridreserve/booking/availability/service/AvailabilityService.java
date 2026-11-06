@@ -44,7 +44,7 @@ public class AvailabilityService {
         BookableSchedule schedule = catalog.schedule(bookableId, includeInactive);
         EffectiveRules rules = schedule.rules();
         if (rules.bookingModel() != BookingModel.EXCLUSIVE) {
-            throw new DomainException(BookingErrorCode.BOOKING_MODEL_NOT_SUPPORTED,
+            throw new DomainException(BookingErrorCode.WRONG_BOOKING_MODEL,
                     "This can't be booked by time slot yet.");
         }
 
