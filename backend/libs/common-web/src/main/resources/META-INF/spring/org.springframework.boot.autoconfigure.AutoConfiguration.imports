@@ -1,1 +1,2 @@
 com.gridreserve.common.web.config.CommonWebAutoConfiguration
+com.gridreserve.common.web.config.CommonWebSecurityAutoConfiguration

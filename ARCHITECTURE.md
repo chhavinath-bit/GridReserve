@@ -233,7 +233,7 @@ frontend/
 
 | Database | Owner | Main tables |
 |---|---|---|
-| `identity_db` | identity-service | `app_user`, `refresh_token`, (P6) `venue_manager_assignment` |
+| `identity_db` | identity-service | `app_user`, `refresh_token`, `user_identity` (M1.3d), (P6) `venue_manager_assignment` |
 | `booking_db` | booking-service | `member`, `category`, `bookable_type`, `country_time_zone`, `venue`, `bookable`, `booking`, `booking_audit`, `idempotency_record`, (P2) `session`, (P3) `waitlist_entry`, (P5) `outbox_event`, `processed_event`, (P7) `booking_series`, (P8) `queue_entry` |
 | `payment_db` | payment-service (P5) | `payment`, `payment_webhook_event`, `refund`, `outbox_event`, `processed_event` |
 | `membership_db` | membership-service (P6) | `membership_plan`, `membership`, `credit_reservation`, `processed_event` |
@@ -425,7 +425,9 @@ CREATE INDEX ix_idempotency_expiry ON idempotency_record (expires_at);
 
 **Why a local `member` table?** The per-member limit (BR-08) needs a row to lock (`SELECT … FOR UPDATE`), and the member-overlap constraint needs a member column. The user table lives in `identity_db`, which the booking service must not touch. A tiny local row (ID only, no personal data) gives a lock target and keeps RES-07 (booking works while identity is down). It is created on first use with `INSERT … ON CONFLICT DO NOTHING`.
 
-### 5.4 Proposed identity_db schema (Phase 1)
+### 5.4 identity_db schema (Phase 1)
+
+> `app_user` implemented in M1.3a (`V1__user_schema.sql`, plus `ck_app_user_email_lower`; constraints named `pk_app_user`, `uq_app_user_email`, `ck_app_user_role`), demo users in `V2__seed_demo_users.sql`. `refresh_token` follows in M1.3b. The migrations are the source of truth.
 
 ```sql
 CREATE TABLE app_user (
@@ -451,6 +453,19 @@ CREATE TABLE refresh_token (
   CONSTRAINT uq_refresh_token_hash UNIQUE (token_hash)
 );
 CREATE INDEX ix_refresh_token_family ON refresh_token (family_id);
+
+-- M1.3d (planned): sign-in with Google / GitHub (D-35). New migration; app_user.password_hash becomes nullable.
+CREATE TABLE user_identity (
+  id                bigint GENERATED ALWAYS AS IDENTITY,
+  user_id           bigint NOT NULL,
+  provider          text   NOT NULL,          -- GOOGLE | GITHUB
+  provider_user_id  text   NOT NULL,          -- Google `sub`, GitHub numeric id; never the email
+  created_at        timestamptz NOT NULL,
+  CONSTRAINT pk_user_identity PRIMARY KEY (id),
+  CONSTRAINT fk_user_identity_user FOREIGN KEY (user_id) REFERENCES app_user(id),
+  CONSTRAINT uq_user_identity_provider_user UNIQUE (provider, provider_user_id),
+  CONSTRAINT ck_user_identity_provider CHECK (provider IN ('GOOGLE', 'GITHUB'))
+);
 ```
 
 ### 5.5 Notes carried over from v0.1
@@ -836,7 +851,10 @@ sequenceDiagram
 - **Verification:** gateway (early rejection) and every service (defence in depth) verify signature, `exp`, issuer and audience.
 - **Authorization:** roles via Spring Security in each service; ownership in services (`404` for others' bookings); admins never book for others; VENUE_MANAGER scope (P6) from a `venueIds` claim or lookup (D-26).
 - **Refresh tokens:** opaque, hashed, rotated, family revocation on reuse (FR-AUTH-10), CSRF checks (FR-AUTH-12), revoked on logout and on user disable.
-- **Service-to-service authentication** for `/internal/**` and actuator refresh: **unresolved (D-19)**. Options: (a) short-lived service JWTs signed by identity-service (client-credentials style); (b) a shared HMAC header per service pair; (c) network isolation only. Recommendation: (a), since the signing and verification code already exists.
+- **Service-to-service authentication** for `/internal/**` and actuator refresh (**D-19, settled 2026-11-06**): short-lived service JWTs signed by identity-service (client-credentials style), verified with the same public keys; built in M1.9 with the first internal call. Rejected: a shared HMAC header per service pair (one more secret per pair, no expiry), network isolation only (no defence if one container is compromised).
+- **Register starts a session (D-36):** `/register` answers like `/login` (access token + refresh cookie); both call one `startSession(user)` (M1.3b).
+- **Sign-in with Google and GitHub (D-35, M1.3d):** Spring Security's OAuth2 client in identity-service. Flow: `/api/v1/auth/oauth2/authorization/{provider}` → provider → `/api/v1/auth/oauth2/callback/{provider}` → find or link or create the user (verified email only) → `startSession` → redirect to the frontend, which calls `/refresh`. No token in URLs; the authorization request lives in a short-lived cookie, not a session, so several identity instances work. The paths sit under `/api/v1/auth/**`, which the gateway already routes. Rejected: tokens in the redirect URL (leak through history and logs), linking by unverified email (account takeover), a server session for the login state (breaks with several instances).
+- **Library (D-34):** Spring Security's OAuth2 resource server with Nimbus JOSE. `common-web` provides the decoder (known `kid`, RS256 signature, expiry by the injected `Clock` with 30 s skew, issuer, audience, `sub`, `role`) and the JSON `401`/`403` handler; each service writes its own `SecurityFilterChain`.
 
 ## 17. Observability and performance testing
 
@@ -883,7 +901,11 @@ flowchart LR
 | D-20 | Config server reached by a fixed URL (`CONFIG_SERVER_URL`), not through Eureka | 2026-11-05 (M1.1) |
 | D-21 | Resilience4j through Spring Cloud CircuitBreaker 5.0.3 (Resilience4j 2.3.0) works on Spring Boot 4.1.2: Feign circuit breaker with fallback (spike S2) and gateway route breaker with JSON fallback (S3) verified | 2026-11-05 (M1.1) |
 | D-22 | Gateway: Spring Cloud Gateway Server WebFlux | 2026-11-05 (M1.1) |
-| D-27 | `common-web` stays thin and servlet-only (error format, request ID, clock) and is wired by Spring Boot auto-configuration; the reactive gateway has its own small equivalents | 2026-11-05 (M1.1) |
+| D-27 | `common-web` stays thin and servlet-only (error format, request ID, clock; access-token verification from M1.3a) and is wired by Spring Boot auto-configuration; the reactive gateway has its own small equivalents | 2026-11-05 (M1.1) |
+| D-19 | Service-to-service authentication: short-lived service JWTs signed by identity-service; built in M1.9 | 2026-11-06 (owner, M1.3) |
+| D-34 | JWT library: Spring Security OAuth2 resource server + Nimbus JOSE instead of jjwt (jjwt-jackson needs Jackson 2 next to Boot 4's Jackson 3; built-in Bearer filters for servlet and reactive) | 2026-11-06 (owner, M1.3) |
+| D-35 | Sign-in with Google (OIDC) and GitHub (OAuth2) through Spring Security's OAuth2 client; link to existing accounts only by verified email; session handed to the SPA through the refresh cookie; built as M1.3d | 2026-11-06 (owner, M1.3) |
+| D-36 | Registering starts a session like login (one `startSession` used by register, login and provider sign-in); built in M1.3b | 2026-11-06 (owner, M1.3) |
 | D-33 | Config Server: `native` backend on the mounted local clone in `dev`, Git backend on GitHub in `prod`; startup = fail fast + container restart with backoff, no Spring Retry (spike S6) | 2026-11-05 (M1.1) |
 | D-32 | Per-weekday opening hours in P1 (`venue_opening_hours`, optional `bookable_opening_hours`); booking horizon 7 days; Trainer 45 + 15 on a 15-minute grid | 2026-11-05 (owner, M0.3) |
 | D-04 | Outbox introduced in P5 with HTTP push, no broker | 2026-11-04 |
@@ -910,7 +932,6 @@ flowchart LR
 | D-15 | Deploy host, backups, rollback (must fit ~5 JVMs) | Depends on host | Decide at M1.10 with current limits | M1.10 |
 | D-16b | DST-ambiguous local times in the slot grid | first occurrence / both / skip | Show both with UTC offset | P7 |
 | D-17 | Overlapping sessions on one CAPACITY bookable | forbid / allow | Forbid | P2 |
-| D-19 | Service-to-service authentication | service JWT / HMAC / network only | Service JWT signed by identity | M1.3 (actuator refresh), P5 (events) |
 | D-23 | Public-key distribution | config repo / JWKS endpoint | Config repo in P1, JWKS later | P1 / later |
 | D-24 | Distributed tracing | Micrometer Tracing + Zipkin / OTLP / none | Add when approved | P5+ |
 | D-25 | Membership credits | reservation saga / keep credits in booking-service | Decide at P6 start | P6 |

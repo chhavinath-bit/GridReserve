@@ -64,7 +64,7 @@ M1.1 platform skeleton + CI + Boot 4 spikes ─► M1.2 booking schema & constra
 | B-6 | Deploy host, backups, rollback (D-15); must fit ~5 JVMs + PostgreSQL | M1.10 | Decide at M1.10 after checking current limits. |
 | B-7 | Load-test tool (D-13b) | M1.14 | JUnit harness first. |
 | B-8 | Resilience4j on Spring Boot 4 (D-21), gateway variant (D-22), config lookup (D-20), shared lib scope (D-27) | M1.1 | Settle by the M1.1 spike. |
-| B-9 | Service-to-service authentication (D-19) | M1.3 / M1.9 | Service JWT signed by identity (recommended). |
+| B-9 | Service-to-service authentication (D-19) | M1.3 / M1.9 | **Decided** 2026-11-06: service JWTs signed by identity, built in M1.9. |
 
 ## 4. Phase 0 — Environment and repositories
 
@@ -133,12 +133,16 @@ Phase goal (PROJECT.md §8): EXCLUSIVE booking end to end through the gateway; 5
 
 ### M1.3 Identity service and token verification `L`
 
+Delivered as four PRs, in the order a → b → c → d (owner decisions 2026-11-06): **M1.3a** identity core (identity_db `app_user` + demo users, register, login with access token, `/me`, RS256 signing, shared verification in `common-web`); **M1.3b** refresh tokens (`refresh_token` table, cookie, rotation, family revocation, logout, CSRF checks) and **register starts a session** through one `startSession` method (D-36, FR-AUTH-01); **M1.3c** verification in the gateway and booking-service, `MemberProvisioner`; **M1.3d** sign-in with Google and GitHub (D-35). Tokens use Spring Security's resource server + Nimbus JOSE (D-34).
+
+**M1.3d plan outline** (detailed plan agreed before coding): new dependency `spring-boot-starter-security-oauth2-client` (approved 2026-11-06; exact Boot 4 starter name checked when added); migration `user_identity` + nullable `password_hash` (fix-forward); providers configured in the config repo, client IDs and secrets only in `infra/.env` (provider off when unset); cookie-based authorization-request repository; success handler → `UserLinking` service (FR-AUTH-16) → `startSession` → redirect; failure handler → redirect with error code. Tests: account linking and success/failure handlers against real PostgreSQL (FS-42..44), the code exchange against a stub provider built on the JDK `HttpServer` (no new library); a real Google and GitHub sign-in is a manual check. Owner creates the two OAuth apps (steps in README).
+
 1. **Objective.** Register, login, refresh, logout work through the gateway; access tokens are verified by the gateway and the booking service; the booking service provisions local member rows.
 2. **Tasks.** identity_db migrations (`app_user`, `refresh_token`, seeded ADMIN + 2 MEMBERs with BCrypt hashes); `JwtSigner` (RS256, `kid`, private key from env); refresh tokens (opaque, hashed, rotation with conditional UPDATE, family revocation, cookie attributes, Origin + `X-GridReserve-Client` check); `/auth/register|login|refresh|logout`, `/me`; JWT verification filter in `common-web` (public key from config) used by booking-service; gateway JWT pre-check filter; `MemberProvisioner` (`INSERT … ON CONFLICT DO NOTHING`); decide D-19 (service credentials) for later internal calls.
 3. **Files/modules.** `services/identity-service/**`, `libs/common-web/security/**`, `platform/api-gateway` filters, `services/booking-service/member/**`, config repo (public key, cookie settings), `.env.example` (`JWT_PRIVATE_KEY` placeholder).
 4. **Dependencies.** M1.2.
 5. **Tests.** Unit: signer/verifier (valid, expired, tampered, wrong key, unknown `kid`); refresh rotation logic. Integration (identity): register 201/409 (case-insensitive); login 200 + cookie attributes; wrong password vs unknown email identical 401; refresh rotates; reuse of a rotated token revokes the family (FS-39); foreign Origin or missing header → 403 (FS-40); logout revokes. Integration (booking): request with valid token → member row created; invalid/expired → 401 (FS-14); member → admin URL 403 (FS-16). Manual through gateway with `curl`.
-6. **Acceptance.** FR-AUTH-01..13 and FR-ROLE-01..03 covered; booking-service never calls identity to verify a token.
+6. **Acceptance.** FR-AUTH-01..13, FR-AUTH-15..19 and FR-ROLE-01..03 covered; booking-service never calls identity to verify a token.
 7. **Done.** Merged; README "Log in with curl"; PROGRESS updated.
 
 ### M1.4 Catalog, countries and availability `M`
@@ -360,7 +364,8 @@ Before merging:
 - [ ] Actual test output in `docs/PROGRESS.md` (never claim a pass without running it)
 - [ ] README / CLAUDE.md commands / affected docs / config repo updated
 - [ ] CI green
-- [ ] Short review guide `docs/reviews/M<x.y>-review.md` written (one page: ~5 key files, commands, ~5 questions, gaps)
+- [ ] Short review guide `docs/reviews/M<x.y>-review.md` written (~5 key files, commands, ~5 questions, gaps, and a **Learn first** table of the concepts new in this milestone)
+- [ ] `docs/learning/phase-<n>.md` updated with those concepts
 - [ ] Owner has reviewed the code, rerun the tests and acceptance checks, and signed off
 
 After merging:

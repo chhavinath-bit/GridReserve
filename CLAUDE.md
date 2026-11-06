@@ -61,8 +61,10 @@ Do this at the start of every session, before proposing or changing anything:
   - about 5 files that carry the design, with one thing to look for in each;
   - a few commands for me to run myself, with expected results;
   - about 5 explain-it-back questions with short collapsible answers;
-  - what is *not* proven yet.
+  - what is *not* proven yet;
+  - **Learn first** (owner rule 2026-11-06): every Java feature, Spring/Spring Cloud mechanism, library, database feature, security or testing concept that appears for the first time in this milestone's code, so I can understand every line. One row each: what it is in one or two plain sentences, why we use it here, and the file where it appears. This section may make the guide longer than one page.
   The PR is merged only after I have reviewed and run it.
+- **Keep `docs/learning/phase-<n>.md` up to date** (owner rule 2026-11-06): the cumulative list of everything needed to read the current phase's code, grouped by topic and tagged with the milestone that introduced it. Each milestone adds its new rows in the same PR.
 
 ### Never claim a test passed without running it
 
@@ -94,7 +96,7 @@ Do this at the start of every session, before proposing or changing anything:
 ## 5. Fixed stack (do not change or add without asking)
 
 - **Frontend:** React + TypeScript, Vite, Tailwind CSS, TanStack Query, React Router, **shadcn/ui components on Radix primitives** (DESIGN_SYSTEM.md). Tests: Vitest + React Testing Library; Playwright for end-to-end tests. Supporting UI packages (D-UI-3: cva, clsx, tailwind-merge, lucide-react, tw-animate-css, sonner, react-day-picker, TanStack Table, self-hosted Inter) and axe (D-UI-4) are listed but **need approval at install time**.
-- **Backend:** Java 21, **Spring Boot 4.x**, Maven multi-module (wrapper `./mvnw`), Spring Security, JWT with jjwt (RS256), Spring Data JPA (Hibernate), Spring Boot Actuator + Micrometer.
+- **Backend:** Java 21, **Spring Boot 4.x**, Maven multi-module (wrapper `./mvnw`), Spring Security, JWT (RS256) with Spring Security's OAuth2 resource server + Nimbus JOSE (replaced jjwt, 2026-11-06), Spring Security OAuth2 client for sign-in with Google and GitHub (M1.3d, approved 2026-11-06), Spring Data JPA (Hibernate), Spring Boot Actuator + Micrometer.
 - **Microservice platform:** Spring Cloud release train compatible with the Boot version (verify on the official compatibility table): Config Server (Git backend), Netflix Eureka, Gateway, LoadBalancer, CircuitBreaker with **Resilience4j** (Retry, RateLimiter, Bulkhead, CircuitBreaker, TimeLimiter). Service-to-service calls with **Spring Cloud OpenFeign** (`@FeignClient`, resolved through Eureka and load-balanced), wrapped in Resilience4j via an adapter class.
 - **Database:** PostgreSQL 16, **one database per service** on one server; migrations with Flyway per service.
 - **Redis:** Phase 4 only. Never the source of truth.
@@ -335,6 +337,8 @@ Rows marked ✓ were run successfully in M1.1 (2026-11-05); the others are plann
 - (2026-11-05) Repository layout: `backend/` (platform, services, libs), `frontend/`, `infra/`; config repo as a sibling folder, read from the local clone in `dev` and from GitHub in `prod`; packages feature-then-layer (`controller`, `dto`, `service`, `entity`, `repository`, `mapper`, `config`); service-to-service calls with Spring Cloud OpenFeign; `gh` CLI installed and logged in.
 - (2026-11-04) Microservices from the start; booking core in one service; database per service; outbox + HTTP push (no broker); Config Server with `dev`/`prod`; per-instance refresh script; Spring Boot 4; Resilience4j patterns; venue country + zone; library seats EXCLUSIVE, reading halls CAPACITY.
 - Keep the build host-agnostic (Dockerfiles + environment variables + config server); the deploy host is chosen before the first Phase 1 deployment.
+- (2026-11-06, M1.3) Tokens are signed and verified with Spring Security's OAuth2 resource server and Nimbus JOSE (`NimbusJwtEncoder` / `NimbusJwtDecoder`) instead of jjwt: Boot-managed versions, no second Jackson, built-in Bearer filters for servlet services and the reactive gateway (D-34). Service-to-service authentication: short-lived service JWTs signed by identity-service, built with the first internal call in M1.9 (D-19). M1.3 is delivered as four PRs: M1.3a identity core, M1.3b refresh tokens, M1.3c verification in gateway and booking, M1.3d sign-in with Google and GitHub.
+- (2026-11-06, M1.3) Registering starts a session like login (D-36, M1.3b). Sign-in with Google (OIDC) and GitHub (OAuth2) is part of Phase 1 (D-35, M1.3d): accounts are linked only by a provider-verified email; the session reaches the SPA through the refresh cookie, never a token in a URL; provider secrets only in `infra/.env`. Social-only accounts have no password and cannot set one (possible extension).
 
 ### 15.2 Pending decisions: ask before acting
 
@@ -342,7 +346,6 @@ Do not assume an answer for these. When a milestone reaches one, present options
 
 | Item | Needed by | Where described |
 |---|---|---|
-| Service-to-service authentication (D-19) | M1.3 / M1.9 | ARCHITECTURE.md §16 |
 | Deploy host, backups, rollback; must fit ~5 JVMs + PostgreSQL (D-15) | M1.10 | IMPLEMENTATION_PLAN.md §3 |
 | UI supporting packages (D-UI-3) and axe accessibility checks (D-UI-4) | M1.6 / M1.13 | DESIGN_SYSTEM.md §10 |
 | Load-test tool (D-13b) | M1.14 | ARCHITECTURE.md §19 |

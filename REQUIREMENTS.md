@@ -1,6 +1,7 @@
 # GridReserve — Requirements
 
-> Version 0.5 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Version 0.6 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Changes from v0.5 (owner decisions, 2026-11-06): registering starts a session like login (FR-AUTH-01, D-36, built in M1.3b); **sign-in with Google and GitHub** added to Phase 1 (US-30, FR-AUTH-15..19, FS-42..44, D-35, built in M1.3d). This extends PROJECT.md §5 (email and password) by owner decision; PROJECT.md itself is unchanged.
 > Changes from v0.4 (M1.1 spike S6, 2026-11-05): PLAT-07 startup behavior is fail fast + container restart with backoff (no in-app retry).
 > Changes from v0.3 (owner review M0.3, 2026-11-05): Phase 1 assumptions confirmed; **per-weekday opening hours** in Phase 1 (A-06); booking horizon **7 days** (A-07); Gym Trainer **45-minute sessions + 15-minute buffer on a 15-minute grid** (A-08); waitlist promotion style (D-03) decided.
 > Changes from v0.2 (owner decision 2026-11-05): deactivating a bookable or venue is a **soft close** — it stops new bookings and never touches existing ones; the `409 BOOKABLE_HAS_FUTURE_BOOKINGS` rule is removed (FR-CAT-10/13/16, US-09, CONC-09, FS-13, WL-11).
@@ -91,6 +92,7 @@ This document turns the product spec into **specific, testable requirements**. E
 - Deactivating a bookable or venue is a **soft close** (2026-11-05, replaces the earlier 409 rule): it stops new bookings immediately; existing HELD and CONFIRMED bookings are not changed; Phase 3 waitlists for it are closed. Bookables and venues are never deleted.
 - Redis (Phase 4) does cache and rate limiting, cache first, and is never the source of truth.
 - Demo data is fictional; seeded demo credentials are documented in the README as demo-only.
+- (2026-11-06) Registering logs the user in (D-36, M1.3b). Sign-in with Google and GitHub is part of Phase 1, linked to existing accounts only by verified email (D-35, M1.3d).
 
 ## 3. User roles and permissions
 
@@ -134,7 +136,7 @@ Acceptance criteria use Given / When / Then. Each story links to the requirement
 ### Phase 1
 
 **US-01 Register.** As a visitor, I want to create an account with email and password so that I can book.
-- Given a new email and a valid password, when I register, then I get `201`, a MEMBER account is created, and I can log in.
+- Given a new email and a valid password, when I register, then I get `201`, a MEMBER account is created, and I am logged in (access token + refresh-token cookie) without logging in again.
 - Given an email that already exists (case-insensitive), when I register, then I get `409 EMAIL_TAKEN`.
 - Links: FR-AUTH-01..04.
 
@@ -208,19 +210,20 @@ Acceptance criteria use Given / When / Then. Each story links to the requirement
 | US-26 | P7 | As a member, I want to book the same court every Tuesday for 8 weeks. | 2 Tuesdays are taken: 6 bookings are created and 2 are reported as skipped with reason `SLOT_TAKEN`. |
 | US-27 | P7 | As an admin, I want to mark no-shows. | After 3 no-shows in 30 days, the member cannot book for 7 days. **[A-21]** |
 | US-28 | P8 | As a clinic patient, I want to join a walk-in queue and see my position. | Positions are strictly FIFO; "call next" pops the earliest entry. |
+| US-30 | P1 | As a visitor, I want to sign in with my Google or GitHub account so that I need no new password. | A verified provider email creates a MEMBER account or links to the existing account with that email; an unverified email is refused; I land in the app logged in, with no token in any URL. Links: FR-AUTH-15..19. |
 | US-29 | P8 | As a member, I want to be notified about expiring holds, offers and cancellations. | An in-app notification exists; a simulated email is recorded (not sent); each event produces exactly one notification even if delivered twice. |
 
 ## 5. Functional requirements
 
 ### 5.1 Authentication (FR-AUTH) — identity service
 
-- **FR-AUTH-01** `POST /api/v1/auth/register` shall create a MEMBER account from `{email, password, displayName}` and return `201` with the user DTO (no password hash).
+- **FR-AUTH-01** `POST /api/v1/auth/register` shall create a MEMBER account from `{email, password, displayName}` and start a session exactly like login: `201 {accessToken, tokenType: "Bearer", expiresIn}` plus the refresh-token cookie (FR-AUTH-05, FR-AUTH-09). The client reads the user with `GET /api/v1/me`. (Changed 2026-11-06, D-36; until M1.3b it returns the user DTO.)
 - **FR-AUTH-02** Email shall be valid, at most 254 characters, stored lower-cased, and unique (case-insensitive). Duplicate → `409 EMAIL_TAKEN`.
 - **FR-AUTH-03** Password shall be 8–72 characters (72 is the BCrypt input limit). Passwords shall be stored only as BCrypt hashes (cost ≥ 10).
 - **FR-AUTH-04** Self-registration shall never create an ADMIN. ADMIN accounts are seeded by migration. **[A-01]**
 - **FR-AUTH-05** `POST /api/v1/auth/login` shall return `200 {accessToken, tokenType: "Bearer", expiresIn}` and set the refresh-token cookie (FR-AUTH-09).
 - **FR-AUTH-06** Access tokens shall be JWTs signed by the identity service with an asymmetric key (RS256), containing `sub` (user ID), `role`, `iat`, `exp` and `kid`, with a lifetime of 15 minutes. Every other service verifies them locally with the public key, without calling the identity service. **[A-02, A-27]**
-- **FR-AUTH-07** Invalid credentials shall return `401 INVALID_CREDENTIALS` with an identical message for unknown email and wrong password.
+- **FR-AUTH-07** Invalid credentials shall return `401 INVALID_CREDENTIALS` with an identical message for unknown email and wrong password, and for an account that has no password (created through a provider, FR-AUTH-19).
 - **FR-AUTH-08** `GET /api/v1/me` shall return the current user's ID, email, display name and role.
 - **FR-AUTH-09** The refresh token shall be an opaque random value (≥ 256 bits), stored only as a hash, sent as a cookie with `HttpOnly`, `Secure` (prod), `SameSite=Strict`, `Path=/api/v1/auth`, lifetime 7 days. **[A-24]**
 - **FR-AUTH-10** `POST /api/v1/auth/refresh` shall return a new access token and **rotate** the refresh token (old one revoked, new cookie set). A missing, expired or revoked token → `401 REFRESH_TOKEN_INVALID`. Presenting an already-rotated token → revoke the whole token family and `401 REFRESH_TOKEN_REUSED`.
@@ -228,6 +231,11 @@ Acceptance criteria use Given / When / Then. Each story links to the requirement
 - **FR-AUTH-12** Refresh and logout shall be protected against CSRF: the request must carry an `Origin` header equal to the configured frontend origin **and** the header `X-GridReserve-Client: web`; otherwise `403 FORBIDDEN`. **[A-24]**
 - **FR-AUTH-13** A disabled user's refresh tokens shall be revoked; their existing access token stops working at the latest when it expires (≤ 15 min). **[A-02]**
 - **FR-AUTH-14** `[P4]` Login and booking creation shall be rate limited at the gateway (NFR-SEC-06).
+- **FR-AUTH-15** Members shall be able to sign in with **Google** (OpenID Connect) and **GitHub** (OAuth2): `GET /api/v1/auth/oauth2/authorization/{provider}` starts the flow, the provider returns to `GET /api/v1/auth/oauth2/callback/{provider}`. A provider whose client ID and secret are not configured is off (`404`). Client secrets come only from environment variables. (D-35)
+- **FR-AUTH-16** After a successful callback the identity service shall pick the account in this order: (1) an existing link for (provider, provider user ID); (2) if the provider reports the email as **verified** and an account with that email exists, link the provider to it (the role is unchanged); (3) if the email is verified and new, create a MEMBER with the provider's display name and no password. Without a verified email nothing is created or linked (FS-42). Google: `email_verified` claim; GitHub: the primary address marked verified in `/user/emails`.
+- **FR-AUTH-17** On success the identity service shall start a session exactly like login (refresh-token cookie, FR-AUTH-09) and redirect to `{frontendOrigin}/auth/callback`; the frontend then gets the access token through `POST /api/v1/auth/refresh`. No token ever appears in a URL. On any failure (cancelled at the provider, unverified email, disabled account, state mismatch, provider error) it redirects to `{frontendOrigin}/auth/callback?error=<code>` and sets no session cookie.
+- **FR-AUTH-18** The OAuth2 authorization request (state, PKCE verifier, OIDC nonce) shall be kept in a short-lived (≤ 10 min) `HttpOnly` cookie limited to `/api/v1/auth/oauth2`, with `SameSite=Lax` (the provider's redirect back is a cross-site navigation), not in a server session, so any identity instance can finish the flow. It is deleted when the callback is handled.
+- **FR-AUTH-19** Accounts created through a provider have no password (`password_hash` is null); a disabled account cannot sign in through a provider. Setting a password later is out of scope (A-29).
 
 ### 5.2 Catalog (FR-CAT) — booking service
 
@@ -534,7 +542,7 @@ Not routed by the gateway: `/actuator/**` (except the gateway's own health), `/i
 ### Security
 - **NFR-SEC-01** Passwords hashed with BCrypt; never logged or returned.
 - **NFR-SEC-02** The JWT **private** key exists only in the identity service (environment variable). The public key is distributed as configuration (it is not secret). DB credentials and all other secrets come from environment variables; repositories contain only `.env.example` placeholders.
-- **NFR-SEC-03** APIs are stateless (no HTTP session). The only cookie is the refresh-token cookie, limited to `/api/v1/auth` and protected by FR-AUTH-12. CORS allows only the configured frontend origin (at the gateway). The frontend and gateway should be served from the same site in `prod` so `SameSite=Strict` works **[A-24]**.
+- **NFR-SEC-03** APIs are stateless (no HTTP session). The only cookies are the refresh-token cookie, limited to `/api/v1/auth` and protected by FR-AUTH-12, and the short-lived OAuth2 login-state cookie (FR-AUTH-18). CORS allows only the configured frontend origin (at the gateway). The frontend and gateway should be served from the same site in `prod` so `SameSite=Strict` works **[A-24]**.
 - **NFR-SEC-04** All input validated; SQL parameterized only.
 - **NFR-SEC-05** Error responses never contain stack traces, SQL or internal class names.
 - **NFR-SEC-06** `[P4]` Distributed rate limits at the gateway, backed by Redis: login 5 per minute per (IP, email), booking creation 20 per minute per user **[A-14]**.
@@ -616,6 +624,7 @@ Items carried over from PROJECT.md §10 are marked (PROJECT).
 | A-25 | Resilience defaults in RES-01..05 (timeouts 1 s / 2 s / 5 s, breaker window 20 and 50 %, open 30 s, 3 retries from 200 ms, bulkhead 10, rate limiter 20/s). Tuned after measuring. |
 | A-26 | Reading-hall sessions default to 2-hour blocks; capacity is set per session by the admin. |
 | A-27 | JWT signing uses RS256 with a key ID (`kid`); key rotation is manual in P1 (new key pair, both public keys served during overlap). |
+| A-29 | Accounts created through Google or GitHub have no password and cannot set one (possible extension). Linking an account to a provider happens only by verified email; there is no manual "link my account" screen. |
 | A-28 | Default JVM heap ≤ 256 MB per service (confirmed); the deploy host must fit about 5 JVMs plus PostgreSQL in Phase 1. |
 
 ## 18. Failure scenarios (FS)
@@ -662,6 +671,9 @@ Items carried over from PROJECT.md §10 are marked (PROJECT).
 | FS-38 | Discovery server down | Existing routes keep working from cached registry | 2xx | System test |
 | FS-39 | Refresh-token reuse (stolen old token) | Whole token family revoked | 401 REFRESH_TOKEN_REUSED | Integration |
 | FS-40 | Refresh call from a foreign origin or without the client header | Rejected | 403 | Integration |
+| FS-42 | Provider sign-in with an email the provider has not verified, matching an existing account | Not linked, no account created, no session | redirect `?error=email_not_verified` | Integration |
+| FS-43 | Provider callback with a missing or wrong `state` (forged or replayed callback) | Rejected, no session | redirect `?error=login_failed` | Integration |
+| FS-44 | Disabled account signs in through a provider | Refused, no session | redirect `?error=login_failed` | Integration |
 | FS-41 | `[P5]` Notification/payment service down when an event is emitted | Event stays in outbox, delivered after recovery exactly once in effect | — | Integration |
 
 ## 19. Traceability
@@ -670,7 +682,7 @@ Items carried over from PROJECT.md §10 are marked (PROJECT).
 
 | §5 item | Requirements |
 |---|---|
-| 1 Authentication | FR-AUTH-01..13, FR-ROLE-01..05, NFR-SEC-01..03 |
+| 1 Authentication | FR-AUTH-01..13, FR-AUTH-15..19, FR-ROLE-01..05, NFR-SEC-01..03 |
 | 2 Catalog | FR-CAT-01..16, FR-SEED-01 |
 | 3 Category dropdown | FR-UI-01, FR-UI-02, US-03 |
 | 4 Availability | FR-AV-01..06, US-04 |
