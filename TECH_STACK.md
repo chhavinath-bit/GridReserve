@@ -169,7 +169,7 @@ Each section: **role**, **why**, **how it interacts**, **alternatives rejected**
 
 ### 3.12 Spring Security and JWT (resource server + Nimbus JOSE)
 
-- **Identity service:** BCrypt password hashing; login issues an **RS256** access token (15 min) signed with the private key (environment variable) and sets the rotating **refresh-token cookie** (httpOnly, `SameSite=Strict`, path `/api/v1/auth`); refresh and logout endpoints with Origin + custom-header CSRF checks (FR-AUTH-09..12).
+- **Identity service:** BCrypt password hashing; login issues an **RS256** access token (15 min) signed with the private key (environment variable) and sets the **refresh-token cookie** (httpOnly, `SameSite=Strict`, path `/api/v1/auth`; opaque, stored hashed, sliding 7 days, not rotated, D-37); refresh and logout endpoints with Origin + custom-header CSRF checks (FR-AUTH-09..12).
 - **Gateway:** verifies the JWT signature and expiry before routing (cheap early rejection); applies CORS.
 - **All services:** stateless Spring Security filter chain; Spring's Bearer-token filter verifies the token with the **public keys** (from config, keyed by `kid`) through a decoder built in `common-web`, and the principal carries `sub` (user ID) and the `role` authority; URL and method security; ownership checks in services; `401/403` in the shared error format (`401 TOKEN_EXPIRED` for an expired token).
 - **Why RS256 now (was HS256).** With several services verifying tokens, a shared HMAC secret would let any service mint tokens. With RS256 only the identity service can sign; everyone else verifies.

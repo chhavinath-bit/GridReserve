@@ -1,6 +1,7 @@
 # GridReserve — Requirements
 
-> Version 0.6 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Version 0.7 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Changes from v0.6 (owner decision, 2026-11-06, D-37): the refresh token is **not rotated**. One opaque token per login, stored hashed, with a sliding 7-day expiry; logout deletes it (FR-AUTH-09..11); reuse detection and token families are dropped (FS-39 withdrawn). PROJECT.md §5 still says "rotating refresh token"; this owner decision replaces it, PROJECT.md itself is unchanged.
 > Changes from v0.5 (owner decisions, 2026-11-06): registering starts a session like login (FR-AUTH-01, D-36, built in M1.3b); **sign-in with Google and GitHub** added to Phase 1 (US-30, FR-AUTH-15..19, FS-42..44, D-35, built in M1.3d). This extends PROJECT.md §5 (email and password) by owner decision; PROJECT.md itself is unchanged.
 > Changes from v0.4 (M1.1 spike S6, 2026-11-05): PLAT-07 startup behavior is fail fast + container restart with backoff (no in-app retry).
 > Changes from v0.3 (owner review M0.3, 2026-11-05): Phase 1 assumptions confirmed; **per-weekday opening hours** in Phase 1 (A-06); booking horizon **7 days** (A-07); Gym Trainer **45-minute sessions + 15-minute buffer on a 15-minute grid** (A-08); waitlist promotion style (D-03) decided.
@@ -68,7 +69,7 @@ This document turns the product spec into **specific, testable requirements**. E
 | D7 | Framework version | **Spring Boot 4.x** with the matching Spring Cloud release train (2025.1.x at the time of writing; verify at scaffold). |
 | D8 | Time zones | Each venue stores an ISO country code **and** an IANA time zone; the zone must belong to the country; rules use the venue's zone. |
 | D9 | Fault tolerance | Retry, rate limiter, bulkhead and circuit breaker (Resilience4j) on calls between services and at the gateway. |
-| D10 | Login | In-memory access token + **rotating refresh token in an httpOnly cookie** (decided 2026-10-26). |
+| D10 | Login | In-memory access token + **refresh token in an httpOnly cookie** (decided 2026-10-26; not rotated since 2026-11-06, D-37). |
 
 ### 2.3 Bookable types and defaults (seed data)
 
@@ -225,11 +226,11 @@ Acceptance criteria use Given / When / Then. Each story links to the requirement
 - **FR-AUTH-06** Access tokens shall be JWTs signed by the identity service with an asymmetric key (RS256), containing `sub` (user ID), `role`, `iat`, `exp` and `kid`, with a lifetime of 15 minutes. Every other service verifies them locally with the public key, without calling the identity service. **[A-02, A-27]**
 - **FR-AUTH-07** Invalid credentials shall return `401 INVALID_CREDENTIALS` with an identical message for unknown email and wrong password, and for an account that has no password (created through a provider, FR-AUTH-19).
 - **FR-AUTH-08** `GET /api/v1/me` shall return the current user's ID, email, display name and role.
-- **FR-AUTH-09** The refresh token shall be an opaque random value (≥ 256 bits), stored only as a hash, sent as a cookie with `HttpOnly`, `Secure` (prod), `SameSite=Strict`, `Path=/api/v1/auth`, lifetime 7 days. **[A-24]**
-- **FR-AUTH-10** `POST /api/v1/auth/refresh` shall return a new access token and **rotate** the refresh token (old one revoked, new cookie set). A missing, expired or revoked token → `401 REFRESH_TOKEN_INVALID`. Presenting an already-rotated token → revoke the whole token family and `401 REFRESH_TOKEN_REUSED`.
-- **FR-AUTH-11** `POST /api/v1/auth/logout` shall revoke the current refresh token, clear the cookie and return `204`.
+- **FR-AUTH-09** Each login (and each registration) shall create one refresh token: an opaque random value (256 bits), stored only as a SHA-256 hash in one row per login, sent as a cookie with `HttpOnly`, `Secure` (prod), `SameSite=Strict`, `Path=/api/v1/auth`. It expires after **7 days without use** (sliding expiry). Expired rows are deleted when anyone logs in. **[A-24, D-37]**
+- **FR-AUTH-10** `POST /api/v1/auth/refresh` shall return `200 {accessToken, tokenType, expiresIn}`, move the token's expiry to now + 7 days and send the same cookie again with a fresh `Max-Age`. The token value does not change, so parallel refreshes (several tabs) all succeed. A missing, unknown, logged-out or expired token → `401 REFRESH_TOKEN_INVALID`.
+- **FR-AUTH-11** `POST /api/v1/auth/logout` shall delete the current refresh token's row (other devices stay logged in), clear the cookie and return `204`, also when there is no cookie or the token is already gone.
 - **FR-AUTH-12** Refresh and logout shall be protected against CSRF: the request must carry an `Origin` header equal to the configured frontend origin **and** the header `X-GridReserve-Client: web`; otherwise `403 FORBIDDEN`. **[A-24]**
-- **FR-AUTH-13** A disabled user's refresh tokens shall be revoked; their existing access token stops working at the latest when it expires (≤ 15 min). **[A-02]**
+- **FR-AUTH-13** A disabled user shall not get a new access token: refresh checks `enabled` every time and answers `401 REFRESH_TOKEN_INVALID`. Their existing access token stops working at the latest when it expires (≤ 15 min). **[A-02]**
 - **FR-AUTH-14** `[P4]` Login and booking creation shall be rate limited at the gateway (NFR-SEC-06).
 - **FR-AUTH-15** Members shall be able to sign in with **Google** (OpenID Connect) and **GitHub** (OAuth2): `GET /api/v1/auth/oauth2/authorization/{provider}` starts the flow, the provider returns to `GET /api/v1/auth/oauth2/callback/{provider}`. A provider whose client ID and secret are not configured is off (`404`). Client secrets come only from environment variables. (D-35)
 - **FR-AUTH-16** After a successful callback the identity service shall pick the account in this order: (1) an existing link for (provider, provider user ID); (2) if the provider reports the email as **verified** and an account with that email exists, link the provider to it (the role is unchanged); (3) if the email is verified and new, create a MEMBER with the provider's display name and no password. Without a verified email nothing is created or linked (FS-42). Google: `email_verified` claim; GitHub: the primary address marked verified in `/user/emails`.
@@ -481,9 +482,9 @@ Implemented with Resilience4j (through Spring Cloud CircuitBreaker or the Resili
 
 | Method | Path | Service | Role | Success | Main errors |
 |---|---|---|---|---|---|
-| POST | `/auth/register` | identity | Anonymous | 201 | 400, 409 EMAIL_TAKEN |
+| POST | `/auth/register` | identity | Anonymous | 201 + cookie | 400, 409 EMAIL_TAKEN |
 | POST | `/auth/login` | identity | Anonymous | 200 + cookie | 400, 401 INVALID_CREDENTIALS |
-| POST | `/auth/refresh` | identity | Cookie | 200 + cookie | 401 REFRESH_TOKEN_INVALID / REUSED, 403 |
+| POST | `/auth/refresh` | identity | Cookie | 200 + cookie | 401 REFRESH_TOKEN_INVALID, 403 |
 | POST | `/auth/logout` | identity | Cookie | 204 | 403 |
 | GET | `/me` | identity | Authenticated | 200 | 401 |
 | GET | `/countries`, `/countries/{code}/time-zones` | booking | Authenticated | 200 | 404 |
@@ -520,7 +521,7 @@ Not routed by the gateway: `/actuator/**` (except the gateway's own health), `/i
 | HTTP | Codes |
 |---|---|
 | 400 | `VALIDATION_FAILED`, `MALFORMED_REQUEST` |
-| 401 | `UNAUTHENTICATED`, `INVALID_CREDENTIALS`, `TOKEN_EXPIRED`, `REFRESH_TOKEN_INVALID`, `REFRESH_TOKEN_REUSED` |
+| 401 | `UNAUTHENTICATED`, `INVALID_CREDENTIALS`, `TOKEN_EXPIRED`, `REFRESH_TOKEN_INVALID` |
 | 403 | `FORBIDDEN` |
 | 404 | `NOT_FOUND` |
 | 409 | `EMAIL_TAKEN`, `SLOT_TAKEN`, `MEMBER_OVERLAP`, `HOLD_EXPIRED`, `INVALID_STATE`, `IDEMPOTENCY_IN_PROGRESS`, `STALE_UPDATE`; `[P2]` `SESSION_FULL`, `ALREADY_BOOKED`, `CAPACITY_BELOW_BOOKED`; `[P3]` `ALREADY_ON_WAITLIST` |
@@ -620,7 +621,7 @@ Items carried over from PROJECT.md §10 are marked (PROJECT).
 | A-21 | No-show penalty: 3 no-shows within 30 days blocks new bookings for 7 days. |
 | A-22 | Email notifications in P8 are simulated (stored and shown), never sent. |
 | A-23 | Library seats: 60-minute grid, up to 4 hours per booking (confirmed). |
-| A-24 | Refresh tokens live 7 days, cookie `SameSite=Strict`, `Path=/api/v1/auth`; CSRF defence = Origin check + `X-GridReserve-Client` header; frontend and gateway on the same site in prod. |
+| A-24 | Refresh tokens expire after 7 days without use (sliding, D-37), cookie `SameSite=Strict`, `Path=/api/v1/auth`; CSRF defence = Origin check + `X-GridReserve-Client` header; frontend and gateway on the same site in prod. |
 | A-25 | Resilience defaults in RES-01..05 (timeouts 1 s / 2 s / 5 s, breaker window 20 and 50 %, open 30 s, 3 retries from 200 ms, bulkhead 10, rate limiter 20/s). Tuned after measuring. |
 | A-26 | Reading-hall sessions default to 2-hour blocks; capacity is set per session by the admin. |
 | A-27 | JWT signing uses RS256 with a key ID (`kid`); key rotation is manual in P1 (new key pair, both public keys served during overlap). |
@@ -669,7 +670,7 @@ Items carried over from PROJECT.md §10 are marked (PROJECT).
 | FS-36 | Bulkhead full (11th concurrent call to a downstream) | Fails fast to fallback, no thread exhaustion | fallback | Integration |
 | FS-37 | Config Server down | Running services unaffected; a starting service retries then fails fast | — | System test |
 | FS-38 | Discovery server down | Existing routes keep working from cached registry | 2xx | System test |
-| FS-39 | Refresh-token reuse (stolen old token) | Whole token family revoked | 401 REFRESH_TOKEN_REUSED | Integration |
+| FS-39 | *Withdrawn 2026-11-06 (D-37): refresh tokens are no longer rotated, so there is no reuse detection. The ID is not reused.* | — | — | — |
 | FS-40 | Refresh call from a foreign origin or without the client header | Rejected | 403 | Integration |
 | FS-42 | Provider sign-in with an email the provider has not verified, matching an existing account | Not linked, no account created, no session | redirect `?error=email_not_verified` | Integration |
 | FS-43 | Provider callback with a missing or wrong `state` (forged or replayed callback) | Rejected, no session | redirect `?error=login_failed` | Integration |

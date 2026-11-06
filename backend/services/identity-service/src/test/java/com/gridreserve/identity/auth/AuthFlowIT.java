@@ -75,8 +75,8 @@ class AuthFlowIT {
     class Registration {
 
         @Test
-        @DisplayName("FR-AUTH-01/04: register creates a MEMBER, stores the email lower-cased, never returns the hash")
-        void registerCreatesMember_FRAUTH01() {
+        @DisplayName("FR-AUTH-01/04: register creates a MEMBER (email lower-cased) and logs it in; the response holds no password or hash")
+        void registerCreatesMemberAndLogsIn_FRAUTH01() {
             String email = uniqueEmail();
 
             Response response = http.post("/api/v1/auth/register",
@@ -86,10 +86,14 @@ class AuthFlowIT {
                             .formatted(email.toUpperCase()));
 
             assertThat(response.status()).isEqualTo(201);
-            assertThat(response.body().get("email").asString()).isEqualTo(email);
-            assertThat(response.body().get("displayName").asString()).isEqualTo("Test User");
-            assertThat(response.body().get("role").asString()).isEqualTo("MEMBER");
             assertThat(response.raw().body()).doesNotContain("secret-pass", "$2a$", "passwordHash");
+            assertThat(response.setCookie("gr_refresh")).isPresent();
+            // No second login: the access token from registration already works.
+            Response me = http.get("/api/v1/me", response.body().get("accessToken").asString());
+            assertThat(me.status()).isEqualTo(200);
+            assertThat(me.body().get("email").asString()).isEqualTo(email);
+            assertThat(me.body().get("displayName").asString()).isEqualTo("Test User");
+            assertThat(me.body().get("role").asString()).isEqualTo("MEMBER");
         }
 
         @Test
@@ -166,6 +170,8 @@ class AuthFlowIT {
         void loginReturnsToken_FRAUTH05() throws Exception {
             String email = uniqueEmail();
             Response registered = http.post("/api/v1/auth/register", registerBody(email, "secret-pass"));
+            String userId = http.get("/api/v1/me", registered.body().get("accessToken").asString())
+                    .body().get("id").asString();
 
             Response login = http.post("/api/v1/auth/login", loginBody(email.toUpperCase(), "secret-pass"));
 
@@ -175,7 +181,7 @@ class AuthFlowIT {
             SignedJWT jwt = SignedJWT.parse(login.body().get("accessToken").asString());
             assertThat(jwt.getHeader().getAlgorithm().getName()).isEqualTo("RS256");
             assertThat(jwt.getHeader().getKeyID()).isEqualTo(TestJwtKeys.KEY_ID);
-            assertThat(jwt.getJWTClaimsSet().getSubject()).isEqualTo(registered.body().get("id").asString());
+            assertThat(jwt.getJWTClaimsSet().getSubject()).isEqualTo(userId);
             assertThat(jwt.getJWTClaimsSet().getStringClaim("role")).isEqualTo("MEMBER");
             assertThat(Duration.between(jwt.getJWTClaimsSet().getIssueTime().toInstant(),
                     jwt.getJWTClaimsSet().getExpirationTime().toInstant())).isEqualTo(Duration.ofMinutes(15));

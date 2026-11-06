@@ -7,7 +7,8 @@ import org.springframework.http.HttpStatus;
 public enum IdentityErrorCode implements ErrorCode {
 
     EMAIL_TAKEN(HttpStatus.CONFLICT),
-    INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED);
+    INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED),
+    REFRESH_TOKEN_INVALID(HttpStatus.UNAUTHORIZED);
 
     private final HttpStatus status;
 
