@@ -250,7 +250,8 @@ What the 29 integration tests execute (real `postgres:16` Testcontainer, plain S
 - The login timing equality (dummy BCrypt hash) is a code-review item, not measured by a test.
 
 ### Open issues for later milestones
-- Social login (Google, GitHub) raised by the owner on 2026-11-06: not in PROJECT.md or REQUIREMENTS.md; needs a scope decision (see the M1.3a PR discussion).
+- Social login: **decided 2026-11-06** (D-35): sign-in with Google and GitHub as M1.3d, after M1.3c; link by verified email only. Register starts a session (D-36) in M1.3b. REQUIREMENTS v0.6, ARCHITECTURE §5.4/§16/§19, IMPLEMENTATION_PLAN M1.3, TECH_STACK and CLAUDE.md updated.
+- Possible extension: let accounts created through Google or GitHub set a password (A-29).
 
 ---
 
