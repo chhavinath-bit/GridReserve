@@ -273,7 +273,7 @@ Delivered as three PRs, in the order a → b → c (owner decisions 2026-11-06):
 
 ## 6. Phases 2–8
 
-**Core path: Phases 1, 2, 4. Phases 3, 5, 6, 7, 8 are optional extensions** (owner decision 2026-11-05, PROJECT.md §9), taken after the core path only if time allows; Phase 4 therefore depends on Phase 2, not on Phase 3.
+**Core path: Phases 1, 2, 4. Phases 3, 5, 6, 7, 8 are optional extensions**, and so is sign-in with Google and GitHub (former M1.3d, outline in M1.3; added 2026-11-06) (owner decision 2026-11-05, PROJECT.md §9), taken after the core path only if time allows; Phase 4 therefore depends on Phase 2, not on Phase 3.
 
 Each phase: settle its `D-xx`, agree a detailed milestone plan, implement, then close with tests, CI, deploy, README, CHANGELOG, tag.
 

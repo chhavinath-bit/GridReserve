@@ -77,7 +77,7 @@ Do this at the start of every session, before proposing or changing anything:
 
 **Core path (2026-11-05):** 0 Environment and repositories → 1 Core engine and platform (EXCLUSIVE) → 2 Capacity model → 4 Redis. After that the project is complete and showable.
 
-**Optional extensions**, one at a time, only when I decide to take one: 3 Waitlist and offers, 5 Payments and refunds (mocked), 6 Memberships and venue managers, 7 Recurring and no-shows, 8 Queue, notifications, polish. Their designs stay in the docs; the data model must not block them.
+**Optional extensions**, one at a time, only when I decide to take one: 3 Waitlist and offers, 5 Payments and refunds (mocked), 6 Memberships and venue managers, 7 Recurring and no-shows, 8 Queue, notifications, polish, and sign-in with Google and GitHub (former M1.3d, D-35; REQUIREMENTS FR-AUTH-15..19). Their designs stay in the docs; the data model must not block them.
 
 - Do not start a phase until the previous one is complete: **tests passing, CI green, deployed, README updated**, and tagged `phase-N-complete`.
 - Phase 1 only builds the EXCLUSIVE model (rooms, library seats, courts, bays, doctors, trainers), but the data model must not block adding CAPACITY later.
