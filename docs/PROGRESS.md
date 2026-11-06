@@ -10,6 +10,7 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 | M1.1 Platform skeleton, CI and Boot 4 spikes | Done (owner reviewed; [review guide](reviews/M1.1-review.md)) | 2026-11-05 | `9d636e0` (merge of PR #2); config repo `ae47541` (merge of PR #1); CI on `main` green, 16 tests |
 | M1.2 Booking schema, constraints and seed data | Done (owner reviewed; [review guide](reviews/M1.2-review.md)) | 2026-11-05 | `fae582d` (merge of PR #5); config repo `4209388` (merge of PR #2); CI on `main` (`793a526`) green; local `verify` on `main` 2026-11-06: 16 + 29 tests, 0 failures |
 | M1.3a Identity core (register, login, `/me`, RS256 tokens) | Done (owner reviewed; [review guide](reviews/M1.3a-review.md)) | 2026-11-06 | `6dc7ce6` (merge of PR #6); config repo `fd64800` (merge of PR #3); CI on `main` (`6dc7ce6`) green; local `verify` on `main` 2026-11-06: 32 + 44 tests, 0 failures |
+| M1.3b Refresh tokens, logout, register logs in | Built; **awaiting owner review** ([review guide](reviews/M1.3b-review.md)) | 2026-11-06 | branch `m1.3b-refresh-tokens`; config repo branch `m1.3b-refresh-cookie` |
 
 ---
 
@@ -194,6 +195,60 @@ What the 29 integration tests execute (real `postgres:16` Testcontainer, plain S
 ### Open issues for later milestones
 - The readiness check does not include the database (Boot default); decide in M1.9 whether `db` belongs in readiness.
 - `BookingServiceApplicationTest` now needs Docker (it starts the Testcontainer) although it is a `*Test`; rename to `*IT` if you want the naming rule strict (renames need your approval).
+
+## M1.3b Refresh tokens — Built, awaiting owner review (2026-11-06)
+
+**Built:**
+- identity-service: Flyway `V3__refresh_token` (`pk_refresh_token`, `fk_refresh_token_user`, `uq_refresh_token_hash`, `ix_refresh_token_expires`, `ix_refresh_token_user`). One row per login; only the SHA-256 of the 256-bit token is stored.
+- `POST /api/v1/auth/refresh`: one conditional `UPDATE … SET expires_at = now + 7d WHERE token_hash = ? AND expires_at > now`; 1 row → new access token and the same cookie with a fresh `Max-Age`; 0 rows, no cookie or a disabled user → `401 REFRESH_TOKEN_INVALID`.
+- `POST /api/v1/auth/logout`: deletes the row, clears the cookie, `204` (also without a cookie).
+- Refresh and logout require `Origin` = `gridreserve.web.frontend-origin` and `X-GridReserve-Client: web`, else `403 FORBIDDEN` (FR-AUTH-12).
+- Login and register start a session through one `AuthService.startSession`; register now answers `201 {accessToken, …}` + cookie (D-36). Expired rows are deleted at every login (no cleanup job).
+- Cookie `gr_refresh`: `HttpOnly`, `SameSite=Strict`, `Path=/api/v1/auth`, `Max-Age` 7 days, `Secure` by default (off only in `identity-service-dev.yml`).
+- Config repo: `gridreserve.auth.refresh` in `identity-service.yml`, new `identity-service-dev.yml`, `gridreserve.web.frontend-origin` in `application-dev.yml` / `application-prod.yml`.
+
+**Decisions settled (owner, 2026-11-06):** D-37 refresh tokens not rotated (one row per login, sliding 7 days, logout deletes it; rotation, families, reuse detection and the cleanup job dropped; FS-39 withdrawn); D-36 register starts a session; D-35 sign-in with Google and GitHub as M1.3d. REQUIREMENTS v0.7, ARCHITECTURE, CLAUDE.md, IMPLEMENTATION_PLAN and TECH_STACK updated. PROJECT.md still says "rotating refresh token" (unchanged by rule; the REQUIREMENTS change note records the owner decision).
+
+**Dependencies added:** none.
+
+### Test results
+
+`cd backend && ./mvnw -B verify` on 2026-11-06: **BUILD SUCCESS**, 96 tests, 0 failures, 0 skipped.
+
+| Module | Surefire (`*Test`) | Failsafe (`*IT`) |
+|---|---|---|
+| common-web | 20 | — |
+| config-server / discovery-server / api-gateway | 1 / 1 / 2 | — |
+| identity-service | 10 (new: `RefreshTokensTest` 2, `ClientCheckTest` 2) | 31 (`AuthFlowIT` 15, new `RefreshFlowIT` 14, `UserSchemaIT` 2, new `RefreshTokenSchemaIT` 2) |
+| booking-service | 2 | 29 |
+
+What the new tests execute (behavior, not smoke): cookie attributes; only the hash stored; expired rows deleted at login; refresh returns a working access token and slides the expiry; 7 idle days → 401; missing/unknown token → 401; disabled user → 401 with the expiry unchanged; foreign/missing `Origin` or missing header → 403 and the session untouched; 10 parallel refreshes → 10 × 200; an access token is not accepted as a refresh token and vice versa; logout deletes the row, clears the cookie and the copied cookie stops working; logout on one device keeps the other; logout is idempotent; V3 constraints and indexes by name.
+
+**Repeated runs (CLAUDE.md §8.3):** `RefreshFlowIT` (includes the parallel-refresh test) run 20 times with `-am`: **20 of 20 passed**, 14 tests each. (A first loop without `-am` used a stale `common-web` jar from `~/.m2` and failed at startup in all 20 runs; that was the command, not the code.)
+
+**Mutation check:** removing ` AND t.expiresAt > :now` fails only `expiredAfterSevenIdleDays_FRAUTH10`; removing the enabled filter fails only `disabledUserRefused_FRAUTH13`; removing the CSRF check from refresh fails only `foreignCallerForbidden_FS40`. All reverted.
+
+**Through the Compose stack** (`docker compose up -d --build --wait`, all six healthy; Flyway applied V3 to `identity_db`):
+
+| Check | Result |
+|---|---|
+| Right after the identity restart | gateway answered `503` (fallback) for a few seconds until its circuit breaker closed; then `200`. Known slow routing after a restart. |
+| login (alice) | 200; `Set-Cookie: gr_refresh=…; Path=/api/v1/auth; Max-Age=604800; HttpOnly; SameSite=Strict` (no `Secure` in dev) |
+| refresh with Origin + header | 200, `expiresIn` 900, token works on `/me` (Alice, id 2); same cookie attributes |
+| refresh without the headers | 403 `FORBIDDEN` |
+| logout | 204, `Max-Age=0`; refresh afterwards → 401 `REFRESH_TOKEN_INVALID` |
+| register Dave | 201 + cookie; its access token works on `/me` |
+| `identity_db.refresh_token` | Alice's row gone, Dave's row: 64-character hash, lifetime 7 days |
+
+### Not covered yet
+- No browser test of the cookie flow (frontend from M1.6).
+- `Secure` cookies only take effect over HTTPS (deployment, M1.10).
+- The gateway and booking-service do not check tokens yet (M1.3c).
+
+### Open issues for later milestones
+- The frontend must call refresh on start and on `401 TOKEN_EXPIRED` with `X-GridReserve-Client: web` (M1.6).
+
+---
 
 ## M1.3a Identity core — Done (2026-11-06)
 
