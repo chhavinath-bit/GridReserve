@@ -26,6 +26,9 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | `SecureRandom`, URL-safe Base64 | A random generator meant for secrets (unpredictable, unlike `Random`), and Base64 with `-` and `_` instead of `+` and `/`, so the value fits in a cookie without escaping. | `RefreshTokens.newToken` | M1.3b |
 | `MessageDigest` (SHA-256), `HexFormat` | A one-way hash: same input → same 32 bytes, impossible to reverse; `HexFormat` prints them as 64 hex characters. | `RefreshTokens.hash` | M1.3b |
 | `Optional` chains (`flatMap`, `filter`, `map`, `orElseThrow`) | Each step runs only if there is still a value: token valid → find user → enabled → issue; any empty step falls through to the error. | `AuthService.refresh` | M1.3b |
+| `LocalDateTime` vs `ZonedDateTime`, DST gaps and overlaps | `LocalDateTime` is a wall-clock reading with no zone; `ZonedDateTime` adds the zone and so names a real moment. On spring-forward night a local hour does not exist (`getValidOffsets` is empty); on fall-back night one happens twice (two offsets). | `LocalSlotGrid` | M1.4 |
+| `Comparator.comparing(...).thenComparing(...)` | Builds a sort order from getters, first key then tie-breaker. | `CatalogService.categories` | M1.4 |
+| `List.getFirst()` / `getLast()` | Java 21 sequenced collections: first and last element without index arithmetic. | `AvailabilityService` | M1.4 |
 
 ## 2. Build, containers and CI
 
@@ -72,6 +75,8 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | Spring-specific exceptions | `HttpMessageNotReadableException` (bad JSON), `NoResourceFoundException` (no handler for the path), `HttpRequestMethodNotSupportedException`. | `GlobalExceptionHandler` | M1.1 |
 | `ResponseEntity` with headers | Lets a controller choose the status and add headers (here `Set-Cookie`) next to the body. | `AuthController.withSession`, `refresh`, `logout` | M1.3b |
 | `ResponseCookie`, reading cookies | Spring's builder for a `Set-Cookie` header with all attributes; `WebUtils.getCookie` reads one cookie from the request. | `RefreshCookie` | M1.3b |
+| `@RequestParam` with defaults, `@DateTimeFormat` | Binds query parameters (`?page=0&size=20`, `?date=2026-11-07`) to Java types; a value that cannot be converted throws `MethodArgumentTypeMismatchException`, now a `400 VALIDATION_FAILED` naming the field. | `CatalogController`, `AvailabilityController`, `GlobalExceptionHandler` | M1.4 |
+| `Authentication` as a controller parameter | Spring passes the current caller; its authorities show the role (`ROLE_ADMIN`). | `Viewer.isAdmin` | M1.4 |
 
 ## 5. Data: PostgreSQL, Flyway, JPA
 
@@ -97,6 +102,11 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | `char(n)` vs `varchar`, `@JdbcTypeCode` | `char(64)` is fixed length. Hibernate assumes `varchar` for a `String`; `@JdbcTypeCode(SqlTypes.CHAR)` tells it otherwise, or `ddl-auto: validate` refuses to start. | `RefreshToken.tokenHash` | M1.3b |
 | `INSERT … ON CONFLICT DO NOTHING` | Insert a row unless one with the same key exists, in one statement. Under parallel calls PostgreSQL lets exactly one insert win; the others do nothing instead of failing. Returns 1 or 0 rows. | `MemberRepository.insertIfAbsent` | M1.3c |
 | Native `@Query` | `nativeQuery = true` sends plain PostgreSQL SQL instead of JPQL, needed for PostgreSQL-only syntax such as `ON CONFLICT`. | `MemberRepository` | M1.3c |
+| `Page`, `Pageable`, `Sort` | Spring Data's page of results with totals; `PageRequest.of(page, size, sort)` asks for one. Mapped to API-04's `{items, page, size, totalItems, totalPages}`. | `PageResponse`, `PageParams`, `VenueRepository` | M1.4 |
+| `@EntityGraph` and the N+1 problem | N+1 = one query for a list plus one per item for a lazy relation. `@EntityGraph(attributePaths = ...)` joins the relation into the first query. | `BookableRepository` | M1.4 |
+| JPQL constructor expression | `select new pkg.Dto(b.a, b.b) from Booking b ...` returns DTOs with only those columns. | `BookingRepository.findOccupied` | M1.4 |
+| Optional filter in JPQL | `(:categoryId is null or v.category.id = :categoryId)`: one query for "all" and "filtered". | `VenueRepository.search` | M1.4 |
+| `@Transactional(readOnly = true)` | A read-only transaction: Hibernate skips dirty checking; lazy relations can be loaded inside it (open-in-view is off). | `CatalogService`, `AvailabilityService` | M1.4 |
 
 ## 6. Spring Cloud and the platform
 
@@ -158,6 +168,10 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | Mutation check (by hand) | Break one rule on purpose and confirm a test fails; proves the test really covers that rule. | review guides, "Make it fail on purpose" | M1.3b |
 | Stub upstream with the JDK `HttpServer` | `com.sun.net.httpserver.HttpServer` (built into the JDK) stands in for a service behind the gateway, so a gateway test needs no other service and no new library. | `GatewayTokenCheckIT` | M1.3c |
 | `@DynamicPropertySource` | Adds properties whose value is known only at runtime (the stub's random port) before the Spring context starts. | `GatewayTokenCheckIT` | M1.3c |
+| Hibernate `Statistics` | Counts SQL statements the app sent; a test asserts a fixed upper bound to catch N+1. | `CatalogIT.noNPlusOne` | M1.4 |
+| `@ParameterizedTest` + `@CsvSource` | One test run once per input row. | `LocalSlotGridTest.gridSizes` | M1.4 |
+| Mockito default answers | An unstubbed method returns a default: `0` for `Integer` too, not `null`; stub `null` explicitly when it matters. | `RuleResolverTest` | M1.4 |
+| Dates relative to "today" in tests | Tests compute dates from `LocalDate.now(zone)` so they pass on any day without a fixed clock. | `AvailabilityIT` | M1.4 |
 
 ## 9. Architecture ideas behind the code
 
@@ -168,3 +182,7 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | Request ID correlation | One ID per request in headers, logs and errors, to trace a call across services. | `RequestIdFilter`, `RequestIdWebFilter` | M1.1 |
 | Correctness in the database | Constraints, not Java checks, guarantee no double-booking and unique emails. | V2 constraints, `uq_app_user_email` | M1.2 |
 | Local token verification | Services verify tokens with the public key, so they work while identity-service is down. | `common-web` security | M1.3a |
+| One rules resolver | Every rule value comes from one place (override → type → category), so no code ever branches on a category. | `RuleResolver` | M1.4 |
+| Read view vs decision | Availability is an unlocked read and can be stale a moment later; the database constraint decides the booking (M1.5). | `AvailabilityService` | M1.4 |
+| Module API between modules | Availability reads bookings through `BookingOccupancy`, never the booking table; the DTO carries no member. | `BookingOccupancy`, `OccupiedRange` | M1.4 |
+

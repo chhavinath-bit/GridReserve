@@ -13,6 +13,7 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 | M1.3b Refresh tokens, logout, register logs in | Done (owner reviewed; [review guide](reviews/M1.3b-review.md)) | 2026-11-06 | `7b7edb9` (merge of PR #7); config repo `aa5775a` (merge of PR #4); CI on `main` (`7b7edb9`) green, 36 + 60 tests |
 | M1.3c Token checks in the gateway and booking-service | Done (owner reviewed; [review guide](reviews/M1.3c-review.md)) | 2026-11-06 | `2792e21` (merge of PR #8); no config repo change; CI on `main` (`2792e21`) green, 36 + 78 tests |
 | M1.3d Sign-in with Google and GitHub | **Dropped** (owner, 2026-11-06): too much work for its value; optional extension, design kept in the docs (D-35 withdrawn). M1.3 is complete with a, b, c. | 2026-11-06 | — |
+| M1.4 Catalog, countries and availability | Built; **awaiting owner review** ([review guide](reviews/M1.4-review.md)) | 2026-11-06 | branch `m1.4-catalog-availability`; no config repo change |
 
 ---
 
@@ -197,6 +198,47 @@ What the 29 integration tests execute (real `postgres:16` Testcontainer, plain S
 ### Open issues for later milestones
 - The readiness check does not include the database (Boot default); decide in M1.9 whether `db` belongs in readiness.
 - `BookingServiceApplicationTest` now needs Docker (it starts the Testcontainer) although it is a `*Test`; rename to `*IT` if you want the naming rule strict (renames need your approval).
+
+## M1.4 Catalog, countries and availability — Built, awaiting owner review (2026-11-06)
+
+**Built (booking-service):**
+- Catalog reads (FR-CAT-01..06, FR-CAT-14): `GET /categories` (with bookable types; EXCLUSIVE types first, then by label), `/venues?categoryId=` and `/venues/{venueId}/bookables` (paginated, API-04), `/venues/{id}` (zone + weekly hours), `/bookables/{id}` (effective rules, own or venue hours), `/countries`, `/countries/{code}/time-zones`. Members get only active items (inactive → 404); admins may pass `includeInactive=true`.
+- `RuleResolver` → `EffectiveRules`: bookable override → type default → category; own weekly hours replace the venue's (FR-CAT-04/05).
+- Availability (FR-AV-01..07): `LocalSlotGrid` (local-time grid anchored at opening, DST gap skipped, repeated hour once), `AvailabilityService` (whole local days today … today + 6, else `422 BEYOND_HORIZON`; past dates all PAST; closed weekday `closed: true`; CAPACITY → `422 WRONG_BOOKING_MODEL`), one occupancy query per request through `booking/service/BookingOccupancy` (CONFIRMED, or HELD with `expires_at > now`; overlap with `[start, occupied_until)`).
+- common-web: a malformed or missing query parameter → `400 VALIDATION_FAILED` naming the field (before, the catch-all handler answered 500).
+- Docs: D-39, REQUIREMENTS v0.10 (FR-AV-04 clarified, FR-AV-07 added, API-04 exception), CLAUDE.md §15.1, README section "Browsing the catalog and availability", review guide, learning file.
+
+**Plan deviation:** the plan named the CAPACITY error `BOOKING_MODEL_NOT_SUPPORTED`; the existing catalog code `WRONG_BOOKING_MODEL` (BR-09) means the same and is used instead.
+
+**Dependencies added:** none.
+
+### Test results
+
+`cd backend && ./mvnw -B verify` on 2026-11-06: **BUILD SUCCESS**, 156 tests, 0 failures, 0 skipped.
+
+| Module | Surefire (`*Test`) | Failsafe (`*IT`) |
+|---|---|---|
+| common-web | 22 (new: type mismatch, missing parameter) | — |
+| config-server / discovery-server | 1 / 1 | — |
+| api-gateway | 2 | 8 |
+| identity-service | 10 | 32 |
+| booking-service | 14 (new: `LocalSlotGridTest` 8, `RuleResolverTest` 4) | 66 (new: `CatalogIT` 16, `AvailabilityIT` 12; `BookingSecurityIT.memberTokenAccepted` now expects 200 because `/categories` exists) |
+
+What the new tests execute (behavior): grid sizes for 15/30/60-minute slots, anchoring at opening, UTC vs local, all-day hours, DST spring-forward (23 slots, no 01:00) and fall-back (24, no duplicates); resolver layers and own hours replacing venue hours; categories with labels and CAPACITY nulls; venue page and detail with hours (24:00); inactive venue and bookable hidden from members, visible to admins; bad page parameters → 400; bookable page of 16 with labels; effective rules for the trainer (15/45/45/15); Dr. Mehta's own hours; countries sorted, one-zone and multi-zone countries, unknown → 404; ≤ 3 SQL statements for a bookable page; availability day of 17 slots with zone and rules; CONFIRMED → TAKEN; buffer blocks the following slot; expired hold FREE, live hold TAKEN, cancelled FREE; no member data in the response; past date all PAST; horizon edge 200/422; closed Sunday; own hours (Monday closed, Tuesday 8 slots); inactive → 404; CAPACITY → 422; bad and missing date → 400.
+
+**Mutation checks (all reverted):** dropping ` and b.expiresAt > :now` fails `expiredHoldIsFree_FRAV03`; `hasOwnHours = false` fails `ownHoursReplaceVenueHours`; a visibility filter that is always true fails `CatalogIT.inactiveBookableHidden_FRCAT10` and `AvailabilityIT.inactiveBookable_FRCAT10`.
+
+**First runs that failed (fixed, not weakened):** `RuleResolverTest` (Mockito answers 0 for `Integer`; the test now stubs `null`); `CatalogIT.categoriesWithTypes` (types were ordered by seed ID, which the seed's join does not keep; the service now sorts EXCLUSIVE first, then label).
+
+**Through the Compose stack** (`docker compose up -d --build --wait`): gateway answered 503 for about 15 s after the restart (known routing delay), then: categories with types (Study: Room, Seat, Hall); Sports venues → Sunrise Turf; its bookables Court A, Court B (label Court); Court A rules 60/60/120/0, zone Asia/Kolkata; tomorrow's availability 17 slots, first 06:00 local = 00:30Z FREE; today + 7 → 422 `BEYOND_HORIZON`; `date=nope` → 400 with `fieldErrors[date]`; IN → `["Asia/Kolkata"]`; no token → 401.
+
+### Not covered yet
+- Booking (hold, confirm, cancel) is M1.5; TAKEN is proven with inserted rows.
+- Admin create/edit/deactivate endpoints (M1.7).
+- On fall-back night the repeated hour's slot lasts two real hours (documented in `LocalSlotGrid`).
+
+### Open issues for later milestones
+- Whether a whole booking (duration + buffer) fits is checked at booking time (M1.5), not in availability; the frontend picker (M1.6) should only offer starts where `minDuration` fits.
 
 ## M1.3c Token checks in the gateway and booking-service — Done (2026-11-06)
 

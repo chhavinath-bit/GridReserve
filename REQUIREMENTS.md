@@ -1,6 +1,7 @@
 # GridReserve — Requirements
 
-> Version 0.9 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Version 0.10 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Changes from v0.9 (M1.4, owner decisions 2026-11-06, D-39): availability works in whole local days (today to today + horizon − 1; later dates `422 BEYOND_HORIZON`, past dates all `PAST`); categories and countries are unpaginated reference lists (API-04); availability for a CAPACITY bookable returns `422 WRONG_BOOKING_MODEL` until Phase 2 (FR-AV-04, FR-AV-07).
 > Changes from v0.8 (owner decision, 2026-11-06, D-35 withdrawn): **sign-in with Google and GitHub is removed from Phase 1** and kept as an optional extension (US-30, FR-AUTH-15..19, FS-42..44, A-29 marked; not built). Email and password stay the only sign-in.
 > Changes from v0.7 (M1.3c, 2026-11-06, D-38): FR-ROLE-01 states which gateway paths are public and that the auth endpoints ignore the `Authorization` header (an expired access token sent along must not block a refresh).
 > Changes from v0.6 (owner decision, 2026-11-06, D-37): the refresh token is **not rotated**. One opaque token per login, stored hashed, with a sliding 7-day expiry; logout deletes it (FR-AUTH-09..11); reuse detection and token families are dropped (FS-39 withdrawn). PROJECT.md §5 still says "rotating refresh token"; this owner decision replaces it, PROJECT.md itself is unchanged.
@@ -264,8 +265,9 @@ Acceptance criteria use Given / When / Then. Each story links to the requirement
 - **FR-AV-01** `GET /api/v1/bookables/{id}/availability?date=YYYY-MM-DD` shall return all slots of that **local** date within that weekday's opening hours. On a closed weekday it returns `200` with `closed: true` and no slots.
 - **FR-AV-02** Each slot shall contain `start` and `end` (UTC ISO-8601), `localStart` and `localEnd` (venue time), and `status` ∈ {`FREE`, `TAKEN`, `PAST`}.
 - **FR-AV-03** A slot is `TAKEN` if it overlaps the occupied range (`[start, end + buffer)`) of any active booking on that bookable. A `HELD` booking whose `expiresAt` has passed shall be treated as free even if the expiry job has not run yet.
-- **FR-AV-04** A slot whose start is ≤ now is `PAST`. Dates beyond the booking horizon (BR-07) return `422 BEYOND_HORIZON`.
+- **FR-AV-04** A slot whose start is ≤ now is `PAST`. Dates beyond the booking horizon (BR-07) return `422 BEYOND_HORIZON`: availability works in whole local days in the venue's zone, so today through today + `bookingHorizonDays` − 1 are served (every slot on them starts before now + horizon) and later dates are refused. A past date returns `200` with every slot `PAST` (D-39).
 - **FR-AV-05** Availability shall never reveal who holds a slot.
+- **FR-AV-07** Availability for a CAPACITY bookable shall return `422 WRONG_BOOKING_MODEL` until Phase 2 (BR-09); CAPACITY bookables are still listed in the catalog with their `bookingModel` (D-39).
 - **FR-AV-06** The response also includes the venue time zone, the bookable type label and the effective rules (slot length, min/max duration) so the UI can build the picker without hard-coded values.
 - **FR-AV-07** `[P2]` For CAPACITY bookables, `GET /api/v1/bookables/{id}/sessions?date=` shall return sessions with `capacity`, `booked` and `seatsLeft`.
 
@@ -461,7 +463,7 @@ Implemented with Resilience4j (through Spring Cloud CircuitBreaker or the Resili
 - **API-01** Public base path `/api/v1` on the gateway. JSON only (`application/json`, UTF-8).
 - **API-02** Requests and responses use DTOs, never JPA entities. Unknown JSON fields → `400`.
 - **API-03** Instants are ISO-8601 UTC with `Z`. Dates are `YYYY-MM-DD` in venue local time. Responses with times include `venueTimeZone`.
-- **API-04** Lists are paginated: `page` (0-based, default 0), `size` (default 20, max 100); response `{items, page, size, totalItems, totalPages}`.
+- **API-04** Lists are paginated: `page` (0-based, default 0), `size` (default 20, max 100); response `{items, page, size, totalItems, totalPages}`; `size` or `page` out of range → `400 VALIDATION_FAILED`. Exception: the small reference lists `GET /categories` and `GET /countries` return a plain array (D-39).
 - **API-05** Every error (from any service or the gateway) uses one JSON format:
 
 ```json
@@ -688,7 +690,7 @@ Items carried over from PROJECT.md §10 are marked (PROJECT).
 | 1 Authentication | FR-AUTH-01..13, FR-ROLE-01..05, NFR-SEC-01..03 |
 | 2 Catalog | FR-CAT-01..16, FR-SEED-01 |
 | 3 Category dropdown | FR-UI-01, FR-UI-02, US-03 |
-| 4 Availability | FR-AV-01..06, US-04 |
+| 4 Availability | FR-AV-01..07, US-04 |
 | 5 Booking lifecycle | FR-BK-01..09, BR-13, US-05 |
 | 6 Conflict protection | BR-10, BR-11, CONC-01..03, CONC-10, FS-01, FS-02 |
 | 7 Rule validation | BR-01..09, BR-14, CXL-01..06 |
