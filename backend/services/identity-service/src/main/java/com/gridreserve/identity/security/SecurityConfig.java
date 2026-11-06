@@ -1,6 +1,7 @@
 package com.gridreserve.identity.security;
 
 import com.gridreserve.common.web.security.JsonSecurityErrorHandler;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -13,11 +14,12 @@ import org.springframework.security.web.SecurityFilterChain;
 
 /**
  * identity-service's endpoint rules. Stateless: no HTTP session, no login form; the caller proves
- * who it is with a Bearer access token on every request (NFR-SEC-03). CSRF protection is off because
- * no endpoint here is authenticated by a cookie yet; the refresh-token cookie (M1.3b) gets its own
- * Origin and header checks (FR-AUTH-12).
+ * who it is with a Bearer access token on every request (NFR-SEC-03). Spring's CSRF tokens are off: only
+ * refresh and logout are authenticated by a cookie, and they have their own Origin and header check
+ * ({@code ClientCheck}, FR-AUTH-12).
  */
 @Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties({RefreshTokenProperties.class, FrontendProperties.class})
 class SecurityConfig {
 
     @Bean
@@ -30,6 +32,8 @@ class SecurityConfig {
                 .formLogin(form -> form.disable())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+                        // Authenticated by the refresh cookie, not a Bearer token; checked in AuthController.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/refresh", "/api/v1/auth/logout").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/auth/ping").permitAll()
                         .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
                         // Not routed by the gateway; service credentials for /internal/** come with D-19 (M1.9).

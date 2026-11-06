@@ -30,12 +30,12 @@ public class UserService {
     }
 
     /**
-     * Creates a MEMBER account (FR-AUTH-01, FR-AUTH-04: never an ADMIN). A duplicate email is not
+     * Creates a MEMBER account (FR-AUTH-01, FR-AUTH-04: never an ADMIN); {@code AuthService} then logs it in. A duplicate email is not
      * checked first: the unique constraint decides, so two simultaneous registrations of the same
      * address give exactly one account and one {@code 409 EMAIL_TAKEN}.
      */
     @Transactional
-    public UserResponse register(RegisterRequest request) {
+    public AppUser register(RegisterRequest request) {
         if (!Credentials.fitsBcrypt(request.password())) {
             throw new DomainException(CommonErrorCode.VALIDATION_FAILED,
                     "The password is too long.");
@@ -45,7 +45,7 @@ public class UserService {
                 clock.instant());
         try {
             // Flush now, so a constraint violation surfaces here and not at commit, outside this try.
-            return UserMapper.toResponse(users.saveAndFlush(user));
+            return users.saveAndFlush(user);
         } catch (DataIntegrityViolationException ex) {
             throw ConstraintViolations.translate(ex);
         }
