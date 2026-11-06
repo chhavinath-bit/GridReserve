@@ -263,7 +263,9 @@ erDiagram
     BOOKING_SERIES ||--o{ BOOKING : "occurrences (P7)"
 ```
 
-### 5.3 Proposed booking_db schema (Phase 1)
+### 5.3 booking_db schema (Phase 1)
+
+> **Implemented in M1.2** as Flyway `V1`–`V4` in `services/booking-service/src/main/resources/db/migration/`; **the migrations are the source of truth**. Differences from the sketch below: every constraint is explicitly named (`pk_`, `fk_`, `uq_`, `ck_`, `ex_`), the bookable override columns have the same CHECKs as the type's columns (`ck_bookable_slot`, `ck_bookable_buffer`, `ck_bookable_durations`, `ck_bookable_duration_order`; owner decision 2026-11-05), and `booking_audit` / `idempotency_record` are added in M1.12.
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS btree_gist;

@@ -100,6 +100,19 @@ services:
       args:
         MODULE: services/booking-service
     image: gridreserve/booking-service:dev
+    environment:
+      <<: *java-env
+      # booking-service owns booking_db (PLAT-08); credentials only from infra/.env.
+      DB_HOST: postgres
+      BOOKING_DB_USER: ${BOOKING_DB_USER}
+      BOOKING_DB_PASSWORD: ${BOOKING_DB_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
     # No published port: scale with --scale booking-service=2; reach it through the gateway.
     healthcheck:
       test: ["CMD", "curl", "-fs", "http://localhost:8082/actuator/health/readiness"]

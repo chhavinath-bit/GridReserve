@@ -138,7 +138,7 @@ Do this at the start of every session, before proposing or changing anything:
 │   │   ├── services/{identity-service,booking-service}/   (+ payment P5, membership P6, notification P8)
 │   │   │     each: pom.xml, Dockerfile,
 │   │   │           src/main/java/com/gridreserve/<service>/{config,common/exception,<feature>/{controller,dto,service,entity,repository,mapper},client}
-│   │   │           src/main/resources/application.yml (name + config import only), db/migration/ (this service's Flyway SQL)
+│   │   │           src/main/resources/application.yml (name, port, config import, and settings that must hold in every environment such as `ddl-auto: validate` and `open-in-view: false`), db/migration/ (this service's Flyway SQL)
 │   │   │           src/test/java/... (mirrors main)
 │   │   └── libs/common-web/
 │   ├── frontend/                src/{app,api,features/<feature>,components/{ui,patterns},styles,lib}, e2e/
@@ -281,6 +281,7 @@ Rows marked ✓ were run successfully in M1.1 (2026-11-05); the others are plann
 | Build and test everything ✓ | `cd backend && ./mvnw -B verify` | Docker must be running for Testcontainers |
 | Test one module ✓ | `cd backend && ./mvnw -pl services/booking-service -am test` | `-am` also builds `common-web` |
 | Single test ✓ | `cd backend && ./mvnw -pl services/booking-service -am test -Dtest=BookingServiceApplicationTest -Dsurefire.failIfNoSpecifiedTests=false` | |
+| Single integration test ✓ | `cd backend && ./mvnw -pl services/booking-service -am verify -Dit.test=BookingConstraintsIT -Dtest=none -Dsurefire.failIfNoSpecifiedTests=false -Dfailsafe.failIfNoSpecifiedTests=false` | `*IT` classes run in `verify` (Failsafe), not in `test`; Docker must be running |
 | Refresh config on all instances | `scripts/refresh-config.sh [service-id]` | Needs admin/service credential from env |
 | Install frontend deps | `cd frontend && npm ci` | |
 | Run frontend | `cd frontend && npm run dev` | Vite proxies `/api` to the gateway on `:8080` |

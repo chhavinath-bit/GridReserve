@@ -1,9 +1,9 @@
 package com.gridreserve.booking;
 
+import com.gridreserve.booking.support.ServiceIntegrationTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.test.context.SpringBootTest;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -12,12 +12,8 @@ import java.net.http.HttpResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Starts the service without Config Server or Eureka and calls it over real HTTP. */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
-        "CONFIG_IMPORT=optional:classpath:/no-config-server.yml",
-        "spring.cloud.config.enabled=false",
-        "eureka.client.enabled=false"
-})
+/** Starts the service (with its PostgreSQL Testcontainer) and calls it over real HTTP. */
+@ServiceIntegrationTest
 class BookingServiceApplicationTest {
 
     @Value("${local.server.port}")

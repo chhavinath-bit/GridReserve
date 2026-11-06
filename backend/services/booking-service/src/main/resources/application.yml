@@ -13,3 +13,10 @@ spring:
   cloud:
     config:
       fail-fast: true
+  # Correctness settings that must hold in every environment, tests included, so they live here and
+  # not in the config repo (owner decision 2026-11-05). Flyway alone changes the schema; Hibernate
+  # only validates that the entities match it and refuses to start otherwise.
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
