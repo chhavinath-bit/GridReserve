@@ -2,7 +2,7 @@
 
 One booking platform for many kinds of venues: library rooms and seats, sports courts, parking bays, clinic appointments and gym sessions. A member picks a category, a venue and a bookable, holds a time slot for five minutes and confirms it. Double-booking is impossible, even under heavy concurrent load and with several service instances running.
 
-> **Status: Phase 1, M1.3a.** Config server, Eureka, gateway, identity and booking services run together. identity-service registers users, logs them in with RS256 access tokens and answers `/api/v1/me`; booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. Refresh tokens (M1.3b) and token checks in the gateway and booking-service (M1.3c) are next; no booking API yet. Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
+> **Status: Phase 1, M1.3b.** Config server, Eureka, gateway, identity and booking services run together. identity-service registers users (and logs them in at once), issues RS256 access tokens plus a refresh-token cookie (sliding 7 days, logout ends it) and answers `/api/v1/me`; booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. Token checks in the gateway and booking-service (M1.3c) and sign-in with Google and GitHub (M1.3d) are next; no booking API yet. Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## What this project demonstrates
 
@@ -83,9 +83,24 @@ TOKEN=$(curl -s localhost:8080/api/v1/auth/login -H 'Content-Type: application/j
 curl -s localhost:8080/api/v1/me -H "Authorization: Bearer $TOKEN"     # 200, Alice
 curl -s localhost:8080/api/v1/me                                      # 401 UNAUTHENTICATED
 
-# Register a new member (always MEMBER; the email is stored lower-cased)
+# Register a new member (always MEMBER; the email is stored lower-cased). Registering also logs in:
+# the answer is the same as for login (access token + refresh cookie).
 curl -s localhost:8080/api/v1/auth/register -H 'Content-Type: application/json' \
   -d '{"email":"carol@example.test","password":"carol-pass-1","displayName":"Carol"}'
+```
+
+Staying logged in: login and register also set the `gr_refresh` cookie (HttpOnly, 7 days without use). Refresh and logout accept only calls that look like they come from our frontend (the `Origin` and `X-GridReserve-Client` headers), so curl must send both:
+
+```bash
+JAR=$(mktemp)   # curl's cookie store, standing in for the browser
+APP=(-H 'Origin: http://localhost:5173' -H 'X-GridReserve-Client: web')
+
+curl -s -c "$JAR" localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"alice@gridreserve.test","password":"demo-alice-pass"}' > /dev/null
+curl -s -b "$JAR" -c "$JAR" -X POST localhost:8080/api/v1/auth/refresh "${APP[@]}"   # 200, new access token
+curl -s -b "$JAR" -X POST localhost:8080/api/v1/auth/refresh                          # 403 FORBIDDEN (no Origin/header)
+curl -s -b "$JAR" -c "$JAR" -X POST localhost:8080/api/v1/auth/logout "${APP[@]}" -o /dev/null -w '%{http_code}\n'   # 204
+curl -s -b "$JAR" -X POST localhost:8080/api/v1/auth/refresh "${APP[@]}"              # 401 REFRESH_TOKEN_INVALID
 ```
 
 ### Access-token keys
@@ -99,7 +114,7 @@ cd backend
 ./mvnw -B verify
 ```
 
-`verify` runs unit tests (`*Test`, Surefire) and integration tests against a real PostgreSQL 16 in a Testcontainer (`*IT`, Failsafe). The schema guarantees are proven in `services/booking-service/src/test/java/com/gridreserve/booking/schema/BookingConstraintsIT.java`; registration, login and tokens in `services/identity-service/src/test/java/com/gridreserve/identity/auth/AuthFlowIT.java`. Tests generate throwaway keys; no key is needed to run them.
+`verify` runs unit tests (`*Test`, Surefire) and integration tests against a real PostgreSQL 16 in a Testcontainer (`*IT`, Failsafe). The schema guarantees are proven in `services/booking-service/src/test/java/com/gridreserve/booking/schema/BookingConstraintsIT.java`; registration, login and tokens in `services/identity-service/src/test/java/com/gridreserve/identity/auth/AuthFlowIT.java`; the refresh cookie, logout and the CSRF check in `RefreshFlowIT.java` next to it. Tests generate throwaway keys; no key is needed to run them.
 
 All demo data is fictional.
 

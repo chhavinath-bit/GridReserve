@@ -23,6 +23,9 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | UTF-8 bytes vs characters | `"é".length()` is 1 character but 2 bytes. Matters when a limit is in bytes (BCrypt: 72). | `Credentials.fitsBcrypt` | M1.3a |
 | `BigInteger`, `KeyFactory`, key specs | Java's crypto API: turn encoded bytes (X.509 / PKCS#8) into `RSAPublicKey` / `RSAPrivateKey`; compare modulus to check a key pair. | `PemKeys`, `JwtSigningConfig.belongTogether` | M1.3a |
 | `ExecutorService`, `Future`, `CountDownLatch` | Thread pool, a handle to an async result, and a gate that releases all threads at once (true simultaneous start). `try (ExecutorService ...)` closes the pool (Java 21). | `AuthFlowIT.concurrentRegistrationsOneWinner_FRAUTH02` | M1.3a |
+| `SecureRandom`, URL-safe Base64 | A random generator meant for secrets (unpredictable, unlike `Random`), and Base64 with `-` and `_` instead of `+` and `/`, so the value fits in a cookie without escaping. | `RefreshTokens.newToken` | M1.3b |
+| `MessageDigest` (SHA-256), `HexFormat` | A one-way hash: same input → same 32 bytes, impossible to reverse; `HexFormat` prints them as 64 hex characters. | `RefreshTokens.hash` | M1.3b |
+| `Optional` chains (`flatMap`, `filter`, `map`, `orElseThrow`) | Each step runs only if there is still a value: token valid → find user → enabled → issue; any empty step falls through to the error. | `AuthService.refresh` | M1.3b |
 
 ## 2. Build, containers and CI
 
@@ -53,6 +56,8 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | Servlet filters and order | Code that runs around every request before controllers; `OncePerRequestFilter`; `Ordered.HIGHEST_PRECEDENCE` runs first. | `RequestIdFilter` | M1.1 |
 | SLF4J and MDC | Logging API; MDC is a per-thread map whose values (our `requestId`) appear in every log line. Clear it in `finally`. | `RequestIdFilter`, log pattern in config repo | M1.1 |
 | `ApplicationContextInitializer` | Runs before beans are created; can add properties. Used to inject throwaway test keys. | `TestJwtKeys` (identity tests) | M1.3a |
+| Transaction propagation and rollback | A `@Transactional` method called from another one joins its transaction (`REQUIRED`). A `RuntimeException` leaving the method rolls back everything in it, including earlier successful statements. | `AuthService.register` joins `UserService.register`; `AuthService.refresh`: a disabled user's 401 also undoes the expiry move | M1.3b |
+| Profile-specific config files | `x-dev.yml` overrides `x.yml` when the `dev` profile is active. We keep the safe value as the default and relax it only for dev. | config repo `identity-service.yml` (`cookie-secure: true`) + `identity-service-dev.yml` (`false`) | M1.3b |
 
 ## 4. Spring MVC (REST APIs)
 
@@ -64,6 +69,8 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | `@RestControllerAdvice` + `@ExceptionHandler` | One class turns exceptions from any controller into the standard error JSON. | `GlobalExceptionHandler` | M1.1 |
 | Jackson 3 | Converts Java ↔ JSON. Boot 4 uses Jackson 3 (`tools.jackson.*`); annotations stay in `com.fasterxml.jackson.annotation`. `Instant` is written as ISO-8601. | `ErrorResponse`, `JsonSecurityErrorHandler` | M1.1 |
 | Spring-specific exceptions | `HttpMessageNotReadableException` (bad JSON), `NoResourceFoundException` (no handler for the path), `HttpRequestMethodNotSupportedException`. | `GlobalExceptionHandler` | M1.1 |
+| `ResponseEntity` with headers | Lets a controller choose the status and add headers (here `Set-Cookie`) next to the body. | `AuthController.withSession`, `refresh`, `logout` | M1.3b |
+| `ResponseCookie`, reading cookies | Spring's builder for a `Set-Cookie` header with all attributes; `WebUtils.getCookie` reads one cookie from the request. | `RefreshCookie` | M1.3b |
 
 ## 5. Data: PostgreSQL, Flyway, JPA
 
@@ -84,6 +91,9 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | Exception translation | Spring wraps driver errors in `DataIntegrityViolationException`; Hibernate's `ConstraintViolationException` carries the constraint name. | `ConstraintViolations` | M1.3a |
 | Check-then-act race | "Is it free? then insert" fails under concurrency; let a constraint decide. The same idea protects slots (exclusion) and emails (unique). | `UserService.register`, booking constraints | M1.2 / M1.3a |
 | HikariCP | The JDBC connection pool; named and bounded per service. | config repo datasource `hikari` | M1.2 |
+| `@Modifying` JPQL `UPDATE` / `DELETE` | A repository method that runs one bulk statement and returns how many rows it changed, without loading entities. The count is the answer (1 = done, 0 = refused). | `RefreshTokenRepository.extend`, `deleteByTokenHash`, `deleteExpired` | M1.3b |
+| Conditional `UPDATE` as check-and-act | `UPDATE … WHERE <still valid>`: checking and changing happen in one statement, so no other request can slip in between. | `RefreshTokenRepository.extend` (`expires_at > :now`) | M1.3b |
+| `char(n)` vs `varchar`, `@JdbcTypeCode` | `char(64)` is fixed length. Hibernate assumes `varchar` for a `String`; `@JdbcTypeCode(SqlTypes.CHAR)` tells it otherwise, or `ddl-auto: validate` refuses to start. | `RefreshToken.tokenHash` | M1.3b |
 
 ## 6. Spring Cloud and the platform
 
@@ -116,6 +126,11 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | Authorities and roles | Spring permissions are strings; roles are authorities with the `ROLE_` prefix (`ROLE_ADMIN`). Spring Security 7 also adds `FACTOR_BEARER` to record how the user signed in. | `AccessTokenVerification.authenticationConverter` | M1.3a |
 | `@AuthenticationPrincipal Jwt` | Injects the verified token into a controller method; `getSubject()` is the user ID. | `MeController` | M1.3a |
 | Secrets handling | Private keys and passwords only in env vars (`infra/.env`, git-ignored); never logged (`toString` overrides). | `JwtSigningProperties`, `RegisterRequest` | M1.3a |
+| Refresh token and sliding expiry | A long-lived secret (in a cookie) that buys new short-lived access tokens. Each use moves its expiry to now + 7 days, so only 7 days *without use* end the session. Stored only as SHA-256; logout deletes the row (D-37). | `RefreshTokenService`, `V3__refresh_token.sql` | M1.3b |
+| Cookie attributes | `HttpOnly`: page scripts cannot read it (XSS cannot steal it). `Secure`: HTTPS only. `SameSite=Strict`: not sent on requests started by other sites. `Path`: only sent to that path. `Max-Age`: when the browser deletes it (0 = now). | `RefreshCookie` | M1.3b |
+| CSRF with cookies; Origin + custom header | A browser attaches cookies even to requests another site triggers. Other sites cannot set our `Origin`, and a custom header from another site needs CORS approval, so checking both proves the call came from our app. | `ClientCheck` | M1.3b |
+| SHA-256 vs BCrypt for stored secrets | BCrypt is slow and salted, for guessable passwords. A random 256-bit token cannot be guessed, and we must find it by its hash, so a fast unsalted SHA-256 is right. | `RefreshTokens.hash` | M1.3b |
+| Stateful sessions vs stateless tokens | Access tokens are checked without a database (fast, but cannot be revoked); the refresh token has a row (can be ended at logout). We use both: short stateless + long stateful. | `AccessTokenIssuer` vs `RefreshTokenService` | M1.3b |
 
 ## 8. Testing
 
@@ -129,6 +144,9 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | `@TestConfiguration` + `@Import` | Extra beans only for tests. | `PostgresTestcontainer` | M1.2 |
 | Concurrency tests | Many threads released at once by a `CountDownLatch`; assert exact outcomes (one 201, nine 409). | `AuthFlowIT` | M1.3a |
 | Mutation checks | Break the code on purpose and confirm a test fails; proves the test bites. | PROGRESS "Checks that the tests bite" | M1.2 |
+| `MockHttpServletRequest` | A fake request object from `spring-test`, to unit-test code that reads headers without starting a server. | `ClientCheckTest` | M1.3b |
+| Changing the database directly in a test | Instead of waiting 7 days, the test sets `expires_at` with `JdbcTemplate`; time-based behavior is tested without sleeping. | `RefreshFlowIT.setExpiresAt` | M1.3b |
+| Mutation check (by hand) | Break one rule on purpose and confirm a test fails; proves the test really covers that rule. | review guides, "Make it fail on purpose" | M1.3b |
 
 ## 9. Architecture ideas behind the code
 
