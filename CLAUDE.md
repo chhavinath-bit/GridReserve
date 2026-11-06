@@ -57,12 +57,12 @@ Do this at the start of every session, before proposing or changing anything:
 - **No silent architecture changes.** Any significant decision (structure, communication, data ownership, security, a changed requirement) is explained with its reason and alternatives and waits for my approval, even when it looks like a small fix.
 - **No unnecessary dependencies.** Every new library needs a reason, the alternative without it, and my approval.
 - **Commit after every working step** with a meaningful message, so the history reads as a story.
-- **End every milestone with a review guide** in `docs/reviews/M<x.y>-review.md` (see `docs/reviews/M1.1-review.md`):
-  - Part A: the files that carry the design, what to look for, what to challenge;
-  - Part B: commands for me to run myself, with expected results;
-  - Part C: explain-it-back questions with collapsible answers (what an interviewer could ask);
-  - Part D: what is *not* proven yet and when it will be;
-  - a sign-off checklist. The PR is merged only after my sign-off.
+- **End every milestone with a short review guide** in `docs/reviews/M<x.y>-review.md` (light format since 2026-11-05; one page):
+  - about 5 files that carry the design, with one thing to look for in each;
+  - a few commands for me to run myself, with expected results;
+  - about 5 explain-it-back questions with short collapsible answers;
+  - what is *not* proven yet.
+  The PR is merged only after I have reviewed and run it.
 
 ### Never claim a test passed without running it
 
@@ -71,9 +71,11 @@ Do this at the start of every session, before proposing or changing anything:
 - Never write "should pass", "tests pass" or "CI is green" based on reasoning. Never mark a milestone done in `docs/PROGRESS.md` without recorded test output.
 - If a test fails, show the failure, explain the cause you found, and fix it or ask. Do not delete, skip, `@Disabled` or weaken a failing test to make the build green without my approval.
 
-## 3. Phases (nothing is dropped; work strictly in order)
+## 3. Phases (core path first, then optional extensions; work strictly in order)
 
-0 Environment and repositories → 1 Core engine and platform (EXCLUSIVE) → 2 Capacity model → 3 Waitlist and offers → 4 Redis → 5 Payments and refunds (mocked) → 6 Memberships and venue managers → 7 Recurring and no-shows → 8 Queue, notifications, polish.
+**Core path (2026-11-05):** 0 Environment and repositories → 1 Core engine and platform (EXCLUSIVE) → 2 Capacity model → 4 Redis. After that the project is complete and showable.
+
+**Optional extensions**, one at a time, only when I decide to take one: 3 Waitlist and offers, 5 Payments and refunds (mocked), 6 Memberships and venue managers, 7 Recurring and no-shows, 8 Queue, notifications, polish. Their designs stay in the docs; the data model must not block them.
 
 - Do not start a phase until the previous one is complete: **tests passing, CI green, deployed, README updated**, and tagged `phase-N-complete`.
 - Phase 1 only builds the EXCLUSIVE model (rooms, library seats, courts, bays, doctors, trainers), but the data model must not block adding CAPACITY later.
