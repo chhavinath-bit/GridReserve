@@ -24,7 +24,7 @@
 | Migrations | Flyway, per service | Versioned SQL schema and seed data | P1 |
 | Security | Spring Security | Filter chains, roles, BCrypt, CORS | P1 |
 | Tokens | Spring Security OAuth2 resource server + Nimbus JOSE (RS256) | Sign (identity) and verify (all) JWT access tokens (replaced jjwt, D-34) | P1 |
-| Social sign-in | Spring Security OAuth2 client | Sign in with Google (OIDC) and GitHub (OAuth2) in identity-service (D-35, M1.3d) | P1 |
+| Social sign-in | Spring Security OAuth2 client | Sign in with Google (OIDC) and GitHub (OAuth2) in identity-service (D-35 withdrawn) | Optional extension, not planned |
 | Frontend | React + TypeScript + Tailwind CSS | Single-page app | P1 |
 | Frontend tooling | Vite, TanStack Query, React Router | Build, server state, routing | P1 |
 | UI components | shadcn/ui (copied into the repo) on Radix primitives; design tokens as CSS variables | Accessible, reusable, themeable components (DESIGN_SYSTEM.md) | P1 |
@@ -175,7 +175,7 @@ Each section: **role**, **why**, **how it interacts**, **alternatives rejected**
 - **Why RS256 now (was HS256).** With several services verifying tokens, a shared HMAC secret would let any service mint tokens. With RS256 only the identity service can sign; everyone else verifies.
 - **Why Spring's resource server + Nimbus (D-34, 2026-11-06; replaced jjwt).** It is the standard Spring Security way; versions are managed by Spring Boot; the Bearer filter exists for servlet services and for the reactive gateway, so we write no token filter ourselves; signing uses `NimbusJwtEncoder`. jjwt's JSON module needs Jackson 2, which would sit next to Boot 4's Jackson 3.
 - **Alternatives considered.** *jjwt*: explicit API, but two Jackson versions and hand-written filters (servlet and reactive). *Spring Authorization Server* (full OAuth2): more than this project needs. *A JWKS endpoint* on identity for automatic key rotation: a later improvement (D-23); keys come from the config repo for now.
-- **Sign-in with Google and GitHub (D-35, M1.3d).** Spring Security's **OAuth2 client** does the redirect, the code exchange and OIDC ID-token checks; identity-service only decides which account the provider identity belongs to (verified email only) and then starts a normal session. *Alternatives:* hand-written OAuth2 code exchange (more code, easy to get state/PKCE wrong); an external identity provider such as Keycloak or Auth0 (another system to run or depend on).
+- **Sign-in with Google and GitHub (optional extension, not planned; D-35 withdrawn 2026-11-06).** Spring Security's **OAuth2 client** does the redirect, the code exchange and OIDC ID-token checks; identity-service only decides which account the provider identity belongs to (verified email only) and then starts a normal session. *Alternatives:* hand-written OAuth2 code exchange (more code, easy to get state/PKCE wrong); an external identity provider such as Keycloak or Auth0 (another system to run or depend on).
 
 ### 3.13 React, TypeScript, Tailwind, Vite, TanStack Query, React Router
 
