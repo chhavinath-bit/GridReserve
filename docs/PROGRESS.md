@@ -13,6 +13,7 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 | M1.3b Refresh tokens, logout, register logs in | Done (owner reviewed; [review guide](reviews/M1.3b-review.md)) | 2026-11-06 | `7b7edb9` (merge of PR #7); config repo `aa5775a` (merge of PR #4); CI on `main` (`7b7edb9`) green, 36 + 60 tests |
 | M1.3c Token checks in the gateway and booking-service | Done (owner reviewed; [review guide](reviews/M1.3c-review.md)) | 2026-11-06 | `2792e21` (merge of PR #8); no config repo change; CI on `main` (`2792e21`) green, 36 + 78 tests |
 | M1.3d Sign-in with Google and GitHub | **Dropped** (owner, 2026-11-06): too much work for its value; optional extension, design kept in the docs (D-35 withdrawn). M1.3 is complete with a, b, c. | 2026-11-06 | — |
+| M1.4 Catalog, countries and availability | Built; **awaiting owner review** ([review guide](reviews/M1.4-review.md)) | 2026-11-06 | branch `m1.4-catalog-availability`; no config repo change |
 
 ---
 
@@ -198,112 +199,6 @@ What the 29 integration tests execute (real `postgres:16` Testcontainer, plain S
 - The readiness check does not include the database (Boot default); decide in M1.9 whether `db` belongs in readiness.
 - `BookingServiceApplicationTest` now needs Docker (it starts the Testcontainer) although it is a `*Test`; rename to `*IT` if you want the naming rule strict (renames need your approval).
 
-## M1.3c Token checks in the gateway and booking-service — Done (2026-11-06)
-
-**Built:**
-- api-gateway: Spring Security (reactive) with `common-web`'s `AccessTokenVerification` wrapped as a `ReactiveJwtDecoder`. Public: `/api/v1/auth/**`, `/api/v1/ping/**`, `/actuator/health/**`, `/actuator/info`, `/fallback/**`; every other path (unknown ones included) needs a valid token. 401 in the standard error JSON (`UNAUTHENTICATED`, `TOKEN_EXPIRED`). No role checks at the gateway; the `Authorization` header is forwarded unchanged.
-- booking-service: resource-server starter (switches on `common-web`'s verification) and `config/SecurityConfig`: ping and health public, `/api/v1/admin/**` → ADMIN, everything else signed in. `member/service/MemberProvisioner.ensure` (`INSERT … ON CONFLICT DO NOTHING`), called from hold creation in M1.5.
-- `common-web`: `spring-boot-starter-webmvc` is now optional (services declare it themselves), so the gateway stays reactive; `isExpired` moved to `AccessTokenVerification` and is shared by both error handlers.
-- **Bug fixed (from M1.3b):** Spring's Bearer filter checked a token sent to public paths too, so an expired access token sent along with `/api/v1/auth/refresh` got `401 TOKEN_EXPIRED` and blocked the refresh. The gateway and identity-service now ignore the `Authorization` header on `/api/v1/auth/**`. Found by the gateway mutation check below.
-- Docs: D-38 (and D-27 amended), REQUIREMENTS v0.8 (FR-ROLE-01), ARCHITECTURE §16, TECH_STACK, IMPLEMENTATION_PLAN M1.3 tests, CLAUDE.md §15.1, README, review guide, learning file.
-
-**Dependencies added (approved 2026-11-06, option A):** api-gateway: `common-web`, `spring-boot-starter-security-oauth2-resource-server`. booking-service: `spring-boot-starter-security-oauth2-resource-server`. Both BOM-managed; no new library. `./mvnw -pl platform/api-gateway -am dependency:tree` shows no webmvc or Tomcat in the gateway.
-
-### Test results
-
-`cd backend && ./mvnw -B verify` on 2026-11-06: **BUILD SUCCESS**, 114 tests, 0 failures, 0 skipped.
-
-| Module | Surefire (`*Test`) | Failsafe (`*IT`) |
-|---|---|---|
-| common-web | 20 | — |
-| config-server / discovery-server | 1 / 1 | — |
-| api-gateway | 2 (`GatewayErrorHandlingTest`, now sends a token to reach the 404) | 8 (new `GatewayTokenCheckIT`) |
-| identity-service | 10 | 32 (new `RefreshFlowIT.staleAccessTokenIgnored_FRAUTH10`) |
-| booking-service | 2 (unknown-path test now sends a token) | 38 (new `BookingSecurityIT` 7, `MemberProvisionerIT` 2) |
-
-What the new tests execute (behavior): gateway forwards a valid token unchanged to a stub upstream (JDK `HttpServer`); no token, garbage, tampered, foreign key, unknown `kid`, no `kid` → 401 `UNAUTHENTICATED`; expired → 401 `TOKEN_EXPIRED`; auth paths and ping pass without a token and with a stale one; `/me` needs a token; health public. booking: no token / foreign key → 401, expired → `TOKEN_EXPIRED`, member token passes (404, no endpoint yet), MEMBER on `/api/v1/admin/bookings` → 403, ADMIN → 404 (passed security), health and ping public. Member row: created once, second call no change; 10 parallel calls → exactly one creator and one row.
-
-**Repeated runs (CLAUDE.md §8.3):** `MemberProvisionerIT` run 20 times with `-am`: **20 of 20 passed**.
-
-**Mutation checks (all reverted):**
-- Gateway `.anyExchange().authenticated()` → `permitAll()`: fails `missingTokenRejected_FS14` and `meNeedsToken`. The bad- and expired-token tests still passed, which showed Spring checks presented tokens even on public paths, and led to the refresh bug fix above (new failing test first, then the fix).
-- booking: removing `hasRole("ADMIN")` fails only `memberOnAdminPathForbidden_FS16`.
-- Removing ` ON CONFLICT (id) DO NOTHING` fails both `MemberProvisionerIT` tests (duplicate key).
-
-**Through the Compose stack** (`docker compose up -d --build --wait`, all six healthy):
-
-| Check | Result |
-|---|---|
-| `/categories` without a token / with `x.y.z` | 401 `UNAUTHENTICATED` from the gateway |
-| `/categories` with Alice's token | first two calls 503 (gateway routing not ready right after the restart, known), then 404 from booking-service (security passed) |
-| `/admin/bookings` Alice / admin | 403 `FORBIDDEN` / 404 |
-| `/me` Alice; `/ping`; `/actuator/health` | 200 (id 2, MEMBER); 200; 200 |
-| refresh with cookie + headers + a bad `Authorization` header | 200 |
-| booking-service called directly inside the Docker network, no token | 401 (it does not rely on the gateway) |
-| identity-service stopped: `/categories` / `/admin/bookings` with Alice's token | 404 / 403: booking still verifies tokens locally (RES-07); `/me` → 503 fallback |
-
-### Not covered yet
-- `MemberProvisioner` is not called from a request until hold creation (M1.5).
-- No real admin endpoint yet; the 403 is proven on the URL rule.
-- CORS and browser preflight at the gateway (M1.6); service tokens for `/internal/**` (M1.9).
-
-### Open issues for later milestones
-- PROJECT.md §6 says roles are "checked early at the gateway"; the gateway checks only the token (D-38). PROJECT.md unchanged by rule; tell the owner.
-
-## M1.3b Refresh tokens — Done (2026-11-06)
-
-**Built:**
-- identity-service: Flyway `V3__refresh_token` (`pk_refresh_token`, `fk_refresh_token_user`, `uq_refresh_token_hash`, `ix_refresh_token_expires`, `ix_refresh_token_user`). One row per login; only the SHA-256 of the 256-bit token is stored.
-- `POST /api/v1/auth/refresh`: one conditional `UPDATE … SET expires_at = now + 7d WHERE token_hash = ? AND expires_at > now`; 1 row → new access token and the same cookie with a fresh `Max-Age`; 0 rows, no cookie or a disabled user → `401 REFRESH_TOKEN_INVALID`.
-- `POST /api/v1/auth/logout`: deletes the row, clears the cookie, `204` (also without a cookie).
-- Refresh and logout require `Origin` = `gridreserve.web.frontend-origin` and `X-GridReserve-Client: web`, else `403 FORBIDDEN` (FR-AUTH-12).
-- Login and register start a session through one `AuthService.startSession`; register now answers `201 {accessToken, …}` + cookie (D-36). Expired rows are deleted at every login (no cleanup job).
-- Cookie `gr_refresh`: `HttpOnly`, `SameSite=Strict`, `Path=/api/v1/auth`, `Max-Age` 7 days, `Secure` by default (off only in `identity-service-dev.yml`).
-- Config repo: `gridreserve.auth.refresh` in `identity-service.yml`, new `identity-service-dev.yml`, `gridreserve.web.frontend-origin` in `application-dev.yml` / `application-prod.yml`.
-
-**Decisions settled (owner, 2026-11-06):** D-37 refresh tokens not rotated (one row per login, sliding 7 days, logout deletes it; rotation, families, reuse detection and the cleanup job dropped; FS-39 withdrawn); D-36 register starts a session; D-35 sign-in with Google and GitHub as M1.3d. REQUIREMENTS v0.7, ARCHITECTURE, CLAUDE.md, IMPLEMENTATION_PLAN and TECH_STACK updated. PROJECT.md still says "rotating refresh token" (unchanged by rule; the REQUIREMENTS change note records the owner decision).
-
-**Dependencies added:** none.
-
-### Test results
-
-`cd backend && ./mvnw -B verify` on 2026-11-06: **BUILD SUCCESS**, 96 tests, 0 failures, 0 skipped.
-
-| Module | Surefire (`*Test`) | Failsafe (`*IT`) |
-|---|---|---|
-| common-web | 20 | — |
-| config-server / discovery-server / api-gateway | 1 / 1 / 2 | — |
-| identity-service | 10 (new: `RefreshTokensTest` 2, `ClientCheckTest` 2) | 31 (`AuthFlowIT` 15, new `RefreshFlowIT` 14, `UserSchemaIT` 2, new `RefreshTokenSchemaIT` 2) |
-| booking-service | 2 | 29 |
-
-What the new tests execute (behavior, not smoke): cookie attributes; only the hash stored; expired rows deleted at login; refresh returns a working access token and slides the expiry; 7 idle days → 401; missing/unknown token → 401; disabled user → 401 with the expiry unchanged; foreign/missing `Origin` or missing header → 403 and the session untouched; 10 parallel refreshes → 10 × 200; an access token is not accepted as a refresh token and vice versa; logout deletes the row, clears the cookie and the copied cookie stops working; logout on one device keeps the other; logout is idempotent; V3 constraints and indexes by name.
-
-**Repeated runs (CLAUDE.md §8.3):** `RefreshFlowIT` (includes the parallel-refresh test) run 20 times with `-am`: **20 of 20 passed**, 14 tests each. (A first loop without `-am` used a stale `common-web` jar from `~/.m2` and failed at startup in all 20 runs; that was the command, not the code.)
-
-**Mutation check:** removing ` AND t.expiresAt > :now` fails only `expiredAfterSevenIdleDays_FRAUTH10`; removing the enabled filter fails only `disabledUserRefused_FRAUTH13`; removing the CSRF check from refresh fails only `foreignCallerForbidden_FS40`. All reverted.
-
-**Through the Compose stack** (`docker compose up -d --build --wait`, all six healthy; Flyway applied V3 to `identity_db`):
-
-| Check | Result |
-|---|---|
-| Right after the identity restart | gateway answered `503` (fallback) for a few seconds until its circuit breaker closed; then `200`. Known slow routing after a restart. |
-| login (alice) | 200; `Set-Cookie: gr_refresh=…; Path=/api/v1/auth; Max-Age=604800; HttpOnly; SameSite=Strict` (no `Secure` in dev) |
-| refresh with Origin + header | 200, `expiresIn` 900, token works on `/me` (Alice, id 2); same cookie attributes |
-| refresh without the headers | 403 `FORBIDDEN` |
-| logout | 204, `Max-Age=0`; refresh afterwards → 401 `REFRESH_TOKEN_INVALID` |
-| register Dave | 201 + cookie; its access token works on `/me` |
-| `identity_db.refresh_token` | Alice's row gone, Dave's row: 64-character hash, lifetime 7 days |
-
-### Not covered yet
-- No browser test of the cookie flow (frontend from M1.6).
-- `Secure` cookies only take effect over HTTPS (deployment, M1.10).
-- The gateway and booking-service do not check tokens yet (M1.3c).
-
-### Open issues for later milestones
-- The frontend must call refresh on start and on `401 TOKEN_EXPIRED` with `X-GridReserve-Client: web` (M1.6).
-
----
-
 ## M1.3a Identity core — Done (2026-11-06)
 
 **Built:**
@@ -361,6 +256,155 @@ What the new tests execute (behavior, not smoke): cookie attributes; only the ha
 ### Open issues for later milestones
 - Social login: decided 2026-11-06 (D-35) as M1.3d, then **dropped the same day** by the owner (too much work for its value); kept as an optional extension, not planned. REQUIREMENTS v0.9. Register starts a session (D-36) in M1.3b. REQUIREMENTS v0.6, ARCHITECTURE §5.4/§16/§19, IMPLEMENTATION_PLAN M1.3, TECH_STACK and CLAUDE.md updated.
 - Possible extension: let accounts created through Google or GitHub set a password (A-29).
+
+---
+
+## M1.3b Refresh tokens — Done (2026-11-06)
+
+**Built:**
+- identity-service: Flyway `V3__refresh_token` (`pk_refresh_token`, `fk_refresh_token_user`, `uq_refresh_token_hash`, `ix_refresh_token_expires`, `ix_refresh_token_user`). One row per login; only the SHA-256 of the 256-bit token is stored.
+- `POST /api/v1/auth/refresh`: one conditional `UPDATE … SET expires_at = now + 7d WHERE token_hash = ? AND expires_at > now`; 1 row → new access token and the same cookie with a fresh `Max-Age`; 0 rows, no cookie or a disabled user → `401 REFRESH_TOKEN_INVALID`.
+- `POST /api/v1/auth/logout`: deletes the row, clears the cookie, `204` (also without a cookie).
+- Refresh and logout require `Origin` = `gridreserve.web.frontend-origin` and `X-GridReserve-Client: web`, else `403 FORBIDDEN` (FR-AUTH-12).
+- Login and register start a session through one `AuthService.startSession`; register now answers `201 {accessToken, …}` + cookie (D-36). Expired rows are deleted at every login (no cleanup job).
+- Cookie `gr_refresh`: `HttpOnly`, `SameSite=Strict`, `Path=/api/v1/auth`, `Max-Age` 7 days, `Secure` by default (off only in `identity-service-dev.yml`).
+- Config repo: `gridreserve.auth.refresh` in `identity-service.yml`, new `identity-service-dev.yml`, `gridreserve.web.frontend-origin` in `application-dev.yml` / `application-prod.yml`.
+
+**Decisions settled (owner, 2026-11-06):** D-37 refresh tokens not rotated (one row per login, sliding 7 days, logout deletes it; rotation, families, reuse detection and the cleanup job dropped; FS-39 withdrawn); D-36 register starts a session; D-35 sign-in with Google and GitHub as M1.3d. REQUIREMENTS v0.7, ARCHITECTURE, CLAUDE.md, IMPLEMENTATION_PLAN and TECH_STACK updated. PROJECT.md still says "rotating refresh token" (unchanged by rule; the REQUIREMENTS change note records the owner decision).
+
+**Dependencies added:** none.
+
+### Test results
+
+`cd backend && ./mvnw -B verify` on 2026-11-06: **BUILD SUCCESS**, 96 tests, 0 failures, 0 skipped.
+
+| Module | Surefire (`*Test`) | Failsafe (`*IT`) |
+|---|---|---|
+| common-web | 20 | — |
+| config-server / discovery-server / api-gateway | 1 / 1 / 2 | — |
+| identity-service | 10 (new: `RefreshTokensTest` 2, `ClientCheckTest` 2) | 31 (`AuthFlowIT` 15, new `RefreshFlowIT` 14, `UserSchemaIT` 2, new `RefreshTokenSchemaIT` 2) |
+| booking-service | 2 | 29 |
+
+What the new tests execute (behavior, not smoke): cookie attributes; only the hash stored; expired rows deleted at login; refresh returns a working access token and slides the expiry; 7 idle days → 401; missing/unknown token → 401; disabled user → 401 with the expiry unchanged; foreign/missing `Origin` or missing header → 403 and the session untouched; 10 parallel refreshes → 10 × 200; an access token is not accepted as a refresh token and vice versa; logout deletes the row, clears the cookie and the copied cookie stops working; logout on one device keeps the other; logout is idempotent; V3 constraints and indexes by name.
+
+**Repeated runs (CLAUDE.md §8.3):** `RefreshFlowIT` (includes the parallel-refresh test) run 20 times with `-am`: **20 of 20 passed**, 14 tests each. (A first loop without `-am` used a stale `common-web` jar from `~/.m2` and failed at startup in all 20 runs; that was the command, not the code.)
+
+**Mutation check:** removing ` AND t.expiresAt > :now` fails only `expiredAfterSevenIdleDays_FRAUTH10`; removing the enabled filter fails only `disabledUserRefused_FRAUTH13`; removing the CSRF check from refresh fails only `foreignCallerForbidden_FS40`. All reverted.
+
+**Through the Compose stack** (`docker compose up -d --build --wait`, all six healthy; Flyway applied V3 to `identity_db`):
+
+| Check | Result |
+|---|---|
+| Right after the identity restart | gateway answered `503` (fallback) for a few seconds until its circuit breaker closed; then `200`. Known slow routing after a restart. |
+| login (alice) | 200; `Set-Cookie: gr_refresh=…; Path=/api/v1/auth; Max-Age=604800; HttpOnly; SameSite=Strict` (no `Secure` in dev) |
+| refresh with Origin + header | 200, `expiresIn` 900, token works on `/me` (Alice, id 2); same cookie attributes |
+| refresh without the headers | 403 `FORBIDDEN` |
+| logout | 204, `Max-Age=0`; refresh afterwards → 401 `REFRESH_TOKEN_INVALID` |
+| register Dave | 201 + cookie; its access token works on `/me` |
+| `identity_db.refresh_token` | Alice's row gone, Dave's row: 64-character hash, lifetime 7 days |
+
+### Not covered yet
+- No browser test of the cookie flow (frontend from M1.6).
+- `Secure` cookies only take effect over HTTPS (deployment, M1.10).
+- The gateway and booking-service do not check tokens yet (M1.3c).
+
+### Open issues for later milestones
+- The frontend must call refresh on start and on `401 TOKEN_EXPIRED` with `X-GridReserve-Client: web` (M1.6).
+
+---
+
+## M1.3c Token checks in the gateway and booking-service — Done (2026-11-06)
+
+**Built:**
+- api-gateway: Spring Security (reactive) with `common-web`'s `AccessTokenVerification` wrapped as a `ReactiveJwtDecoder`. Public: `/api/v1/auth/**`, `/api/v1/ping/**`, `/actuator/health/**`, `/actuator/info`, `/fallback/**`; every other path (unknown ones included) needs a valid token. 401 in the standard error JSON (`UNAUTHENTICATED`, `TOKEN_EXPIRED`). No role checks at the gateway; the `Authorization` header is forwarded unchanged.
+- booking-service: resource-server starter (switches on `common-web`'s verification) and `config/SecurityConfig`: ping and health public, `/api/v1/admin/**` → ADMIN, everything else signed in. `member/service/MemberProvisioner.ensure` (`INSERT … ON CONFLICT DO NOTHING`), called from hold creation in M1.5.
+- `common-web`: `spring-boot-starter-webmvc` is now optional (services declare it themselves), so the gateway stays reactive; `isExpired` moved to `AccessTokenVerification` and is shared by both error handlers.
+- **Bug fixed (from M1.3b):** Spring's Bearer filter checked a token sent to public paths too, so an expired access token sent along with `/api/v1/auth/refresh` got `401 TOKEN_EXPIRED` and blocked the refresh. The gateway and identity-service now ignore the `Authorization` header on `/api/v1/auth/**`. Found by the gateway mutation check below.
+- Docs: D-38 (and D-27 amended), REQUIREMENTS v0.8 (FR-ROLE-01), ARCHITECTURE §16, TECH_STACK, IMPLEMENTATION_PLAN M1.3 tests, CLAUDE.md §15.1, README, review guide, learning file.
+
+**Dependencies added (approved 2026-11-06, option A):** api-gateway: `common-web`, `spring-boot-starter-security-oauth2-resource-server`. booking-service: `spring-boot-starter-security-oauth2-resource-server`. Both BOM-managed; no new library. `./mvnw -pl platform/api-gateway -am dependency:tree` shows no webmvc or Tomcat in the gateway.
+
+### Test results
+
+`cd backend && ./mvnw -B verify` on 2026-11-06: **BUILD SUCCESS**, 114 tests, 0 failures, 0 skipped.
+
+| Module | Surefire (`*Test`) | Failsafe (`*IT`) |
+|---|---|---|
+| common-web | 20 | — |
+| config-server / discovery-server | 1 / 1 | — |
+| api-gateway | 2 (`GatewayErrorHandlingTest`, now sends a token to reach the 404) | 8 (new `GatewayTokenCheckIT`) |
+| identity-service | 10 | 32 (new `RefreshFlowIT.staleAccessTokenIgnored_FRAUTH10`) |
+| booking-service | 2 (unknown-path test now sends a token) | 38 (new `BookingSecurityIT` 7, `MemberProvisionerIT` 2) |
+
+What the new tests execute (behavior): gateway forwards a valid token unchanged to a stub upstream (JDK `HttpServer`); no token, garbage, tampered, foreign key, unknown `kid`, no `kid` → 401 `UNAUTHENTICATED`; expired → 401 `TOKEN_EXPIRED`; auth paths and ping pass without a token and with a stale one; `/me` needs a token; health public. booking: no token / foreign key → 401, expired → `TOKEN_EXPIRED`, member token passes (404, no endpoint yet), MEMBER on `/api/v1/admin/bookings` → 403, ADMIN → 404 (passed security), health and ping public. Member row: created once, second call no change; 10 parallel calls → exactly one creator and one row.
+
+**Repeated runs (CLAUDE.md §8.3):** `MemberProvisionerIT` run 20 times with `-am`: **20 of 20 passed**.
+
+**Mutation checks (all reverted):**
+- Gateway `.anyExchange().authenticated()` → `permitAll()`: fails `missingTokenRejected_FS14` and `meNeedsToken`. The bad- and expired-token tests still passed, which showed Spring checks presented tokens even on public paths, and led to the refresh bug fix above (new failing test first, then the fix).
+- booking: removing `hasRole("ADMIN")` fails only `memberOnAdminPathForbidden_FS16`.
+- Removing ` ON CONFLICT (id) DO NOTHING` fails both `MemberProvisionerIT` tests (duplicate key).
+
+**Through the Compose stack** (`docker compose up -d --build --wait`, all six healthy):
+
+| Check | Result |
+|---|---|
+| `/categories` without a token / with `x.y.z` | 401 `UNAUTHENTICATED` from the gateway |
+| `/categories` with Alice's token | first two calls 503 (gateway routing not ready right after the restart, known), then 404 from booking-service (security passed) |
+| `/admin/bookings` Alice / admin | 403 `FORBIDDEN` / 404 |
+| `/me` Alice; `/ping`; `/actuator/health` | 200 (id 2, MEMBER); 200; 200 |
+| refresh with cookie + headers + a bad `Authorization` header | 200 |
+| booking-service called directly inside the Docker network, no token | 401 (it does not rely on the gateway) |
+| identity-service stopped: `/categories` / `/admin/bookings` with Alice's token | 404 / 403: booking still verifies tokens locally (RES-07); `/me` → 503 fallback |
+
+### Not covered yet
+- `MemberProvisioner` is not called from a request until hold creation (M1.5).
+- No real admin endpoint yet; the 403 is proven on the URL rule.
+- CORS and browser preflight at the gateway (M1.6); service tokens for `/internal/**` (M1.9).
+
+### Open issues for later milestones
+- PROJECT.md §6 says roles are "checked early at the gateway"; the gateway checks only the token (D-38). PROJECT.md unchanged by rule; tell the owner.
+
+## M1.4 Catalog, countries and availability — Built, awaiting owner review (2026-11-06)
+
+**Built (booking-service):**
+- Catalog reads (FR-CAT-01..06, FR-CAT-14): `GET /categories` (with bookable types; EXCLUSIVE types first, then by label), `/venues?categoryId=` and `/venues/{venueId}/bookables` (paginated, API-04), `/venues/{id}` (zone + weekly hours), `/bookables/{id}` (effective rules, own or venue hours), `/countries`, `/countries/{code}/time-zones`. Members get only active items (inactive → 404); admins may pass `includeInactive=true`.
+- `RuleResolver` → `EffectiveRules`: bookable override → type default → category; own weekly hours replace the venue's (FR-CAT-04/05).
+- Availability (FR-AV-01..07): `LocalSlotGrid` (local-time grid anchored at opening, DST gap skipped, repeated hour once), `AvailabilityService` (whole local days today … today + 6, else `422 BEYOND_HORIZON`; past dates all PAST; closed weekday `closed: true`; CAPACITY → `422 WRONG_BOOKING_MODEL`), one occupancy query per request through `booking/service/BookingOccupancy` (CONFIRMED, or HELD with `expires_at > now`; overlap with `[start, occupied_until)`).
+- common-web: a malformed or missing query parameter → `400 VALIDATION_FAILED` naming the field (before, the catch-all handler answered 500).
+- Docs: D-39, REQUIREMENTS v0.10 (FR-AV-04 clarified, FR-AV-07 added, API-04 exception), CLAUDE.md §15.1, README section "Browsing the catalog and availability", review guide, learning file.
+
+**Plan deviation:** the plan named the CAPACITY error `BOOKING_MODEL_NOT_SUPPORTED`; the existing catalog code `WRONG_BOOKING_MODEL` (BR-09) means the same and is used instead.
+
+**Dependencies added:** none.
+
+### Test results
+
+`cd backend && ./mvnw -B verify` on 2026-11-06: **BUILD SUCCESS**, 156 tests, 0 failures, 0 skipped.
+
+| Module | Surefire (`*Test`) | Failsafe (`*IT`) |
+|---|---|---|
+| common-web | 22 (new: type mismatch, missing parameter) | — |
+| config-server / discovery-server | 1 / 1 | — |
+| api-gateway | 2 | 8 |
+| identity-service | 10 | 32 |
+| booking-service | 14 (new: `LocalSlotGridTest` 8, `RuleResolverTest` 4) | 66 (new: `CatalogIT` 16, `AvailabilityIT` 12; `BookingSecurityIT.memberTokenAccepted` now expects 200 because `/categories` exists) |
+
+What the new tests execute (behavior): grid sizes for 15/30/60-minute slots, anchoring at opening, UTC vs local, all-day hours, DST spring-forward (23 slots, no 01:00) and fall-back (24, no duplicates); resolver layers and own hours replacing venue hours; categories with labels and CAPACITY nulls; venue page and detail with hours (24:00); inactive venue and bookable hidden from members, visible to admins; bad page parameters → 400; bookable page of 16 with labels; effective rules for the trainer (15/45/45/15); Dr. Mehta's own hours; countries sorted, one-zone and multi-zone countries, unknown → 404; ≤ 3 SQL statements for a bookable page; availability day of 17 slots with zone and rules; CONFIRMED → TAKEN; buffer blocks the following slot; expired hold FREE, live hold TAKEN, cancelled FREE; no member data in the response; past date all PAST; horizon edge 200/422; closed Sunday; own hours (Monday closed, Tuesday 8 slots); inactive → 404; CAPACITY → 422; bad and missing date → 400.
+
+**Mutation checks (all reverted):** dropping ` and b.expiresAt > :now` fails `expiredHoldIsFree_FRAV03`; `hasOwnHours = false` fails `ownHoursReplaceVenueHours`; a visibility filter that is always true fails `CatalogIT.inactiveBookableHidden_FRCAT10` and `AvailabilityIT.inactiveBookable_FRCAT10`.
+
+**First runs that failed (fixed, not weakened):** `RuleResolverTest` (Mockito answers 0 for `Integer`; the test now stubs `null`); `CatalogIT.categoriesWithTypes` (types were ordered by seed ID, which the seed's join does not keep; the service now sorts EXCLUSIVE first, then label).
+
+**Through the Compose stack** (`docker compose up -d --build --wait`): gateway answered 503 for about 15 s after the restart (known routing delay), then: categories with types (Study: Room, Seat, Hall); Sports venues → Sunrise Turf; its bookables Court A, Court B (label Court); Court A rules 60/60/120/0, zone Asia/Kolkata; tomorrow's availability 17 slots, first 06:00 local = 00:30Z FREE; today + 7 → 422 `BEYOND_HORIZON`; `date=nope` → 400 with `fieldErrors[date]`; IN → `["Asia/Kolkata"]`; no token → 401.
+
+### Not covered yet
+- Booking (hold, confirm, cancel) is M1.5; TAKEN is proven with inserted rows.
+- Admin create/edit/deactivate endpoints (M1.7).
+- On fall-back night the repeated hour's slot lasts two real hours (documented in `LocalSlotGrid`).
+
+### Open issues for later milestones
+- Whether a whole booking (duration + buffer) fits is checked at booking time (M1.5), not in availability; the frontend picker (M1.6) should only offer starts where `minDuration` fits.
 
 ---
 

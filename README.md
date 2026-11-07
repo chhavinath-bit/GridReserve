@@ -2,7 +2,7 @@
 
 One booking platform for many kinds of venues: library rooms and seats, sports courts, parking bays, clinic appointments and gym sessions. A member picks a category, a venue and a bookable, holds a time slot for five minutes and confirms it. Double-booking is impossible, even under heavy concurrent load and with several service instances running.
 
-> **Status: Phase 1, M1.3c.** Config server, Eureka, gateway, identity and booking services run together. identity-service registers users (and logs them in at once), issues RS256 access tokens plus a refresh-token cookie (sliding 7 days, logout ends it) and answers `/api/v1/me`. The gateway refuses requests without a valid access token, and booking-service checks the token and the role again itself, without calling identity-service. booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. The catalog and availability API (M1.4) is next; no booking API yet. Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
+> **Status: Phase 1, M1.4.** Config server, Eureka, gateway, identity and booking services run together. identity-service registers users (and logs them in at once), issues RS256 access tokens plus a refresh-token cookie (sliding 7 days, logout ends it) and answers `/api/v1/me`. The gateway refuses requests without a valid access token, and booking-service checks the token and the role again itself, without calling identity-service. booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. booking-service serves the catalog (categories, venues, bookables with their effective rules, countries and time zones) and slot availability for a date (M1.4). Booking itself (hold, confirm, cancel) is next (M1.5). Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## What this project demonstrates
 
@@ -85,7 +85,7 @@ curl -s localhost:8080/api/v1/me                                      # 401 UNAU
 
 # The gateway checks the token before routing; booking-service checks it, and the role, again
 curl -s localhost:8080/api/v1/categories                                       # 401 from the gateway
-curl -s localhost:8080/api/v1/categories -H "Authorization: Bearer $TOKEN"     # passes; 404 until the catalog API (M1.4)
+curl -s localhost:8080/api/v1/categories -H "Authorization: Bearer $TOKEN"     # 200: categories with their bookable types
 curl -s localhost:8080/api/v1/admin/bookings -H "Authorization: Bearer $TOKEN" # 403 FORBIDDEN: Alice is a MEMBER
 
 # Register a new member (always MEMBER; the email is stored lower-cased). Registering also logs in:
@@ -108,6 +108,22 @@ curl -s -b "$JAR" -c "$JAR" -X POST localhost:8080/api/v1/auth/logout "${APP[@]}
 curl -s -b "$JAR" -X POST localhost:8080/api/v1/auth/refresh "${APP[@]}"              # 401 REFRESH_TOKEN_INVALID
 ```
 
+### Browsing the catalog and availability
+
+All catalog calls need a signed-in user (any role). Lists of venues and bookables are paginated (`page`, `size`, default 20, max 100).
+
+```bash
+H="Authorization: Bearer $TOKEN"
+curl -s localhost:8080/api/v1/categories -H "$H"                          # 5 categories with their bookable types
+curl -s "localhost:8080/api/v1/venues?categoryId=2" -H "$H"               # venues of one category, as a page
+curl -s localhost:8080/api/v1/venues/2/bookables -H "$H"                  # Court A, Court B (label "Court")
+curl -s localhost:8080/api/v1/bookables/5 -H "$H"                         # effective rules, zone, opening hours
+curl -s "localhost:8080/api/v1/bookables/5/availability?date=$(date -v+1d +%F)" -H "$H"   # slots: FREE / TAKEN / PAST
+curl -s localhost:8080/api/v1/countries/IN/time-zones -H "$H"             # ["Asia/Kolkata"]
+```
+
+IDs come from the seed and may differ on your machine; take them from the list responses. Availability serves today and the next 6 days in the venue's time zone (`422 BEYOND_HORIZON` after that); `date` is a local date (`YYYY-MM-DD`; on Linux use `date -d tomorrow +%F`).
+
 ### Access-token keys
 
 identity-service signs access tokens with an RSA private key (`JWT_PRIVATE_KEY` in `infra/.env`, never committed); every service verifies them with the matching public key from the config repo (`gridreserve.jwt.public-keys` in `application.yml`, keyed by `kid`). identity-service refuses to start if the two do not match. To make your own dev pair, follow the commands in `infra/.env.example`, put the public key in your config repo clone, and set `gridreserve.jwt.signing.key-id` in `identity-service.yml` to its `kid`.
@@ -119,7 +135,7 @@ cd backend
 ./mvnw -B verify
 ```
 
-`verify` runs unit tests (`*Test`, Surefire) and integration tests against a real PostgreSQL 16 in a Testcontainer (`*IT`, Failsafe). The schema guarantees are proven in `services/booking-service/src/test/java/com/gridreserve/booking/schema/BookingConstraintsIT.java`; registration, login and tokens in `services/identity-service/src/test/java/com/gridreserve/identity/auth/AuthFlowIT.java`; the refresh cookie, logout and the CSRF check in `RefreshFlowIT.java` next to it. The gateway's token check is in `platform/api-gateway/src/test/java/com/gridreserve/gateway/GatewayTokenCheckIT.java`, booking-service's in `services/booking-service/src/test/java/com/gridreserve/booking/config/BookingSecurityIT.java`. Tests generate throwaway keys; no key is needed to run them.
+`verify` runs unit tests (`*Test`, Surefire) and integration tests against a real PostgreSQL 16 in a Testcontainer (`*IT`, Failsafe). The schema guarantees are proven in `services/booking-service/src/test/java/com/gridreserve/booking/schema/BookingConstraintsIT.java`; registration, login and tokens in `services/identity-service/src/test/java/com/gridreserve/identity/auth/AuthFlowIT.java`; the refresh cookie, logout and the CSRF check in `RefreshFlowIT.java` next to it. The gateway's token check is in `platform/api-gateway/src/test/java/com/gridreserve/gateway/GatewayTokenCheckIT.java`, booking-service's in `services/booking-service/src/test/java/com/gridreserve/booking/config/BookingSecurityIT.java`. The catalog and availability are covered by `CatalogIT` and `AvailabilityIT` (integration) and `RuleResolverTest` and `LocalSlotGridTest` (unit, including daylight-saving days). Tests generate throwaway keys; no key is needed to run them.
 
 All demo data is fictional.
 

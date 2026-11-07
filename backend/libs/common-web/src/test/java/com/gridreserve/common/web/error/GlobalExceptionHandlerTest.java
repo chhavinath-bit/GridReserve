@@ -12,10 +12,12 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -69,6 +71,24 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    @DisplayName("API-06: a query parameter in the wrong format returns 400 VALIDATION_FAILED naming it")
+    void wrongParameterFormat() throws Exception {
+        mvc.perform(get("/test/date").param("date", "tomorrow"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("date"));
+    }
+
+    @Test
+    @DisplayName("API-06: a missing required query parameter returns 400 VALIDATION_FAILED naming it")
+    void missingParameter() throws Exception {
+        mvc.perform(get("/test/date"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("date"));
+    }
+
+    @Test
     @DisplayName("FS-22: malformed JSON returns 400 MALFORMED_REQUEST")
     void malformedJson() throws Exception {
         mvc.perform(post("/test/validate").contentType(MediaType.APPLICATION_JSON).content("{not json"))
@@ -97,6 +117,11 @@ class GlobalExceptionHandlerTest {
         @PostMapping("/test/validate")
         String validate(@Valid @RequestBody NameRequest request) {
             return request.name();
+        }
+
+        @GetMapping("/test/date")
+        String date(@RequestParam LocalDate date) {
+            return date.toString();
         }
 
         @GetMapping("/test/boom")

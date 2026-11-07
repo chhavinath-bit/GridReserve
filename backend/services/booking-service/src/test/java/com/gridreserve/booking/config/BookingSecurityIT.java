@@ -20,8 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * booking-service checks tokens and roles itself (FR-ROLE-01..03), without the gateway in front and
- * without calling identity-service. No booking endpoints exist yet (M1.4/M1.5), so "allowed" shows up
- * as 404 from Spring MVC after security let the request through, and "refused" as 401 or 403 before it.
+ * without calling identity-service. No admin endpoint exists yet (M1.5/M1.7), so an admin "allowed" there
+ * shows up as 404 from Spring MVC after security let the request through, and "refused" as 401 or 403 before it.
  */
 @ServiceIntegrationTest
 class BookingSecurityIT {
@@ -72,12 +72,11 @@ class BookingSecurityIT {
     }
 
     @Test
-    @DisplayName("FR-ROLE-01: a valid member token passes security (404: no catalog endpoint yet)")
+    @DisplayName("FR-ROLE-01: a valid member token passes security and reaches the catalog")
     void memberTokenAccepted_FRROLE01() throws Exception {
         HttpResponse<String> response = get("/api/v1/categories", TestJwtKeys.memberToken());
 
-        assertThat(response.statusCode()).isEqualTo(404);
-        assertThat(response.body()).contains("\"code\":\"NOT_FOUND\"");
+        assertThat(response.statusCode()).isEqualTo(200);
     }
 
     @Test
