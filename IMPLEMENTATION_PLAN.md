@@ -158,7 +158,7 @@ Delivered as three PRs, in the order a → b → c (owner decisions 2026-11-06):
 ### M1.5 Booking engine core `L`
 
 1. **Objective.** Hold, confirm, cancel through the gateway with database-backed conflict protection.
-2. **Tasks.** `BookingRules` (BR-01, 05, 06, 09 now; BR-14 framework); `createHold` (bookable `FOR SHARE`, member `FOR UPDATE`, stale-hold sweep for bookable and member, `occupied_until`, insert HELD); confirm/cancel as conditional UPDATEs; `404` for others' bookings; admin cancel path; `ConstraintViolations` (constraint name → error code); `GET /bookings/me`, `/bookings/{id}`; transaction retry on `40P01` (D-11, Spring 7 `@Retryable`).
+2. **Tasks.** `BookingRules` (BR-01, 05, 06, 09 now; BR-14 framework); `createHold` (bookable `FOR SHARE`, later `FOR UPDATE` per D-41; member `FOR UPDATE`, stale-hold sweep for bookable and member, `occupied_until`, insert HELD); confirm/cancel as conditional UPDATEs; `404` for others' bookings; admin cancel path; `ConstraintViolations` (constraint name → error code); `GET /bookings/me`, `/bookings/{id}`; transaction retry on `40P01` (D-11, Spring 7 `@Retryable`).
 3. **Files/modules.** booking-service `booking/**`, `common/exception`, `config/RetryConfig`; catalog and member lock methods.
 4. **Dependencies.** M1.4.
 5. **Tests.** Unit: rules, service with Mockito. Integration `BookingLifecycleIT`: hold 201; confirm; second confirm 409; confirm after expiry (moved clock) 409 + EXPIRED (FS-08); overlap 409 `SLOT_TAKEN`; same member elsewhere overlapping 409 `MEMBER_OVERLAP` (FS-02); stale hold doesn't block (FS-21); other member's booking 404 (FS-15); admin cancel.
@@ -189,7 +189,7 @@ Delivered as three PRs, in the order a → b → c (owner decisions 2026-11-06):
 
 1. **Objective.** Prove the guarantees under real parallelism, including with two booking-service instances behind the gateway.
 2. **Tasks.** `ConcurrencyTestSupport` (pre-created members, `CountDownLatch` gate, HTTP via `RANDOM_PORT`); CONC-01..05, CONC-09 (or in M1.11); **CONC-10** system test: Compose with `--scale booking-service=2`, 50 parallel requests through the gateway, assert 1 × 201 + 49 × 409 and one active row; verify both instances handled requests (logs/metrics). Run each 20 times; deadlock counter stays 0.
-3. **Files/modules.** booking-service `src/test/.../concurrency/*`; `system-tests/` (Compose-based, JUnit or script — decide in milestone plan); CI system-test job.
+3. **Files/modules.** booking-service `src/test/.../concurrency/*` (`ConcurrencyIT`, `Parallel`), `BookingMetrics`; `backend/system-tests` (JUnit module, `-Psystem-tests`, decided 2026-11-07); CI `system-tests` job + `scripts/ci/prepare-system-test-env.sh`; config repo: dev metrics endpoint, no gateway-route bulkhead. CONC-09 moved to M1.11, CONC-08 to M1.12.
 4. **Dependencies.** M1.7.
 5. **Tests.** The suite above; full `./mvnw verify`; CONC-01 < 10 s (NFR-PERF-03).
 6. **Acceptance.** All CONC tests 20/20 locally and in CI; PROJECT.md §8 criterion met including two instances.

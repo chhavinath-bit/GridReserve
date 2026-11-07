@@ -1,6 +1,7 @@
 # GridReserve — Requirements
 
-> Version 0.12 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Version 0.13 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Changes from v0.12 (M1.8, owner decision 2026-11-07, D-41): CONC-09 says hold creation locks the bookable `FOR UPDATE` (not `FOR SHARE`); CONC-09 is proven in M1.11 and CONC-08 in M1.12, where the deactivate endpoint and the idempotency key arrive.
 > Changes from v0.11 (M1.7, owner decisions 2026-11-07, D-40): BR-07 counts the horizon in **whole local days** like availability (a start on a local date before today + horizon), so the API and the picker always agree; FR-BK-07 adds `cancellableUntil`; BR-08 states that bookings on inactive bookables of the category count too and that a hold that has run out does not.
 > Changes from v0.10 (M1.5, 2026-11-07, D-11): FR-BK-03 and FR-BK-04 state what happens to a booking that is not in the expected state: confirming an expired hold answers `409 HOLD_EXPIRED` (also when it was already marked EXPIRED), any other state `409 INVALID_STATE`; a hold that has run out cannot be cancelled (it is recorded `EXPIRED`, `409 INVALID_STATE`); `cancelledBy` is `ADMIN` only when an admin cancels another member's booking.
 > Changes from v0.9 (M1.4, owner decisions 2026-11-06, D-39): availability works in whole local days (today to today + horizon − 1; later dates `422 BEYOND_HORIZON`, past dates all `PAST`); categories and countries are unpaginated reference lists (API-04); availability for a CAPACITY bookable returns `422 WRONG_BOOKING_MODEL` until Phase 2 (FR-AV-04, FR-AV-07).
@@ -415,7 +416,7 @@ Each guarantee has an integration test against real PostgreSQL (Testcontainers).
 | **CONC-06** `[P2]` | Last seat: capacity 12 with 11 booked, 20 parallel claims → exactly 1 success, `booked = 12`; 50 claims on an empty session of 12 → exactly 12. | Parallel test. |
 | **CONC-07** `[P2/P3]` | 12 parallel cancellations of 12 seats → `booked = 0`, never negative; one waitlist offer per freed seat. | Parallel test. |
 | **CONC-08** | Two parallel requests with the same `Idempotency-Key` → exactly one booking. | Parallel test. |
-| **CONC-09** | Deactivation racing with new holds → every hold either committed **before** the deactivation (and stays valid) or is rejected with `422 BOOKABLE_INACTIVE`; no hold is created after the deactivation commits. Hold creation locks the bookable `FOR SHARE` and re-checks `active`; deactivation locks it `FOR UPDATE`. | Race test (e.g. 20 parallel holds + 1 deactivate, repeated). |
+| **CONC-09** | Deactivation racing with new holds → every hold either committed **before** the deactivation (and stays valid) or is rejected with `422 BOOKABLE_INACTIVE`; no hold is created after the deactivation commits. Hold creation locks the venue `FOR SHARE` and the bookable `FOR UPDATE` and re-checks `active`; deactivation locks it `FOR UPDATE` (D-41). Proven in M1.11 with the deactivate endpoint. | Race test (e.g. 20 parallel holds + 1 deactivate, repeated). |
 | **CONC-10** | CONC-01 repeated **through the gateway with two booking-service instances** registered in Eureka and load-balanced → still exactly 1 × 201 and 49 × 409. | System test with Docker Compose (or Testcontainers with two app containers). |
 
 General rule: correctness comes from database constraints, conditional updates and row locks — never from Java `synchronized`, in-memory locks, Redis, or which instance handles a request.
