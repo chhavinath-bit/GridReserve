@@ -527,7 +527,7 @@ WHERE id = :id AND member_id = :memberId AND status = 'HELD' AND expires_at > :n
 
 | Use case (booking-service) | Transaction contents | Locks (in order) |
 |---|---|---|
-| Create hold (EXCLUSIVE) | Ensure member row; load bookable + rules; validate; expire stale holds (bookable and member); count member's active bookings in category; insert; audit; complete idempotency record | `venue FOR SHARE` → `bookable FOR SHARE` → `member FOR UPDATE` → inserted row |
+| Create hold (EXCLUSIVE) | Ensure member row; load bookable + rules; validate; expire stale holds (bookable and member); count member's active bookings in category; insert; audit; complete idempotency record | `venue FOR SHARE` → `bookable FOR UPDATE` (D-41) → `member FOR UPDATE` → inserted row |
 | Claim seat (P2) | Same, with `UPDATE session … booked < capacity` | `session` (UPDATE) → `member FOR UPDATE` |
 | Confirm | Conditional UPDATE + audit | booking row |
 | Cancel | Conditional UPDATE + audit (+ seat release P2, + promotion P3, + outbox event P5) | `bookable FOR UPDATE` / session → waiter `member` rows → booking rows |
@@ -551,7 +551,7 @@ WHERE id = :id AND member_id = :memberId AND status = 'HELD' AND expires_at > :n
 | Seat release (P2) | `booked ≥ 0` | release only in the transaction whose conditional status UPDATE succeeded | — |
 | Confirm vs expire | exactly one wins | conditional UPDATE | `409 HOLD_EXPIRED` |
 | Retry / double click | one booking per intent | `idempotency_record` PK + lease | replay / `409 IDEMPOTENCY_IN_PROGRESS` |
-| Deactivate vs hold (CONC-09) | no hold created after deactivation commits; earlier holds stay valid | hold: `FOR SHARE` on venue and bookable + re-check `active`; deactivate: `FOR UPDATE` | `422 BOOKABLE_INACTIVE` |
+| Deactivate vs hold (CONC-09) | no hold created after deactivation commits; earlier holds stay valid | hold: venue `FOR SHARE`, bookable `FOR UPDATE` (D-41) + re-check `active`; deactivate: `FOR UPDATE` | `422 BOOKABLE_INACTIVE` |
 | Waitlist promotion (P3) | one offer per freed slot/seat | promotion in the releasing transaction under the bookable/session lock | — |
 | Admin edits | no lost update | `@Version` | `409 STALE_UPDATE` |
 | Refresh vs expiry / logout (identity) | an expired or logged-out token is never revived | one conditional `UPDATE refresh_token SET expires_at = :now + 7d WHERE token_hash = ? AND expires_at > :now`; parallel refreshes of the same token all succeed (no rotation, D-37) | `401 REFRESH_TOKEN_INVALID` |
@@ -571,10 +571,10 @@ sequenceDiagram
     GW->>B1: ~25 requests (round robin via Eureka)
     GW->>B2: ~25 requests
     par each request in its own transaction
-        B1->>PG: lock bookable FOR SHARE, lock own member FOR UPDATE, rules pass, INSERT HELD
+        B1->>PG: lock bookable FOR UPDATE (one at a time), own member FOR UPDATE, rules pass, INSERT HELD
         B2->>PG: same
     end
-    Note over PG: The first INSERT to reach the GiST index wins.<br/>Others wait for that transaction, then fail.
+    Note over PG: Holds on this bookable queue on its row lock (D-41).<br/>The first INSERT commits; each later one then fails the exclusion check.
     PG-->>B1: 1 commit (on whichever instance won)
     PG-->>B1: 23P01 exclusion_violation (rest)
     PG-->>B2: 23P01 exclusion_violation
@@ -588,7 +588,9 @@ Interview points: all requests pass the Java checks (they read before anyone com
 
 ### 8.3 Lock order and deadlocks
 
-Global order in booking-service: (0) venue row, when locked (hold creation `FOR SHARE`, venue deactivation `FOR UPDATE`) → (1) bookable or session row → (2) `member` rows ascending → (3) `booking` rows → (4) waitlist, idempotency, audit, outbox rows. Cancel and expire read the booking without a lock to learn its (immutable) `bookable_id`, lock the bookable, then update the booking. This prevents the cancel-with-promotion vs new-hold deadlock described in v0.1. A defensive retry on `40P01` exists (§15.2); any deadlock is logged as an error.
+Global order in booking-service: (0) venue row, when locked (hold creation `FOR SHARE`, venue deactivation `FOR UPDATE`) → (1) bookable or session row → (2) `member` rows ascending → (3) `booking` rows → (4) waitlist, idempotency, audit, outbox rows. Cancel and expire read the booking without a lock to learn its (immutable) `bookable_id`, lock the bookable, then update the booking. This prevents the cancel-with-promotion vs new-hold deadlock described in v0.1. A defensive retry on `40P01` exists (§15.2, D-11); every killed transaction is counted in `gridreserve.db.retries{sqlstate}`, which the concurrency tests require to stay 0.
+
+**Found in M1.8 (D-41).** With the bookable locked `FOR SHARE`, 50 parallel holds on one slot deadlocked: all of them got the shared lock, and two conflicting inserts could each wait for the other's uncommitted row in the exclusion check (171 deadlocks in one test run; reproduced in plain SQL with 30 sessions released at one instant). Hold creation now locks the bookable `FOR UPDATE`: holds on one bookable insert one after another (each takes milliseconds), holds on different bookables stay parallel, and the lock order is unchanged. Proven by `ConcurrencyIT` (CONC-01..05, 20 repetitions each, 0 lock failures) and CONC-10 through the gateway.
 
 ### 8.4 Not relied on
 
@@ -912,6 +914,7 @@ flowchart LR
 | D-04 | Outbox introduced in P5 with HTTP push, no broker | 2026-11-04 |
 | D-12 | Access token in memory + refresh-token cookie (rotation removed by D-37) | 2026-10-26 |
 | D-11 | Deadlock retry with Spring Framework 7 `@Retryable` (in `spring-context`, no new library): `BookingService` wraps each write transaction in `BookingTransactions`, 3 attempts (2 retries), 50 ms ± 25 ms, only on `PessimisticLockingFailureException` (PostgreSQL `40P01`/`40001`); business refusals are never retried. The retry sits in a separate bean so each attempt starts a new transaction. Deadlocks are prevented first by the lock order; stale holds swept at hold creation are locked in one statement ordered by id. Rejected: a hand-written loop (more code, same behavior), no retry (a rare unforeseen deadlock would be a 500) | 2026-11-07 (owner, M1.5) |
+| D-41 | M1.8: hold creation locks the bookable `FOR UPDATE` instead of `FOR SHARE` (the shared lock let conflicting exclusion-constraint inserts deadlock, §8.3); the venue stays `FOR SHARE`. The gateway routes have **no bulkhead**: Spring Cloud CircuitBreaker adds one by default (Resilience4j, 25 concurrent calls) and it made 50 parallel holds fail with 503 and open the circuit breaker; config `spring.cloud.circuitbreaker.bulkhead.resilience4j.enabled: false` (bulkheads stay on services' outbound clients, §10). Metrics `gridreserve.bookings.created{category,type}`, `gridreserve.bookings.conflicts{code}`, `gridreserve.db.retries{sqlstate}`; dev exposes `/actuator/metrics` (token required, not routed). CONC-10 lives in the `backend/system-tests` module (JUnit, `-Psystem-tests`), run in CI against a throwaway Compose stack with two booking instances; CI uses the config branch with the app branch's name when it exists. Deadlocks are asserted through the application counter (PostgreSQL's `pg_stat_database.deadlocks` is reported lazily by pooled connections, so it is only printed). CONC-09 moves to M1.11 (deactivate endpoint), CONC-08 to M1.12 (idempotency). Rejected: keep `FOR SHARE` and rely on the retry (1-second stalls, 500s under bursts), an advisory lock per bookable (same effect, less visible) | 2026-11-07 (owner, M1.8) |
 | D-40 | M1.7: the booking horizon (BR-07) uses the same whole local days as availability, through one method (`EffectiveRules.firstDateBeyondHorizon`); booking responses carry `cancellableUntil` so the UI disables Cancel in time; the per-member limit counts bookings whose `bookable_id` is in the category's bookable IDs, which the catalog service supplies (no `category_id` column on `booking`, no cross-module table read). The cancellation policy (CXL-01..04) is part of the conditional UPDATE, so a confirm racing a cancel can't slip past the cutoff. `HoldExpiryJob`: fixed delay 30 s on the bounded `gr-sched-*` pool, one transaction per hold (`FOR UPDATE SKIP LOCKED` + conditional UPDATE), metric `gridreserve.holds.expired{layer}`. Rejected: instant-based horizon (API and picker would disagree), a `category_id` column (copies catalog data) | 2026-11-07 (owner, M1.7) |
 | D-39 | Availability works in whole local days: today … today + horizon − 1, later `422 BEYOND_HORIZON`, past dates all `PAST`; categories and countries unpaginated; CAPACITY availability `422 WRONG_BOOKING_MODEL` until P2, CAPACITY bookables still listed. Availability reads bookings through the booking module's `BookingOccupancy` (one query per request). DST: a local start in a spring-forward gap gets no slot; a repeated local hour uses its first occurrence | 2026-11-06 (owner, M1.4) |
 | D-38 | The gateway verifies access tokens with `common-web`'s `AccessTokenVerification` (the same rules as every service), wrapped as a reactive decoder; `spring-boot-starter-webmvc` is optional in `common-web` so the gateway stays reactive. The gateway checks only that a token is valid; roles are checked in each service, which also verifies the token again. `/api/v1/auth/**` ignores the `Authorization` header (gateway and identity). `member` rows are created by `MemberProvisioner` from hold creation (M1.5), not on every request. Rejected: a separate copy of the rules in the gateway (could drift), provisioning in a request filter (a write on every request) | 2026-11-06 (owner, M1.3c) |

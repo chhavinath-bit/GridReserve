@@ -67,7 +67,7 @@ class BookingRulesTest {
 
     private static LockedBookable bookable(EffectiveRules rules, boolean open) {
         BookableInfo info = new BookableInfo(1, "Test", "Test", "Test venue", rules.zone(), rules.cancellationCutoffMinutes());
-        return new LockedBookable(info, 1, open, rules);
+        return new LockedBookable(info, 1, "TEST", "TEST", open, rules);
     }
 
     /** The error code the rules return, or "OK". */

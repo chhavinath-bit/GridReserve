@@ -29,9 +29,15 @@ public interface BookableRepository extends JpaRepository<Bookable, Long> {
     @Query("select b from Bookable b where b.id = :id")
     Optional<Bookable> findWithRulesById(@Param("id") Long id);
 
-    /** Locks the bookable {@code FOR SHARE}, second in the lock order after its venue (CONC-09). */
-    @Query(value = "SELECT id FROM bookable WHERE id = :id FOR SHARE", nativeQuery = true)
-    Optional<Long> lockForShare(@Param("id") long id);
+    /**
+     * Locks the bookable {@code FOR UPDATE} for a hold, second in the lock order after its venue (D-41).
+     * Exclusive on purpose: holds on the same bookable then insert one after another. With a shared lock,
+     * two conflicting inserts could each wait for the other's uncommitted row in the exclusion check and
+     * deadlock (found by CONC-01, M1.8). Holds on different bookables are not affected. A deactivation
+     * (FOR UPDATE, M1.11) waits for running holds, and holds after it see the bookable inactive (CONC-09).
+     */
+    @Query(value = "SELECT id FROM bookable WHERE id = :id FOR UPDATE", nativeQuery = true)
+    Optional<Long> lockForBooking(@Param("id") long id);
 
     /** Several bookables with venue, type and category in one query, for labelling a list of bookings. */
     @EntityGraph(attributePaths = {"venue", "bookableType", "bookableType.category"})

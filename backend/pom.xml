@@ -26,6 +26,8 @@
         <module>platform/api-gateway</module>
         <module>services/identity-service</module>
         <module>services/booking-service</module>
+        <!-- Tests against the running Compose stack; skipped unless -Psystem-tests (M1.8). -->
+        <module>system-tests</module>
     </modules>
 
     <properties>

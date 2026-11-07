@@ -277,7 +277,8 @@ Rows marked ✓ were run successfully in M1.1 (2026-11-05); the others are plann
 |---|---|---|
 | Start the whole stack (dev) ✓ | `cd infra && docker compose up -d --build --wait` | Postgres (per-service DBs), config server (`native`, mounts `../../gridreserve-config`), discovery, gateway, services (+ Redis in P4); reads `infra/.env`. Routing can take ~15 s after all are healthy |
 | Start only infrastructure | `cd infra && docker compose up -d postgres config-server discovery-server` | Then run services from the IDE/Maven |
-| Two booking instances ✓ | `cd infra && docker compose up -d --scale booking-service=2 --wait` | Load-balancing and CONC-10 demos |
+| Two booking instances ✓ | `cd infra && docker compose up -d --build --scale booking-service=2 --wait` | Load-balancing and CONC-10 demos |
+| System tests (CONC-10) ✓ | `cd backend && ./mvnw -B -pl system-tests -Psystem-tests verify` | Needs the stack with two booking instances (row above); waits until the gateway routes; also a CI job |
 | Stop ✓ | `cd infra && docker compose down` | Add `-v` only with my approval (deletes data) |
 | Eureka dashboard ✓ | `http://localhost:8761` (JSON: `curl -H 'Accept: application/json' localhost:8761/eureka/apps`) | |
 | Smoke test ✓ | `curl -i localhost:8080/api/v1/ping` | Temporary M1.1 endpoint through the gateway |
@@ -297,6 +298,7 @@ Rows marked ✓ were run successfully in M1.1 (2026-11-05); the others are plann
 
 ### 14.1 Git
 
+- A milestone's config-repo branch has the same name as its app branch (CI's system-test job checks out that branch while both PRs are open, else `main`). Merge the config PR first.
 - Two repositories: **`GridReserve`** (this folder, application monorepo) and **`gridreserve-config`** (configuration), both public on GitHub (decision B-1). On 2026-11-04 this folder was not inside any Git repository; M0.2 initializes it. Do not run Git commands against any parent directory.
 - Default branch `main`, always green. One branch per milestone: `m<phase>.<n>-<short-name>`. Config changes are PRs in the config repo, linked from the milestone.
 - Commit in small steps with clear messages: imperative subject, body explaining *why* when it isn't obvious. Commit only when I ask or when the agreed milestone plan says so.
@@ -339,6 +341,7 @@ Rows marked ✓ were run successfully in M1.1 (2026-11-05); the others are plann
 - Keep the build host-agnostic (Dockerfiles + environment variables + config server); the deploy host is chosen before the first Phase 1 deployment.
 - (2026-11-06, M1.3) Tokens are signed and verified with Spring Security's OAuth2 resource server and Nimbus JOSE (`NimbusJwtEncoder` / `NimbusJwtDecoder`) instead of jjwt: Boot-managed versions, no second Jackson, built-in Bearer filters for servlet services and the reactive gateway (D-34). Service-to-service authentication: short-lived service JWTs signed by identity-service, built with the first internal call in M1.9 (D-19). M1.3 is delivered as three PRs: M1.3a identity core, M1.3b refresh tokens, M1.3c verification in gateway and booking.
 - (2026-11-06, M1.3b) Refresh tokens are **not rotated** (D-37): one opaque token per login, stored as SHA-256, sliding 7-day expiry, logout deletes the row, expired rows deleted at login (no cleanup job). Replaces rotation, token families and reuse detection.
+- (2026-11-07, M1.8) Hold creation locks the bookable `FOR UPDATE` (the shared lock deadlocked under parallel holds); no bulkhead on gateway routes; CONC-10 in the `backend/system-tests` module, run in CI on a throwaway Compose stack with two booking instances; deadlocks asserted with `gridreserve.db.retries` (D-41).
 - (2026-11-07, M1.7) Booking horizon in whole local days for both availability and holds; booking responses include `cancellableUntil`; the per-member limit counts by the category's bookable IDs from the catalog service (D-40). `HoldExpiryJob` every 30 s on the `gr-sched-*` pool (2 threads), one transaction per hold with `SKIP LOCKED`.
 - (2026-11-07, M1.6) Frontend packages (D-UI-3, M1.6 subset): `radix-ui`, `class-variance-authority`, `clsx`, `tailwind-merge`, `lucide-react`, `tw-animate-css`, `sonner`, `@fontsource-variable/inter`; lint with `eslint`, `typescript-eslint`, `eslint-plugin-react-hooks`; TypeScript 6.0 (typescript-eslint does not support 7 yet). All pinned exactly. `react-day-picker` and `@tanstack/react-table` stay pending. Frontend CI job on Node 24 (`frontend/.nvmrc`). Forms: **Formik** + **Yup** (owner request, 2026-11-07) for client-side validation that mirrors the backend rules; the server stays the guard.
 - (2026-11-07, M1.5) Deadlock retry (D-11): Spring Framework 7 `@Retryable` on `BookingService`, around the transactions in `BookingTransactions` (separate bean, so each attempt is a new transaction); 3 attempts, only on `PessimisticLockingFailureException`; business refusals never retried. Holds last 5 minutes (constant `HOLD_DURATION`). Confirm and cancel record a run-out hold as `EXPIRED` before refusing (`noRollbackFor = DomainException`).

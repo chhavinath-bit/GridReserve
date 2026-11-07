@@ -2,7 +2,7 @@
 
 One booking platform for many kinds of venues: library rooms and seats, sports courts, parking bays, clinic appointments and gym sessions. A member picks a category, a venue and a bookable, holds a time slot for five minutes and confirms it. Double-booking is impossible, even under heavy concurrent load and with several service instances running.
 
-> **Status: Phase 1, M1.7.** Config server, Eureka, gateway, identity and booking services run together. identity-service registers users (and logs them in at once), issues RS256 access tokens plus a refresh-token cookie (sliding 7 days, logout ends it) and answers `/api/v1/me`. The gateway refuses requests without a valid access token, and booking-service checks the token and the role again itself, without calling identity-service. booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. booking-service serves the catalog (categories, venues, bookables with their effective rules, countries and time zones) and slot availability for a date (M1.4). Members hold a slot for 5 minutes, confirm it and cancel it; admins can cancel any booking (M1.5). A React frontend runs the whole journey in the browser through the gateway (M1.6). Every booking rule (hours, grid, length, horizon, per-member limit, cancellation cutoff) is enforced and a background job expires unconfirmed holds (M1.7). The concurrency proof, including two booking-service instances, is next (M1.8). Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
+> **Status: Phase 1, M1.8.** Config server, Eureka, gateway, identity and booking services run together. identity-service registers users (and logs them in at once), issues RS256 access tokens plus a refresh-token cookie (sliding 7 days, logout ends it) and answers `/api/v1/me`. The gateway refuses requests without a valid access token, and booking-service checks the token and the role again itself, without calling identity-service. booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. booking-service serves the catalog (categories, venues, bookables with their effective rules, countries and time zones) and slot availability for a date (M1.4). Members hold a slot for 5 minutes, confirm it and cancel it; admins can cancel any booking (M1.5). A React frontend runs the whole journey in the browser through the gateway (M1.6). Every booking rule (hours, grid, length, horizon, per-member limit, cancellation cutoff) is enforced and a background job expires unconfirmed holds (M1.7). Double-booking is proven impossible under parallel load, also through the gateway with two booking-service instances (M1.8). Resilience patterns and configuration refresh are next (M1.9). Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## What this project demonstrates
 
@@ -163,6 +163,25 @@ Per category: cancellation cutoff 2 hours, at most 3 active bookings (HELD or CO
 **Cancelling:** a live hold any time; a confirmed booking until 2 hours before its start (after that `422 CUTOFF_PASSED`); admins until it ends; nothing after the end (`409 INVALID_STATE`). Every booking response has `cancellableUntil`, so the UI can disable Cancel in time.
 
 **Hold expiry:** a hold that isn't confirmed within 5 minutes stops blocking the slot at once (every check compares `expires_at` with now). The `HoldExpiryJob` marks such holds `EXPIRED` every 30 seconds, safely on any number of booking-service instances; settings `gridreserve.holds.expiry.{enabled,interval,batch-size}` (defaults on, 30 s, 100).
+
+### How double-booking is prevented (even with two instances)
+
+The database decides, not Java and not a single server:
+
+1. **PostgreSQL exclusion constraints.** `ex_booking_bookable_overlap` allows at most one active booking per bookable for any moment (buffer included); `ex_booking_member_overlap` stops a member from being in two places at once. Two requests that both pass the Java checks still can't both insert: the second gets `409 SLOT_TAKEN` (or `MEMBER_OVERLAP`).
+2. **Row locks in one global order** (venue `FOR SHARE` → bookable `FOR UPDATE` → member `FOR UPDATE` → booking rows). Holds on the same bookable queue for a few milliseconds each; holds on different bookables run in parallel; the member lock makes the per-member limit exact.
+3. **Nothing in memory.** Instances share only the database, so it doesn't matter which instance a request reaches; the gateway never retries a `POST`.
+
+**Proof.** `ConcurrencyIT` (booking-service, real PostgreSQL) releases parallel requests through a start gate, 20 times each: 50 members on one slot → exactly 1 × 201 and 49 × 409 with one active row (under 10 s); overlapping ranges; one member on ten seats; the 3-booking limit under load; confirm racing expiry. Every run also asserts that no transaction was killed for a deadlock (`gridreserve.db.retries` stays 0). Then CONC-10 repeats the 50-member race **through the gateway with two booking-service instances**, 20 times, and checks with each instance's own counters that both took part:
+
+```bash
+cd infra && docker compose up -d --build --scale booking-service=2 --wait
+cd ../backend && ./mvnw -B -pl system-tests -Psystem-tests verify   # waits until the gateway routes, then 20 rounds
+```
+
+CI runs the same on a throwaway stack (job "System tests").
+
+**What the tests found (M1.8).** With the bookable locked `FOR SHARE`, parallel holds on one slot sometimes deadlocked inside PostgreSQL's exclusion check; locking it `FOR UPDATE` fixed it (0 deadlocks in 300 runs). And the gateway had an unintended 25-call bulkhead from Spring Cloud CircuitBreaker's defaults, which turned a burst of 50 holds into 503s and opened the circuit breaker; it is now off (ARCHITECTURE D-41).
 
 ### Run the frontend
 

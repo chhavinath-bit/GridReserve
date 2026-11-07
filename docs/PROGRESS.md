@@ -16,7 +16,8 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 | M1.4 Catalog, countries and availability | Done (owner reviewed; [review guide](reviews/M1.4-review.md)) | 2026-11-06 | `2e8e88f` (merge of PR #10); no config repo change; CI on `main` (`2e8e88f`) green; local `verify` on `main` 2026-11-07: 156 tests, 0 failures |
 | M1.5 Booking engine core (hold, confirm, cancel) | Done (owner reviewed; [review guide](reviews/M1.5-review.md)) | 2026-11-07 | `5eb2abc` (merge of PR #11); no config repo change; CI on `main` (`5eb2abc`) green; local `verify` on `main` 2026-11-07: 188 tests, 0 failures |
 | M1.6 Thin vertical slice (frontend through the gateway) | Done (owner reviewed in the browser; [review guide](reviews/M1.6-review.md)) | 2026-11-07 | `472a561` (merge of PR #12); no config repo change; CI on `main` (`472a561`) green; local on `main` 2026-11-07: backend `verify` 188 tests, 0 failures; frontend typecheck and lint clean, 36 tests passed, build OK |
-| M1.7 All booking rules and hold expiry | Built; **awaiting owner review** ([review guide](reviews/M1.7-review.md)) | 2026-11-07 | branch `m1.7-rules-expiry`; no config repo change |
+| M1.7 All booking rules and hold expiry | Done (owner reviewed; [review guide](reviews/M1.7-review.md)) | 2026-11-07 | `d098f04` (merge of PR #13); no config repo change; CI on `main` (`d098f04`) green; local on `main` 2026-11-07: backend `verify` 251 tests, 0 failures; frontend typecheck and lint clean, 38 tests passed, build OK |
+| M1.8 Concurrency proof (single and two instances) | Built; **awaiting owner review** ([review guide](reviews/M1.8-review.md)) | 2026-11-07 | branch `m1.8-concurrency`; config repo PR #7 (`m1.8-concurrency`) |
 
 ---
 
@@ -510,7 +511,7 @@ Backend unchanged since M1.5 (local `verify` on `main` 188 tests, 0 failures, se
 
 ---
 
-## M1.7 All booking rules and hold expiry — Built, awaiting owner review (2026-11-07)
+## M1.7 All booking rules and hold expiry — Done (2026-11-07)
 
 **Built (booking-service):**
 - `BookingRules`: BR-07 (whole local days, shared with availability through `EffectiveRules.firstDateBeyondHorizon`), BR-02 (that weekday's hours, own hours replace the venue's, one local date, a 24:00 close allowed, crossing midnight refused), BR-03 (grid from that day's opening, whole minutes), BR-04 (min/max, "exactly N minutes" message), BR-08 (active bookings in the category, counted under the member lock; run-out holds don't count; inactive bookables' bookings do), all in the BR-14 order. Hours and grid use the venue's wall clock, length real time. New codes `OUTSIDE_OPERATING_HOURS`, `OFF_GRID`, `DURATION_INVALID`, `MEMBER_LIMIT_REACHED`, `CUTOFF_PASSED`.
@@ -553,6 +554,57 @@ What the new tests execute (behavior): per type (Room 30/30–180, Seat 60/60–
 - Parallel-request proofs of the member limit, cancel races and deactivation races (CONC-02..05, 09) are M1.8.
 - FR-EXP-03 audit rows (M1.12). The metric is not checked through the gateway (actuator isn't routed).
 - No browser check of the disabled Cancel button by Claude (no headless browser; unit-tested via `canCancel`).
+
+---
+
+## M1.8 Concurrency proof (single and two instances) — Built, awaiting owner review (2026-11-07)
+
+**Built:**
+- booking-service `concurrency/ConcurrencyIT` + `Parallel` (start gate): CONC-01 (50 members, one slot), CONC-02 (10 mutually overlapping ranges), CONC-03 (one member, 10 seats, same time), CONC-04 (confirm racing the expiry job at the expiry moment), CONC-05 (one member, 10 holds, limit 3); `@RepeatedTest(20)` each, asserting exact outcomes, database rows and zero lock failures.
+- **Fix (D-41):** hold creation locks the bookable `FOR UPDATE` instead of `FOR SHARE` (`BookableRepository.lockForBooking`).
+- Metrics: `gridreserve.bookings.created{category,type}`, `gridreserve.bookings.conflicts{code}`, `gridreserve.db.retries{sqlstate}` (counted inside the retry, per killed attempt).
+- `backend/system-tests` module (JUnit, JDK HTTP client, skipped unless `-Psystem-tests`): `DoubleBookingThroughGatewaySystemIT` = CONC-10 (waits for real routing; 2 instances UP; 20 rounds of 50 parallel holds through the gateway; each instance's counters > 0; no lock failures; prints `pg_stat_database.deadlocks`). The Dockerfile copies the module's pom.
+- CI job "System tests": both repos side by side (config branch with the same name if it exists, else `main`), `scripts/ci/prepare-system-test-env.sh` (random DB passwords, fresh JWT key pair; public key only into the runner's config copy), stack with two booking instances, system tests, logs on failure, stop.
+- Config repo PR #7: `/actuator/metrics` exposed in dev only; **no bulkhead on gateway routes** (`spring.cloud.circuitbreaker.bulkhead.resilience4j.enabled: false`). (PR #6 with the first commit closed when its branch was renamed to match; superseded by #7.)
+- Docs: D-41 (ARCHITECTURE §8.1/§8.2/§8.3/§19.1), REQUIREMENTS v0.13 (CONC-09), CLAUDE.md §13 (system-test command), §14.1 (config branch naming), §15.1, IMPLEMENTATION_PLAN M1.8, README "How double-booking is prevented (even with two instances)" and status, review guide, learning file.
+
+**Plan deviations (explained to and approved by the owner where they changed the design):**
+- **Bookable lock `FOR UPDATE` (owner approved, option A).** The first `ConcurrencyIT` run (20 repetitions) had 7 failures and 4 errors in CONC-01/02, 528 s; a 3-repetition run showed 171 deadlocks (`40P01`); some runs passed, so it depended on timing. Plain-SQL reproduction against the Compose PostgreSQL: 30 sessions released at one instant with the full hold transaction (venue and bookable `FOR SHARE`, member `FOR UPDATE`, stale-hold lock, insert) → 2 deadlock reports, PostgreSQL's DETAIL shows two transactions each waiting for the other ("ShareLock on transaction"); plain inserts alone → 1 winner, 29 violations, no deadlock; the same transaction with the bookable `FOR UPDATE`, 3 rounds → 1 winner, 29 violations, 0 deadlocks each.
+- **Deadlock measurement.** Decision 5a (PostgreSQL's counter) turned out to be reported lazily by pooled connections (a probe showed it immediate only because `psql` sessions end), so tests assert the app counter `gridreserve.db.retries` (already planned in ARCHITECTURE §17) and the system test only prints `pg_stat_database.deadlocks`.
+- **Gateway bulkhead.** CONC-10's first runs: every round had exactly one 201, but round 1 had 25 × 503 and later rounds 50 × 503, warm instances too. Cause: Spring Cloud CircuitBreaker's default Resilience4j bulkhead (25 concurrent calls) around gateway routes (property `spring.cloud.circuitbreaker.bulkhead.resilience4j.enabled`, default true, verified in the jar's metadata); its rejections opened the circuit breaker. Turned off in config, in line with ARCHITECTURE §10.
+- CONC-09 → M1.11, CONC-08 → M1.12 (owner approved). The system-test module is new (owner approved 1a).
+
+**Dependencies added:** none (system-tests uses JUnit, AssertJ and Jackson from the Boot BOM).
+
+### Test results
+
+`cd backend && ./mvnw -B verify` on 2026-11-07: **BUILD SUCCESS, 351 tests**, 0 failures, 0 skipped; system-tests skipped as intended.
+
+| Module | Surefire (`*Test`) | Failsafe (`*IT`) |
+|---|---|---|
+| common-web | 22 | — |
+| config-server / discovery-server | 1 / 1 | — |
+| api-gateway | 2 | 8 |
+| identity-service | 10 | 32 |
+| booking-service | 51 | 224 (new: `ConcurrencyIT` 100 = 5 × 20) |
+| system-tests | — | skipped (needs the stack) |
+
+**Concurrency, 20 runs each:** `ConcurrencyIT` 100/100 in three separate rounds (300/300), ~10 s per round; slowest CONC-01 run 0.164 s (NFR-PERF-03: < 10 s); zero lock failures in every run.
+
+**CONC-10** (`./mvnw -B -pl system-tests -Psystem-tests verify`, stack with `--scale booking-service=2`, config clone on `m1.8-concurrency`): **22/22 passed** in 11.2 s (2 instances UP; 20 × [1 × 201, 49 × SLOT_TAKEN, one active row]; both instances served: the counters read 525/525 including 25/25 from the two earlier runs, so 500/500 in this run; no lock failures). Slowest round 0.50 s.
+
+**CI (run 42390661312, commit `427b5f8`):** backend, frontend and the new "System tests" job all green. The system-test job built a fresh stack with two booking instances (config branch `m1.8-concurrency`, picked by name): 22/22, `instance 1 handled 500 holds, instance 2 handled 500`, `pg_stat_database.deadlocks` 0 → 0.
+
+**Mutation checks:** bookable `FOR SHARE` again → `ConcurrencyIT` CONC-01 did not finish within 10 minutes (normally ~10 s) and was stopped; the runs before the fix on the same code show the failures (above). Gateway bulkhead on → CONC-10 fails with 503 (the runs before the config fix).
+
+**First runs that failed (fixed, not weakened):** the image build failed once the parent pom listed `system-tests` (the Dockerfile copied only libs, platform, services); it now copies the module's pom. The first commit of this milestone would not have compiled on its own (two files left out); amended before pushing.
+
+### Not covered yet
+- CONC-09 (M1.11), CONC-08 (M1.12); load beyond 50 parallel requests (M1.14).
+- The system test leaves its 50 fictional `conc10-…@gridreserve.test` users per run in identity_db.
+
+### Open issues for later milestones
+- M1.9: when adding outbound bulkheads, check that no other Spring Cloud default adds limits or retries we didn't design (as the gateway bulkhead did).
 
 ---
 

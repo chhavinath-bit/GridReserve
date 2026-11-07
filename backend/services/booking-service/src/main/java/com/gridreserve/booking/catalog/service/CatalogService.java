@@ -110,8 +110,9 @@ public class CatalogService {
     }
 
     /**
-     * For hold creation: locks the venue, then the bookable, {@code FOR SHARE} (lock order, CLAUDE.md
-     * §8.3) and reads them after the locks are held, so the active flags are current. A lock only
+     * For hold creation: locks the venue {@code FOR SHARE} (holds on its other bookables go on in
+     * parallel), then the bookable {@code FOR UPDATE} (holds on this bookable go one at a time, D-41), in
+     * the lock order (CLAUDE.md §8.3), and reads them after the locks are held, so the active flags are current. A lock only
      * means something inside the caller's transaction (it lasts until that ends), so one is required.
      * Inactive bookables are returned, not hidden: the booking module answers {@code 422
      * BOOKABLE_INACTIVE} (BR-06).
@@ -119,10 +120,11 @@ public class CatalogService {
     @Transactional(propagation = Propagation.MANDATORY)
     public LockedBookable lockForBooking(long bookableId) {
         venues.lockForShareByBookable(bookableId).orElseThrow(() -> notFound("No such bookable."));
-        bookables.lockForShare(bookableId);
+        bookables.lockForBooking(bookableId);
         Bookable bookable = visibleBookable(bookableId, true);
-        return new LockedBookable(info(bookable), bookable.getBookableType().getCategory().getId(),
-                bookable.isActive() && bookable.getVenue().isActive(), resolve(bookable));
+        BookableType type = bookable.getBookableType();
+        return new LockedBookable(info(bookable), type.getCategory().getId(), type.getCategory().getCode(),
+                type.getCode(), bookable.isActive() && bookable.getVenue().isActive(), resolve(bookable));
     }
 
     /** Names for a list of bookings in one query, inactive bookables included (old bookings show them). */

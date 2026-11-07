@@ -64,3 +64,65 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+  system-tests:
+    name: System tests (Compose, two booking instances)
+    # The whole stack in Docker, then CONC-10 through the gateway (M1.8). Runs after the unit and
+    # integration tests pass, on PRs and on main.
+    needs: [backend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Same layout as a laptop: the config repo next to the app repo (Compose mounts ../../gridreserve-config).
+      - uses: actions/checkout@v7
+        with:
+          path: GridReserve
+
+      # A milestone's config changes live on a config-repo branch with the same name as the app branch
+      # (CLAUDE.md §14.1); use it while both PRs are open, otherwise main. The branch name is passed as an
+      # environment variable, never pasted into the script, so a branch name can't inject commands.
+      - name: Pick the config branch
+        id: config
+        env:
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          if git ls-remote --exit-code --heads https://github.com/chhavinath-bit/gridreserve-config.git "$BRANCH" > /dev/null; then
+            echo "ref=$BRANCH" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=main" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          repository: chhavinath-bit/gridreserve-config
+          ref: ${{ steps.config.outputs.ref }}
+          path: gridreserve-config
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: GridReserve/backend/**/pom.xml
+
+      # Random DB passwords and a fresh JWT key pair for this runner only; nothing is committed or printed.
+      - name: Prepare a throwaway environment
+        run: GridReserve/scripts/ci/prepare-system-test-env.sh
+
+      - name: Start the stack with two booking-service instances
+        working-directory: GridReserve/infra
+        run: docker compose up -d --build --scale booking-service=2 --wait
+
+      - name: Run the system tests
+        working-directory: GridReserve/backend
+        run: ./mvnw -B -pl system-tests -Psystem-tests verify
+
+      - name: Show service logs on failure
+        if: failure()
+        working-directory: GridReserve/infra
+        run: docker compose logs --no-color --tail=200
+
+      - name: Stop the stack
+        if: always()
+        working-directory: GridReserve/infra
+        run: docker compose down
