@@ -73,7 +73,10 @@ class IdentityGatewayIT {
     io.micrometer.core.instrument.MeterRegistry meters;
 
     @Autowired
-    org.springframework.cloud.context.refresh.ContextRefresher refresher;
+    org.springframework.cloud.context.properties.ConfigurationPropertiesRebinder rebinder;
+
+    @Autowired
+    org.springframework.context.ApplicationEventPublisher events;
 
     @Autowired
     org.springframework.core.env.ConfigurableEnvironment environment;
@@ -263,22 +266,29 @@ class IdentityGatewayIT {
         CircuitBreaker originalCircuit = circuit();
         io.github.resilience4j.bulkhead.Bulkhead originalBulkhead = bulkheads.bulkhead(IdentityGateway.POLICY);
         io.github.resilience4j.retry.Retry originalRetry = retries.retry(IdentityGateway.POLICY);
-        // What a changed config repo plus POST /actuator/refresh does, inside the test.
+        // A changed value, then the two steps of POST /actuator/refresh our code depends on: rebind the
+        // settings objects, then the "refresh finished" event. (A full refresh would also re-import config
+        // from a Config Server; the end-to-end path is ResilienceSystemIT's refresh test, US-13.)
         environment.getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource("changed-config", java.util.Map.of(
                 "resilience4j.circuitbreaker.instances.identity-service.failure-rate-threshold", "70",
                 "resilience4j.bulkhead.instances.identity-service.max-concurrent-calls", "4")));
         try {
-            refresher.refresh();
+            refresh();
 
             assertThat(circuit().getCircuitBreakerConfig().getFailureRateThreshold()).isEqualTo(70);
             assertThat(bulkheads.bulkhead(IdentityGateway.POLICY).getBulkheadConfig().getMaxConcurrentCalls()).isEqualTo(4);
         } finally {
             environment.getPropertySources().remove("changed-config");
-            refresher.refresh();
+            refresh();
             circuitBreakers.replace(IdentityGateway.POLICY, originalCircuit);
             bulkheads.replace(IdentityGateway.POLICY, originalBulkhead);
             retries.replace(IdentityGateway.POLICY, originalRetry);
         }
         assertThat(circuit().getCircuitBreakerConfig().getFailureRateThreshold()).isEqualTo(50);
+    }
+
+    private void refresh() {
+        rebinder.rebind();
+        events.publishEvent(new org.springframework.cloud.context.scope.refresh.RefreshScopeRefreshedEvent());
     }
 }
