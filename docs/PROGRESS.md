@@ -16,7 +16,7 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 | M1.4 Catalog, countries and availability | Done (owner reviewed; [review guide](reviews/M1.4-review.md)) | 2026-11-06 | `2e8e88f` (merge of PR #10); no config repo change; CI on `main` (`2e8e88f`) green; local `verify` on `main` 2026-11-07: 156 tests, 0 failures |
 | M1.5 Booking engine core (hold, confirm, cancel) | Done (owner reviewed; [review guide](reviews/M1.5-review.md)) | 2026-11-07 | `5eb2abc` (merge of PR #11); no config repo change; CI on `main` (`5eb2abc`) green; local `verify` on `main` 2026-11-07: 188 tests, 0 failures |
 | M1.6 Thin vertical slice (frontend through the gateway) | Done (owner reviewed in the browser; [review guide](reviews/M1.6-review.md)) | 2026-11-07 | `472a561` (merge of PR #12); no config repo change; CI on `main` (`472a561`) green; local on `main` 2026-11-07: backend `verify` 188 tests, 0 failures; frontend typecheck and lint clean, 36 tests passed, build OK |
-| M1.7 All booking rules and hold expiry | Built; **awaiting owner review** ([review guide](reviews/M1.7-review.md)) | 2026-11-07 | branch `m1.7-rules-expiry`; no config repo change |
+| M1.7 All booking rules and hold expiry | Done (owner reviewed; [review guide](reviews/M1.7-review.md)) | 2026-11-07 | `d098f04` (merge of PR #13); no config repo change; CI on `main` (`d098f04`) green; local on `main` 2026-11-07: backend `verify` 251 tests, 0 failures; frontend typecheck and lint clean, 38 tests passed, build OK |
 
 ---
 
@@ -510,7 +510,7 @@ Backend unchanged since M1.5 (local `verify` on `main` 188 tests, 0 failures, se
 
 ---
 
-## M1.7 All booking rules and hold expiry — Built, awaiting owner review (2026-11-07)
+## M1.7 All booking rules and hold expiry — Done (2026-11-07)
 
 **Built (booking-service):**
 - `BookingRules`: BR-07 (whole local days, shared with availability through `EffectiveRules.firstDateBeyondHorizon`), BR-02 (that weekday's hours, own hours replace the venue's, one local date, a 24:00 close allowed, crossing midnight refused), BR-03 (grid from that day's opening, whole minutes), BR-04 (min/max, "exactly N minutes" message), BR-08 (active bookings in the category, counted under the member lock; run-out holds don't count; inactive bookables' bookings do), all in the BR-14 order. Hours and grid use the venue's wall clock, length real time. New codes `OUTSIDE_OPERATING_HOURS`, `OFF_GRID`, `DURATION_INVALID`, `MEMBER_LIMIT_REACHED`, `CUTOFF_PASSED`.
