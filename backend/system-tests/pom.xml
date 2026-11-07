@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.gridreserve</groupId>
+        <artifactId>gridreserve-backend</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>system-tests</artifactId>
+    <name>system-tests</name>
+    <description>
+        Tests against the running Docker Compose stack, through the gateway (CONC-10). They need the stack
+        up, so a normal build skips them; run with -Psystem-tests (README, "How double-booking is prevented").
+    </description>
+
+    <properties>
+        <!-- Skipped unless the system-tests profile is active. -->
+        <skipSystemTests>true</skipSystemTests>
+    </properties>
+
+    <!-- Test-only module, no application code. Versions come from the Spring Boot BOM (no new library). -->
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <skipITs>${skipSystemTests}</skipITs>
+                    <includes>
+                        <include>**/*SystemIT.java</include>
+                    </includes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>system-tests</id>
+            <properties>
+                <skipSystemTests>false</skipSystemTests>
+            </properties>
+        </profile>
+    </profiles>
+</project>

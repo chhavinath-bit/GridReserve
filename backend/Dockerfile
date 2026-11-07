@@ -11,6 +11,8 @@ COPY .mvn .mvn
 COPY libs libs
 COPY platform platform
 COPY services services
+# The parent pom lists system-tests; Maven needs its pom to load the build, never its tests.
+COPY system-tests/pom.xml system-tests/pom.xml
 ARG MODULE
 # The Maven cache is shared between image builds (and locked so parallel builds don't collide).
 RUN --mount=type=cache,target=/root/.m2,sharing=locked \
