@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 /**
@@ -54,7 +55,8 @@ class BookingTransactions {
      */
     @Transactional
     public BookingResponse hold(long memberId, CreateHoldRequest request) {
-        Instant now = clock.instant();
+        // PostgreSQL keeps microseconds; the response must show the same values a later read returns.
+        Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
         LockedBookable bookable = catalog.lockForBooking(request.bookableId());
         memberLock.lock(memberId);
         BookingRules.checkHold(bookable, request.start(), now);

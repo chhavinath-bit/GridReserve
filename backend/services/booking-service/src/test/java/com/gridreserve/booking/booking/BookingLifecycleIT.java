@@ -127,6 +127,8 @@ class BookingLifecycleIT {
         @DisplayName("FR-BK-01/07: 201 HELD for 5 minutes, Location header, names from the catalog; member row created")
         void holdCreated_FRBK01() {
             Instant before = Instant.now();
+            // Some clocks (Linux) have nanoseconds, PostgreSQL keeps microseconds: make sure "now" has nanos.
+            clock.advance(Duration.ofNanos(123));
             Response response = hold(memberA, "Court A", "10:00", "11:00");
 
             assertThat(response.status()).isEqualTo(201);
@@ -141,6 +143,10 @@ class BookingLifecycleIT {
             assertThat(Instant.parse(response.body().get("expiresAt").asString()))
                     .isCloseTo(before.plus(Duration.ofMinutes(5)), within(Duration.ofSeconds(10)));
             assertThat(response.body().get("cancelledAt").isNull()).isTrue();
+            // The response shows what was stored: a later read returns the same timestamps.
+            Response read = http.get("/api/v1/bookings/" + id, memberA);
+            assertThat(read.body().get("createdAt")).isEqualTo(response.body().get("createdAt"));
+            assertThat(read.body().get("expiresAt")).isEqualTo(response.body().get("expiresAt"));
 
             assertThat(jdbc.queryForObject("SELECT count(*) FROM member WHERE id = ?", Integer.class, MEMBER_A))
                     .isEqualTo(1);
