@@ -16,7 +16,8 @@ import java.time.Instant;
  * (ex_booking_bookable_overlap, ex_booking_member_overlap), not by this class.
  *
  * <p>Member and bookable are plain IDs, not entity references: the booking module uses the catalog
- * only through its service, and status changes are written as conditional UPDATEs (M1.5).
+ * only through its service. Status changes are conditional UPDATEs ({@code BookingRepository}), so
+ * this class has no setters.
  */
 @Entity
 @Table(name = "booking")
@@ -71,6 +72,22 @@ public class Booking {
     private Instant updatedAt;
 
     protected Booking() {
+    }
+
+    /** A new hold (FR-BK-01). Later status changes are conditional UPDATEs in the repository, not setters. */
+    public static Booking hold(long memberId, long bookableId, Instant start, Instant end, Instant occupiedUntil,
+                               Instant expiresAt, Instant now) {
+        Booking booking = new Booking();
+        booking.memberId = memberId;
+        booking.bookableId = bookableId;
+        booking.startTime = start;
+        booking.endTime = end;
+        booking.occupiedUntil = occupiedUntil;
+        booking.status = BookingStatus.HELD;
+        booking.expiresAt = expiresAt;
+        booking.createdAt = now;
+        booking.updatedAt = now;
+        return booking;
     }
 
     public Long getId() {
