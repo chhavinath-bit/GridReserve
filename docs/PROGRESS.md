@@ -18,6 +18,7 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 | M1.6 Thin vertical slice (frontend through the gateway) | Done (owner reviewed in the browser; [review guide](reviews/M1.6-review.md)) | 2026-11-07 | `472a561` (merge of PR #12); no config repo change; CI on `main` (`472a561`) green; local on `main` 2026-11-07: backend `verify` 188 tests, 0 failures; frontend typecheck and lint clean, 36 tests passed, build OK |
 | M1.7 All booking rules and hold expiry | Done (owner reviewed; [review guide](reviews/M1.7-review.md)) | 2026-11-07 | `d098f04` (merge of PR #13); no config repo change; CI on `main` (`d098f04`) green; local on `main` 2026-11-07: backend `verify` 251 tests, 0 failures; frontend typecheck and lint clean, 38 tests passed, build OK |
 | M1.8 Concurrency proof (single and two instances) | Done (owner reviewed; [review guide](reviews/M1.8-review.md)) | 2026-11-07 | `6c6aa32` (merge of PR #14); config repo `47e40a9` (merge of PR #7); local on `main` 2026-11-07: backend `verify` 351 tests, 0 failures; frontend 38 tests, typecheck, lint, build OK |
+| M1.9 Resilience patterns and configuration refresh | Built; **awaiting owner review** ([review guide](reviews/M1.9-review.md)) | 2026-11-07 | branch `m1.9-resilience`; config repo PR #8 (`m1.9-resilience`) |
 
 ---
 
@@ -605,6 +606,64 @@ What the new tests execute (behavior): per type (Room 30/30–180, Seat 60/60–
 
 ### Open issues for later milestones
 - M1.9: when adding outbound bulkheads, check that no other Spring Cloud default adds limits or retries we didn't design (as the gateway bulkhead did).
+
+---
+
+## M1.9 Resilience patterns and configuration refresh — Built, awaiting owner review (2026-11-07)
+
+Delivered as one PR (owner, 2026-11-07). Decisions: D-28 (WireMock), D-42.
+
+**Built:**
+- **Service tokens (D-19):** identity-service `POST /internal/service-tokens` (HTTP Basic client ID + secret; only the SHA-256 kept, constant-time compare; same answer for every refusal) → 5-minute RS256 JWT, role `SERVICE`, `sub` = client ID; `GET /internal/users?ids=` (≤ 100; id, email, display name only). booking-service `ServiceTokens` (cached, renewed 30 s early) and a Feign interceptor adding the token and `X-Request-Id`. Security in both services: `/internal/**` → SERVICE, user APIs → MEMBER or ADMIN, actuator beyond health/info → ADMIN or SERVICE.
+- **IdentityGateway:** the Feign client wrapped in Retry → CircuitBreaker → Bulkhead (composed in code, policies looked up per call) with fallbacks (member IDs only, `available = false`; ping fallback). `IdentityErrors` decoder: 4xx never retried nor counted; 5xx and network errors retried and counted; a full bulkhead not counted. Timeouts 1 s / 2 s for every Feign client. Spring Cloud's own Feign circuit breaker off.
+- **Gateway:** fallback answers `504 UPSTREAM_TIMEOUT` for timeouts, `503` otherwise, with the client's path (`OriginalPathWebFilter`), which settles the M1.4 doubt about the fallback path.
+- **RES-05:** `RateLimitedCalls` (per instance, per downstream, 20/s default; first caller in Phase 5).
+- **RES-08:** retry metrics bound (`TaggedRetryMetrics`); Boot 4 health component `circuitBreakers` (state, failure rate, threshold, not-permitted calls; always UP); details for admins only.
+- **PLAT-05:** `ResilienceRefresher` rebuilds policies after a refresh; `scripts/refresh-config.sh` (admin login → Eureka → `POST /actuator/refresh` per instance; dev via the discovery-server container).
+- **System tests** `ResilienceSystemIT`: FS-32, FS-37, FS-38, FS-34, US-13; test classes ordered (CONC-10 first); CI passes the throwaway config directory.
+- **Wiring:** `infra/compose.yaml` passes `BOOKING_SERVICE_CLIENT_SECRET` to booking and its SHA-256 to identity; `.env.example` placeholders with generation commands; the CI script generates a pair; the owner's local `infra/.env` got a generated pair (values never printed).
+- **Config repo PR #8:** identity-service policies, rate-limiter default, health details, Feign timeouts under `default`, service-client settings, refresh exposed in dev.
+- **Docs:** D-28 settled, D-42 (ARCHITECTURE §11 and §19), REQUIREMENTS v0.14 (FR-ROLE-01, NFR-TEST-03), CLAUDE.md §5, §10, §13 (refresh script and system tests verified), §15.1, §15.2 (WireMock row removed), TECH_STACK, IMPLEMENTATION_PLAN M1.9, README "Resilience demo" and "Change config without restart", review guide, learning file.
+
+**Dependencies added (approved):** `org.wiremock:wiremock-standalone` 3.13.1 (test scope, booking-service); `io.github.resilience4j:resilience4j-bulkhead` (version 2.3.0 from the BOM, same library family as the existing starter).
+
+**Plan deviations and findings (all fixed, not weakened):**
+- **Resilience4j on Boot 4:** its Spring Boot module targets Boot 3, so on Boot 4 the circuit-breaker health indicator and retry metrics don't switch on, and existing policies are not rebuilt on refresh (checked on the stack: the threshold stayed 50 after `/actuator/refresh`). Filled with `ResilienceObservabilityConfig` and `ResilienceRefresher`.
+- **Decorators in code instead of annotations** (ARCHITECTURE §11 said annotations): the order is visible, and refreshed policies are picked up.
+- **Feign timeouts were not applied** (the first timeout test got a 2.5 s answer as a success): per-client config keys are the client's context ID, not its name; timeouts moved to `default`.
+- **Compose:** the client secret first landed in the postgres service (the first `BOOKING_DB_PASSWORD:` line belongs to postgres' init); found when the live call fell back; moved.
+- **Refresh script:** `docker compose exec` read the rest of the instance list from stdin and the loop stopped after one instance; fixed with `</dev/null`. A US-13 run right after FS-34 could see Eureka still listing the killed instance; the test waits until Eureka matches the running containers.
+- **System tests:** FS-32 first picked a slot within the 2-hour cancellation cutoff (late evening in Kolkata), so the cancel was correctly refused; slots now start at least 3 h ahead. FS-34 first required every read during the kill to be 200; REQUIREMENTS allows 503 there; it now checks 200/503, never 500, recovery, and no double booking.
+- **Test isolation:** a mutation (count a full bulkhead against identity) went unnoticed when the refresh test ran first; the cause was that `ContextRefresher.refresh()` in a test re-imports configuration: on a laptop with Compose running it silently loaded the real config (which lists the exception), and in CI it failed fast on `localhost:8888`. The refresh test now rebinds and publishes the refresh event itself and restores the original policies; the mutation is caught in any order, with the Config Server stopped.
+- FS-33 proven at the adapter (owner approved); through the admin list in M1.11.
+
+### Test results
+
+`cd backend && ./mvnw -B verify` on 2026-11-07: **BUILD SUCCESS, 376 tests**, 0 failures, 0 skipped.
+
+| Module | Surefire (`*Test`) | Failsafe (`*IT`) |
+|---|---|---|
+| common-web | 22 | — |
+| config-server / discovery-server | 1 / 1 | — |
+| api-gateway | 2 | 12 (new: `GatewayResilienceIT` 4) |
+| identity-service | 10 | 37 (new: `InternalApiIT` 5) |
+| booking-service | 53 (new: `RateLimitedCallsTest` 2) | 238 (new: `IdentityGatewayIT` 12, `BookingSecurityIT` +2) |
+| system-tests | — | skipped (needs the stack) |
+
+What the new tests execute (behavior): service token for the right secret (role SERVICE, sub, 300 s), the same 401 for a wrong secret, an unknown client or none; `/internal/users` 401/403/200 and no hash or role returned; a service token refused on `/api/v1/me` and booking's catalog; actuator 403 for members; through WireMock: names with the service token (token fetched at most once), fallback when identity answers 500, read timeout → fallback after 3 attempts (~6.7 s), retry on 503 then success, no retry and no circuit count on 4xx, 12 failures open the circuit and then nothing reaches identity, half-open closes after 3 good trials, the 11th parallel call rejected at once and not retried or counted, refused client credentials → fallback with one token request; metrics present; health shows the open circuit to admins only and stays UP; a refresh changes the threshold (50 → 70) and the bulkhead (10 → 4). Gateway: slow POST → 504 `UPSTREAM_TIMEOUT` with the client's path, GET 503 retried 3 times, POST not retried, unreachable → 503. Rate limiter: 25 calls → 20 through, 5 fallbacks; separate limits per downstream.
+
+**System tests** (`./mvnw -B -pl system-tests -Psystem-tests verify -Dgridreserve.config.dir=…`, stack with two booking instances): CONC-10 22/22 (501/499 per instance); `ResilienceSystemIT` 5/5 in 149 s: identity stopped → availability 200, hold 201, confirm 200, cancel 200, login 503; config server stopped → hold 201; Eureka stopped → 10/10 reads 200; one booking instance killed mid-burst → holds 201/5xx (never 500), 18 of 20 reads 200 and 2 × 503 during the kill, reads recovered, no slot booked twice; threshold 50 → 65 on both instances through `refresh-config.sh`, then back to 50. The config clone was clean afterwards.
+
+**Live checks:** booking → identity with a service token through Eureka (`/api/v1/ping/identity` named identity's container, not the fallback); `refresh-config.sh` reached all four instances (gateway, two booking, identity) with 200.
+
+**Mutation checks (committed code, each reverted):** a full bulkhead counted against identity fails `bulkheadRejectsTheEleventh`; every error treated as retryable fails `noRetryOn4xx` and `refusedCredentials`; no `ResilienceRefresher` fails `refreshRebuildsPolicies_PLAT05`; the fallback never seeing a timeout fails `GatewayResilienceIT.slowServiceGives504`.
+
+### Not covered yet
+- FS-33 through the admin list (M1.11); the rate limiter's first caller (Phase 5); prod actuator exposure and the refresh script's `REFRESH_VIA=direct` path (M1.10).
+
+### Open issues for later milestones
+- One local `verify` run hung for 33 minutes: the thread dump showed the PostgreSQL driver waiting in the login handshake with a fresh Testcontainers database (Docker port forwarding), on a socket without a timeout. Stopped, rerun passed in 1 min 7 s (376 tests). Consider `connectTimeout` / `socketTimeout` on the test datasource so a hang fails fast instead of waiting forever.
+- Remember for M1.10/M1.11: Resilience4j's Spring Boot module targets Boot 3; check each Resilience4j feature we start using on Boot 4 (health, metrics, refresh were not automatic).
 
 ---
 
