@@ -15,7 +15,8 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 | M1.3d Sign-in with Google and GitHub | **Dropped** (owner, 2026-11-06): too much work for its value; optional extension, design kept in the docs (D-35 withdrawn). M1.3 is complete with a, b, c. | 2026-11-06 | — |
 | M1.4 Catalog, countries and availability | Done (owner reviewed; [review guide](reviews/M1.4-review.md)) | 2026-11-06 | `2e8e88f` (merge of PR #10); no config repo change; CI on `main` (`2e8e88f`) green; local `verify` on `main` 2026-11-07: 156 tests, 0 failures |
 | M1.5 Booking engine core (hold, confirm, cancel) | Done (owner reviewed; [review guide](reviews/M1.5-review.md)) | 2026-11-07 | `5eb2abc` (merge of PR #11); no config repo change; CI on `main` (`5eb2abc`) green; local `verify` on `main` 2026-11-07: 188 tests, 0 failures |
-| M1.6 Thin vertical slice (frontend through the gateway) | Built; **awaiting owner review** ([review guide](reviews/M1.6-review.md)) | 2026-11-07 | branch `m1.6-frontend-slice`; no config repo change |
+| M1.6 Thin vertical slice (frontend through the gateway) | Done (owner reviewed in the browser; [review guide](reviews/M1.6-review.md)) | 2026-11-07 | `472a561` (merge of PR #12); no config repo change; CI on `main` (`472a561`) green; local on `main` 2026-11-07: backend `verify` 188 tests, 0 failures; frontend typecheck and lint clean, 36 tests passed, build OK |
+| M1.7 All booking rules and hold expiry | Built; **awaiting owner review** ([review guide](reviews/M1.7-review.md)) | 2026-11-07 | branch `m1.7-rules-expiry`; no config repo change |
 
 ---
 
@@ -455,7 +456,7 @@ What the new tests execute (behavior): hold 201 with `Location`, names from the 
 
 ---
 
-## M1.6 Thin vertical slice: frontend through the gateway — Built, awaiting owner review (2026-11-07)
+## M1.6 Thin vertical slice: frontend through the gateway — Done (2026-11-07)
 
 **Built (`frontend/`, new):**
 - Vite 8 + React 19 + TypeScript 6 (strict) + Tailwind 4 + TanStack Query + React Router; dev server on `:5173` proxies `/api` to the gateway.
@@ -506,6 +507,52 @@ Backend unchanged since M1.5 (local `verify` on `main` 188 tests, 0 failures, se
 
 ### Open issues for later milestones
 - The gateway took up to ~48 s to route to a rebuilt booking-service (the README says ~15 s); worth measuring in M1.9 (Eureka and load-balancer cache intervals).
+
+---
+
+## M1.7 All booking rules and hold expiry — Built, awaiting owner review (2026-11-07)
+
+**Built (booking-service):**
+- `BookingRules`: BR-07 (whole local days, shared with availability through `EffectiveRules.firstDateBeyondHorizon`), BR-02 (that weekday's hours, own hours replace the venue's, one local date, a 24:00 close allowed, crossing midnight refused), BR-03 (grid from that day's opening, whole minutes), BR-04 (min/max, "exactly N minutes" message), BR-08 (active bookings in the category, counted under the member lock; run-out holds don't count; inactive bookables' bookings do), all in the BR-14 order. Hours and grid use the venue's wall clock, length real time. New codes `OUTSIDE_OPERATING_HOURS`, `OFF_GRID`, `DURATION_INVALID`, `MEMBER_LIMIT_REACHED`, `CUTOFF_PASSED`.
+- Cancellation (CXL-01..06) inside the conditional UPDATE: live hold always; confirmed by a member until start − cutoff, by an admin until the end; never after the end; the refusal is explained from the current row (`CUTOFF_PASSED` "Cancellations close 2 hours before the start…", or `INVALID_STATE` "This booking has already ended.").
+- `cancellableUntil` in every booking response (`expiresAt` while HELD, `start − cutoff` when CONFIRMED, else null).
+- `HoldExpiryJob` + `HoldExpiryService`: fixed delay 30 s, up to 100 holds per run, one transaction per hold (`FOR UPDATE SKIP LOCKED` + conditional UPDATE), stops between holds on shutdown; `HoldExpiryProperties` (`gridreserve.holds.expiry.enabled/interval/batch-size`, defaults on/30 s/100); scheduler pool 2 threads `gr-sched-*`, 20 s graceful shutdown (application.yml); metric `gridreserve.holds.expired{layer=confirm|cancel|hold|job}`.
+- Catalog: `LockedBookable.categoryId`, `BookableInfo.cancellationCutoffMinutes`, `CatalogService.bookableIdsInCategory`.
+- Frontend: My bookings keeps Cancel visible but disabled after `cancellableUntil`, with "Cancellations closed <day, time>…" linked by `aria-describedby`.
+- Docs: D-40 (ARCHITECTURE §19.1, CLAUDE.md §15.1), REQUIREMENTS v0.12 (BR-07, BR-08, FR-BK-07), README "Booking rules and defaults" (per-type table, cancelling, expiry) and status, IMPLEMENTATION_PLAN M1.7 files, review guide, learning file.
+
+**Plan deviations:** none in behaviour. The plan's `common/config` is `config/SchedulingConfig` (the existing config package). FR-EXP-03 (audit row on expiry) waits for M1.12's audit table; the hook is the per-hold transaction in `HoldExpiryService`.
+
+**Dependencies added:** none (scheduling and Micrometer come with the existing starters).
+
+### Test results
+
+`cd backend && ./mvnw -B verify` on 2026-11-07: **BUILD SUCCESS, 251 tests**, 0 failures, 0 skipped.
+
+| Module | Surefire (`*Test`) | Failsafe (`*IT`) |
+|---|---|---|
+| common-web | 22 | — |
+| config-server / discovery-server | 1 / 1 | — |
+| api-gateway | 2 | 8 |
+| identity-service | 10 | 32 |
+| booking-service | 51 (`BookingRulesTest` now 32) | 124 (new: `BookingLifecycleIT` +7 = 31, `CancellationIT` 7, `HoldExpiryJobIT` 20 repetitions) |
+
+`cd frontend`: typecheck clean, lint 0 problems, `npm test` **9 files, 38 tests passed** (new: `canCancel` 2), build OK.
+
+What the new tests execute (behavior): per type (Room 30/30–180, Seat 60/60–240, Doctor exactly 30 and closed Sunday, Bay to 12 h with 24:00 end allowed and crossing midnight refused, Trainer 45 on a 15-min grid): inside/outside hours, off-grid starts and lengths, too long; horizon's last day and the day after; past start; BR-14 order in six combinations; seconds off the minute; a DST day (London spring-forward: 00:00–02:00 is one real hour); member limit 2 → ok, 3 → refused. Over HTTP: each new code; the 4th Sports booking refused while a Study room is accepted; run-out holds not counted; `cancellableUntil` = `expiresAt`, then start − 2 h. Cancellation with the clock at exact edges: one minute before/after the cutoff, during the booking (member refused, admin allowed), after the end (both refused, row unchanged), HELD inside the cutoff, twice. Expiry: two sweeps through a start gate over 40 run-out holds, every repetition 40 expired in total, `expires_at` cleared, a live hold and a confirmed booking untouched, metric +40, then an empty sweep returns 0.
+
+**Concurrency test, 20 runs:** `HoldExpiryJobIT` is a `@RepeatedTest(20)`: 20/20 passed locally (and in every CI run).
+
+**Mutation checks (committed code, each reverted):** counting run-out holds fails `runOutHoldsDontCount_BR08`; no member cutoff fails `afterCutoff_CXL02` and `memberDuringBooking_CXL02`; no `SKIP LOCKED` and no status guard in the sweep fails `parallelSweepsExpireEachHoldOnce_FREXP01` in all 20 runs; no hours check fails `outsideHours_BR02`.
+
+**First runs that failed (fixed, not weakened):** `bufferBlocksNextStart_BR10` (M1.5) built "10:00" in Kolkata time for IronWorks, which is in London: 04:30 there, before opening. It passed before only because hours weren't checked; the test now uses each venue's zone (its comment had the wrong zone too).
+
+**Through the Compose stack** (booking-service rebuilt; routing ready after ~18 s), as bob through the gateway: 05:00 → `OUTSIDE_OPERATING_HOURS` "Open 06:00–23:00 on this day."; 10:30 → `OFF_GRID`; 3 h → `DURATION_INVALID` "60 to 120 minutes"; today + 7 → `BEYOND_HORIZON`; three holds with `cancellableUntil` = `expiresAt`; 4th Sports → `MEMBER_LIMIT_REACHED`; confirm → `cancellableUntil` = start − 2 h. Job: a run-out HELD row inserted with psql became `EXPIRED` within ~18 s; the log shows `Hold expiry: 1 run-out holds marked EXPIRED` on thread `gr-sched-1` (the job logs only runs that expire something).
+
+### Not covered yet
+- Parallel-request proofs of the member limit, cancel races and deactivation races (CONC-02..05, 09) are M1.8.
+- FR-EXP-03 audit rows (M1.12). The metric is not checked through the gateway (actuator isn't routed).
+- No browser check of the disabled Cancel button by Claude (no headless browser; unit-tested via `canCancel`).
 
 ---
 

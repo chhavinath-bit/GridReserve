@@ -20,3 +20,15 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+  # Bounded, named scheduler (CLAUDE.md §8.3, ARCHITECTURE §10): 2 threads "gr-sched-*". On shutdown,
+  # running jobs get up to 20 s to finish; each job item is its own transaction, so stopping is safe.
+  task:
+    scheduling:
+      pool:
+        size: 2
+      thread-name-prefix: gr-sched-
+      shutdown:
+        await-termination: true
+        await-termination-period: 20s
+  lifecycle:
+    timeout-per-shutdown-phase: 20s

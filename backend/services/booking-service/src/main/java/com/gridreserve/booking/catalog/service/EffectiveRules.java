@@ -2,6 +2,8 @@ package com.gridreserve.booking.catalog.service;
 
 import com.gridreserve.booking.catalog.entity.BookingModel;
 
+import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 
 /**
@@ -21,4 +23,13 @@ public record EffectiveRules(
         ZoneId zone,
         WeeklyHours hours,
         boolean ownHours) {
+
+    /**
+     * The booking horizon in whole local days (D-39, BR-07): today and the next (horizon - 1) days at
+     * the venue are bookable; this is the first local date that is not. Availability and booking both
+     * use it, so the picker never offers a day the API refuses, or the reverse.
+     */
+    public LocalDate firstDateBeyondHorizon(Instant now) {
+        return LocalDate.ofInstant(now, zone).plusDays(bookingHorizonDays);
+    }
 }

@@ -130,6 +130,8 @@ export interface Booking {
   createdAt: string
   cancelledAt: string | null
   cancelledBy: CancelledBy | null
+  /** Last moment the owner can cancel (CXL-01/02); null once cancelling is no longer possible. */
+  cancellableUntil: string | null
 }
 
 export interface FieldError {

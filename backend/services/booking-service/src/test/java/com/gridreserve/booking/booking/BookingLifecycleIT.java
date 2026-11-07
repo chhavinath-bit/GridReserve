@@ -29,13 +29,16 @@ import static org.assertj.core.api.Assertions.within;
 
 /**
  * Hold, confirm and cancel over real HTTP against PostgreSQL (FR-BK-01..06, BR-10..13). Times are
- * tomorrow at the venue (Sunrise Turf and IronWorks are in Asia/Kolkata), so the tests work on any day.
+ * tomorrow in the venue's own zone (Sunrise Turf: Asia/Kolkata, IronWorks: Europe/London), so the tests
+ * work on any day and fall inside opening hours (BR-02).
  * The service clock is a {@link MovableClock}: moving it forward lets a hold run out without waiting.
  */
 @ServiceIntegrationTest
 class BookingLifecycleIT {
 
     private static final ZoneId KOLKATA = ZoneId.of("Asia/Kolkata");
+    private static final ZoneId LONDON = ZoneId.of("Europe/London");
+    private static final String TRAINER = "Asha (personal training)";
     private static final long MEMBER_A = 920_001L;
     private static final long MEMBER_B = 920_002L;
     private static final long ADMIN = 1L;
@@ -74,7 +77,11 @@ class BookingLifecycleIT {
     }
 
     private static Instant tomorrowAt(String localTime) {
-        return LocalDate.now(KOLKATA).plusDays(1).atTime(LocalTime.parse(localTime)).atZone(KOLKATA).toInstant();
+        return tomorrowAt(localTime, KOLKATA);
+    }
+
+    private static Instant tomorrowAt(String localTime, ZoneId zone) {
+        return LocalDate.now(zone).plusDays(1).atTime(LocalTime.parse(localTime)).atZone(zone).toInstant();
     }
 
     private static Map<String, Object> request(long bookableId, Instant start, Instant end) {
@@ -86,7 +93,12 @@ class BookingLifecycleIT {
     }
 
     private Response hold(String token, String bookableName, String from, String to) {
-        return http.post("/api/v1/bookings", token, request(bookable(bookableName), tomorrowAt(from), tomorrowAt(to)));
+        return hold(token, bookableName, from, to, KOLKATA);
+    }
+
+    private Response hold(String token, String bookableName, String from, String to, ZoneId zone) {
+        return http.post("/api/v1/bookings", token,
+                request(bookable(bookableName), tomorrowAt(from, zone), tomorrowAt(to, zone)));
     }
 
     private Response confirm(String token, long bookingId) {
@@ -175,14 +187,14 @@ class BookingLifecycleIT {
         @Test
         @DisplayName("BR-10: the buffer is part of the occupied time (Trainer: 45 min + 15 min buffer)")
         void bufferBlocksNextStart_BR10() {
-            Response first = hold(memberA, "Asha (personal training)", "10:00", "10:45");
+            Response first = hold(memberA, TRAINER, "10:00", "10:45", LONDON);
             assertThat(first.status()).isEqualTo(201);
-            assertThat(timestamp("occupied_until", id(first))).isEqualTo(tomorrowAt("11:00"));
+            assertThat(timestamp("occupied_until", id(first))).isEqualTo(tomorrowAt("11:00", LONDON));
 
-            Response inBuffer = hold(memberB, "Asha (personal training)", "10:45", "11:30");
+            Response inBuffer = hold(memberB, TRAINER, "10:45", "11:30", LONDON);
             assertThat(inBuffer.status()).isEqualTo(409);
             assertThat(inBuffer.code()).isEqualTo("SLOT_TAKEN");
-            assertThat(hold(memberB, "Asha (personal training)", "11:00", "11:45").status()).isEqualTo(201);
+            assertThat(hold(memberB, TRAINER, "11:00", "11:45", LONDON).status()).isEqualTo(201);
         }
 
         @Test
@@ -301,6 +313,80 @@ class BookingLifecycleIT {
                     request(999_999L, tomorrowAt("10:00"), tomorrowAt("11:00")));
             assertThat(response.status()).isEqualTo(404);
             assertThat(response.code()).isEqualTo("NOT_FOUND");
+        }
+    }
+
+    @Nested
+    @DisplayName("All booking rules over HTTP (M1.7)")
+    class AllRules {
+
+        @Test
+        @DisplayName("BR-02: before opening (Sunrise Turf opens 06:00) → 422 OUTSIDE_OPERATING_HOURS")
+        void outsideHours_BR02() {
+            Response response = hold(memberA, "Court A", "05:00", "06:00");
+            assertThat(response.status()).isEqualTo(422);
+            assertThat(response.code()).isEqualTo("OUTSIDE_OPERATING_HOURS");
+        }
+
+        @Test
+        @DisplayName("BR-03: 10:30 is not on Court A's 60-minute grid from 06:00 → 422 OFF_GRID")
+        void offGrid_BR03() {
+            Response response = hold(memberA, "Court A", "10:30", "11:30");
+            assertThat(response.status()).isEqualTo(422);
+            assertThat(response.code()).isEqualTo("OFF_GRID");
+        }
+
+        @Test
+        @DisplayName("BR-04: 3 hours on a court (max 2) → 422 DURATION_INVALID")
+        void tooLong_BR04() {
+            Response response = hold(memberA, "Court A", "10:00", "13:00");
+            assertThat(response.status()).isEqualTo(422);
+            assertThat(response.code()).isEqualTo("DURATION_INVALID");
+        }
+
+        @Test
+        @DisplayName("BR-07: today + 7 local days is beyond the horizon → 422 BEYOND_HORIZON")
+        void beyondHorizon_BR07() {
+            Instant start = LocalDate.now(KOLKATA).plusDays(7).atTime(10, 0).atZone(KOLKATA).toInstant();
+            Response response = http.post("/api/v1/bookings", memberA,
+                    request(bookable("Court A"), start, start.plus(Duration.ofHours(1))));
+            assertThat(response.status()).isEqualTo(422);
+            assertThat(response.code()).isEqualTo("BEYOND_HORIZON");
+        }
+
+        @Test
+        @DisplayName("BR-08: a 4th active booking in Sports → 422 MEMBER_LIMIT_REACHED; another category still works")
+        void memberLimit_BR08() {
+            assertThat(hold(memberA, "Court A", "08:00", "09:00").status()).isEqualTo(201);
+            assertThat(hold(memberA, "Court A", "10:00", "11:00").status()).isEqualTo(201);
+            assertThat(hold(memberA, "Court B", "12:00", "13:00").status()).isEqualTo(201);
+
+            Response fourth = hold(memberA, "Court B", "14:00", "15:00");
+            assertThat(fourth.status()).isEqualTo(422);
+            assertThat(fourth.code()).isEqualTo("MEMBER_LIMIT_REACHED");
+            assertThat(hold(memberA, "Group Room 1", "16:00", "16:30").status()).isEqualTo(201);
+        }
+
+        @Test
+        @DisplayName("BR-08: holds that ran out don't count toward the limit")
+        void runOutHoldsDontCount_BR08() {
+            hold(memberA, "Court A", "08:00", "09:00");
+            hold(memberA, "Court A", "10:00", "11:00");
+            hold(memberA, "Court B", "12:00", "13:00");
+            clock.advance(PAST_THE_HOLD);
+
+            assertThat(hold(memberA, "Court B", "14:00", "15:00").status()).isEqualTo(201);
+        }
+
+        @Test
+        @DisplayName("FR-BK-07: cancellableUntil is the hold's expiry, then start minus the 2-hour cutoff once confirmed")
+        void cancellableUntil_FRBK07() {
+            Response held = hold(memberA, "Court A", "10:00", "11:00");
+            assertThat(held.body().get("cancellableUntil")).isEqualTo(held.body().get("expiresAt"));
+
+            Response confirmed = confirm(memberA, id(held));
+            assertThat(Instant.parse(confirmed.body().get("cancellableUntil").asString()))
+                    .isEqualTo(tomorrowAt("10:00").minus(Duration.ofHours(2)));
         }
     }
 

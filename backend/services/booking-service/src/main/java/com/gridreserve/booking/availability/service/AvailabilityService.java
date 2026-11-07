@@ -49,10 +49,8 @@ public class AvailabilityService {
         }
 
         Instant now = clock.instant();
-        // Whole local days: today and the next (horizon - 1) days. Every slot on them starts before
-        // now + horizon, so BR-07 holds for all of them.
-        LocalDate today = LocalDate.ofInstant(now, rules.zone());
-        if (!date.isBefore(today.plusDays(rules.bookingHorizonDays()))) {
+        // Whole local days (D-39): the same horizon hold creation checks (BR-07).
+        if (!date.isBefore(rules.firstDateBeyondHorizon(now))) {
             throw new DomainException(BookingErrorCode.BEYOND_HORIZON,
                     "Bookings open " + rules.bookingHorizonDays() + " days ahead.");
         }

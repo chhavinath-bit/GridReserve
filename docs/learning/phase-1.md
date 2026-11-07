@@ -30,6 +30,8 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | `Comparator.comparing(...).thenComparing(...)` | Builds a sort order from getters, first key then tie-breaker. | `CatalogService.categories` | M1.4 |
 | `List.getFirst()` / `getLast()` | Java 21 sequenced collections: first and last element without index arithmetic. | `AvailabilityService` | M1.4 |
 | `Instant.truncatedTo(ChronoUnit.MICROS)` | Cuts an instant to whole microseconds. PostgreSQL `timestamptz` keeps microseconds, Linux clocks give nanoseconds; without it a response and a later read of the same row differ. | `BookingTransactions.hold` | M1.5 |
+| Wall-clock vs elapsed time (`ZonedDateTime` vs `Duration`) | Opening hours and the slot grid are wall-clock rules (`atZone(zone).getHour()`); a booking's length is real elapsed time (`Duration.between`). On a daylight-saving day they differ: 00:00–02:00 London on spring-forward night lasts 60 minutes. | `BookingRules`, `BookingRulesTest.daylightSavingDay` | M1.7 |
+| Switch expression over an enum | `return switch (status) { case HELD -> …; case CONFIRMED -> …; case CANCELLED, EXPIRED -> null; };` must cover every constant, so a new status is a compile error until handled. | `BookingMapper.cancellableUntil` | M1.7 |
 
 ## 2. Build, containers and CI
 
@@ -119,6 +121,9 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | `Propagation.MANDATORY` | The method must run inside an existing transaction, else it fails. Right for lock methods: a lock outside a transaction is released at once. | `CatalogService.lockForBooking`, `MemberLock.lock` | M1.5 |
 | `noRollbackFor` | Normally a thrown runtime exception rolls the transaction back. `noRollbackFor = DomainException.class` keeps the writes, so a run-out hold is saved as `EXPIRED` even though the caller gets a 409. | `BookingTransactions.confirm`, `cancel` | M1.5 |
 | `cast(:x as Instant) is null` in JPQL | PostgreSQL cannot infer the type of a bare `? is null` parameter (error `42P18`); the cast tells it. | `BookingRepository.findMine` | M1.5 |
+| `FOR UPDATE SKIP LOCKED` | Locks a row, but skips rows another transaction already holds instead of waiting. Several workers can share a queue table without blocking each other. | `BookingRepository.lockRunOutHold`, `HoldExpiryService` | M1.7 |
+| Policy inside the conditional UPDATE | The cancellation rules are part of the `WHERE` (`end_time > :now AND (… OR start_time > :confirmedStartAfter)`), so checking and changing are one atomic step; a refusal is explained afterwards from the current row. | `BookingRepository.cancel` | M1.7 |
+| `count` with `IN (:ids)` | `select count(b) … where b.bookableId in :bookableIds`: Spring Data binds a collection to an IN list. Used to count per category without joining catalog tables. | `BookingRepository.countActive` | M1.7 |
 
 ## 6. Spring Cloud and the platform
 
@@ -186,6 +191,9 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | Dates relative to "today" in tests | Tests compute dates from `LocalDate.now(zone)` so they pass on any day without a fixed clock. | `AvailabilityIT` | M1.4 |
 | A movable test clock | The service's `Clock` bean is replaced in tests by real time plus an offset the test can move, so a 5-minute hold runs out instantly. | `support/MovableClock`, `BookingLifecycleIT` | M1.5 |
 | `@SpringJUnitConfig` + `@MockitoBean` | A small Spring context with only the listed beans (no Boot, no database); `@MockitoBean` puts a Mockito mock in it. Needed to test behavior that only exists on Spring proxies, like `@Retryable`. | `BookingRetryTest` | M1.5 |
+| `@RepeatedTest(20)` | Runs one test 20 times in the normal build: the concurrency test's 20 repetitions are part of CI, not a manual loop. | `HoldExpiryJobIT` | M1.7 |
+| Table-driven tests with `@CsvSource` | One row per case (type, start, end, expected code); a new rule or type is a new row. | `BookingRulesTest` | M1.7 |
+| Tokens issued at the moved clock | The service checks token expiry with its own clock; when a test moves that clock hours ahead, it signs tokens with `issuedAt` = the moved now. | `CancellationIT` | M1.7 |
 | Making a test fail on purpose first | A new assertion is checked against the code without the fix; if it still passes, the test proves nothing (here: macOS clocks have no nanoseconds, so the test moves the clock by 123 ns). | `BookingLifecycleIT.holdCreated_FRBK01` | M1.5 |
 
 ## 9. Architecture ideas behind the code
@@ -201,6 +209,12 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | Read view vs decision | Availability is an unlocked read and can be stale a moment later; the database constraint decides the booking (M1.5). | `AvailabilityService` | M1.4 |
 | Module API between modules | Availability reads bookings through `BookingOccupancy`, never the booking table; the DTO carries no member. | `BookingOccupancy`, `OccupiedRange` | M1.4 |
 | Spring Framework 7 `@Retryable` | Built into `spring-context` (enable with `@EnableResilientMethods`): reruns a method on chosen exceptions, with delay and jitter. Placed on a different bean from `@Transactional`, so each attempt is a fresh transaction. Only for retry-safe failures (deadlock), never for business refusals. | `BookingService`, `config/RetryConfig` | M1.5 |
+| `@EnableScheduling` and `SchedulingConfigurer` | Scheduled jobs run on Spring's task scheduler. `SchedulingConfigurer.configureTasks` registers a job in code (`addFixedDelayTask(job::run, Duration)`), so the interval comes from typed properties and the job can be switched off. | `HoldExpiryJob`, `config/SchedulingConfig` | M1.7 |
+| Fixed delay vs fixed rate | Fixed delay waits N seconds after a run ends before the next starts, so runs never overlap; fixed rate starts every N seconds regardless. | `HoldExpiryJob` | M1.7 |
+| Bounded scheduler pool and graceful shutdown | `spring.task.scheduling.pool.size: 2`, thread names `gr-sched-*`; on shutdown running jobs get up to 20 s. Each item is its own transaction, so stopping half-way leaves no half-done work. | `application.yml` | M1.7 |
+| `@ConfigurationProperties` record with `@DefaultValue` | Typed, validated settings bound from `gridreserve.holds.expiry.*`; defaults live on the record (`@DefaultValue("30s") Duration interval`), and Spring converts "30s" to a `Duration`. | `HoldExpiryProperties` | M1.7 |
+| Micrometer `Counter` with a tag | `Counter.builder("gridreserve.holds.expired").tag("layer", "job").register(registry).increment()`: a metric per label value, visible on `/actuator/metrics`. | `HoldExpiryMetrics` | M1.7 |
+| Three expiry layers | Correctness comes from comparing `expires_at` with now everywhere; the status `EXPIRED` is bookkeeping written by confirm, cancel, a blocked hold, or the job, whichever comes first. | ARCHITECTURE §9 | M1.7 |
 | Checks first, database decides | Rules in Java give clear early answers, but two requests can pass them at the same moment; the exclusion constraints at INSERT are the guarantee. | `BookingRules`, `BookingTransactions.hold` | M1.5 |
 | 404 instead of 403 for other people's data | Answering "not found" hides that the booking exists at all (FR-ROLE-04). | `BookingTransactions.owned`, `BookingService.get` | M1.5 |
 | Lazy cleanup at the point of use | Run-out holds that block a new hold are expired inside that hold's transaction, so correctness never waits for the background job (FR-EXP-02/04). | `BookingRepository.lockStaleHolds` | M1.5 |

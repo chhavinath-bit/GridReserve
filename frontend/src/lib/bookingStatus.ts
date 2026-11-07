@@ -10,3 +10,13 @@ export function effectiveStatus(booking: Pick<Booking, 'status' | 'expiresAt'>, 
   }
   return booking.status
 }
+
+/**
+ * Whether the owner can still cancel (or release) the booking now. The server decides; this only keeps
+ * the button from offering what would be refused with 422 CUTOFF_PASSED.
+ */
+export function canCancel(booking: Pick<Booking, 'status' | 'expiresAt' | 'cancellableUntil'>, now: number): boolean {
+  const status = effectiveStatus(booking, now)
+  if (status !== 'HELD' && status !== 'CONFIRMED') return false
+  return booking.cancellableUntil !== null && Date.parse(booking.cancellableUntil) > now
+}

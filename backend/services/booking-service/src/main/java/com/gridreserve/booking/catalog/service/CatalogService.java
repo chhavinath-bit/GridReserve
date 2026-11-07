@@ -121,8 +121,8 @@ public class CatalogService {
         venues.lockForShareByBookable(bookableId).orElseThrow(() -> notFound("No such bookable."));
         bookables.lockForShare(bookableId);
         Bookable bookable = visibleBookable(bookableId, true);
-        return new LockedBookable(info(bookable), bookable.isActive() && bookable.getVenue().isActive(),
-                resolve(bookable));
+        return new LockedBookable(info(bookable), bookable.getBookableType().getCategory().getId(),
+                bookable.isActive() && bookable.getVenue().isActive(), resolve(bookable));
     }
 
     /** Names for a list of bookings in one query, inactive bookables included (old bookings show them). */
@@ -133,6 +133,15 @@ public class CatalogService {
         return bookables.findWithVenueByIdIn(bookableIds).stream()
                 .map(CatalogService::info)
                 .collect(Collectors.toMap(BookableInfo::bookableId, Function.identity()));
+    }
+
+    /**
+     * The IDs of a category's bookables, for counting a member's bookings in that category (BR-08)
+     * without the booking module reading catalog tables. Phase 1 has a few dozen bookables; if that
+     * grows a lot, a category column on booking is the alternative (decided 2026-11-07, M1.7).
+     */
+    public List<Long> bookableIdsInCategory(long categoryId) {
+        return bookables.findIdsByCategory(categoryId);
     }
 
     public List<CountryResponse> countries() {
@@ -169,7 +178,8 @@ public class CatalogService {
 
     private static BookableInfo info(Bookable bookable) {
         return new BookableInfo(bookable.getId(), bookable.getName(), bookable.getBookableType().getLabel(),
-                bookable.getVenue().getName(), bookable.getVenue().getTimeZone());
+                bookable.getVenue().getName(), bookable.getVenue().getTimeZone(),
+                bookable.getBookableType().getCategory().getCancellationCutoffMinutes());
     }
 
     private static DomainException notFound(String message) {

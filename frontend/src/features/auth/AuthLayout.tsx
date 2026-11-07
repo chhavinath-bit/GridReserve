@@ -24,7 +24,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
           </div>
           <p className="text-muted-foreground">One place for study rooms, courts, parking, clinics and gyms. Every slot is checked by the database, so two people never get the same one.</p>
         </div>
-        <span className="text-sm text-subtle-foreground">Demo project. All data is fictional.</span>
+        <span className="text-sm text-subtle-foreground"></span>
       </div>
       <div className="flex flex-col items-center justify-center gap-6 p-4 sm:p-8">
         <div className="flex w-full max-w-sm justify-end">
