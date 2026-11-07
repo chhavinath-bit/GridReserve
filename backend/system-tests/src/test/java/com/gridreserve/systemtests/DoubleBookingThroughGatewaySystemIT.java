@@ -37,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Needs the stack: {@code cd infra && docker compose up -d --build --scale booking-service=2 --wait}.
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@Order(1)
 class DoubleBookingThroughGatewaySystemIT {
 
     private static final int MEMBERS = 50;
