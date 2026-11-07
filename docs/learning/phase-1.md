@@ -29,6 +29,7 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | `LocalDateTime` vs `ZonedDateTime`, DST gaps and overlaps | `LocalDateTime` is a wall-clock reading with no zone; `ZonedDateTime` adds the zone and so names a real moment. On spring-forward night a local hour does not exist (`getValidOffsets` is empty); on fall-back night one happens twice (two offsets). | `LocalSlotGrid` | M1.4 |
 | `Comparator.comparing(...).thenComparing(...)` | Builds a sort order from getters, first key then tie-breaker. | `CatalogService.categories` | M1.4 |
 | `List.getFirst()` / `getLast()` | Java 21 sequenced collections: first and last element without index arithmetic. | `AvailabilityService` | M1.4 |
+| `Instant.truncatedTo(ChronoUnit.MICROS)` | Cuts an instant to whole microseconds. PostgreSQL `timestamptz` keeps microseconds, Linux clocks give nanoseconds; without it a response and a later read of the same row differ. | `BookingTransactions.hold` | M1.5 |
 
 ## 2. Build, containers and CI
 
@@ -77,6 +78,9 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | `ResponseCookie`, reading cookies | Spring's builder for a `Set-Cookie` header with all attributes; `WebUtils.getCookie` reads one cookie from the request. | `RefreshCookie` | M1.3b |
 | `@RequestParam` with defaults, `@DateTimeFormat` | Binds query parameters (`?page=0&size=20`, `?date=2026-11-07`) to Java types; a value that cannot be converted throws `MethodArgumentTypeMismatchException`, now a `400 VALIDATION_FAILED` naming the field. | `CatalogController`, `AvailabilityController`, `GlobalExceptionHandler` | M1.4 |
 | `Authentication` as a controller parameter | Spring passes the current caller; its authorities show the role (`ROLE_ADMIN`). | `Viewer.isAdmin` | M1.4 |
+| `ResponseEntity.created(uri)` | A `201 Created` with a `Location` header pointing at the new item. | `BookingController.hold` | M1.5 |
+| `@RequestBody(required = false)` | The body may be missing (cancel without a reason); the parameter is then `null`. | `BookingController.cancel` | M1.5 |
+| `authentication.getName()` = token `sub` | For a JWT the principal name is the `sub` claim, here the identity user ID; it is the booking owner, never a request field (FR-ROLE-05). | `Viewer.memberId` | M1.5 |
 
 ## 5. Data: PostgreSQL, Flyway, JPA
 
@@ -107,6 +111,14 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | JPQL constructor expression | `select new pkg.Dto(b.a, b.b) from Booking b ...` returns DTOs with only those columns. | `BookingRepository.findOccupied` | M1.4 |
 | Optional filter in JPQL | `(:categoryId is null or v.category.id = :categoryId)`: one query for "all" and "filtered". | `VenueRepository.search` | M1.4 |
 | `@Transactional(readOnly = true)` | A read-only transaction: Hibernate skips dirty checking; lazy relations can be loaded inside it (open-in-view is off). | `CatalogService`, `AvailabilityService` | M1.4 |
+| Row locks: `FOR SHARE` and `FOR UPDATE` | `SELECT … FOR SHARE` lets many transactions read-lock a row together but blocks writers; `FOR UPDATE` is exclusive. Both last until the transaction ends. | `VenueRepository.lockForShareByBookable`, `BookableRepository.lockForShare`, `MemberRepository.lockForUpdate` | M1.5 |
+| Lock order and deadlocks | Two transactions that lock the same rows in opposite orders can wait for each other forever; PostgreSQL kills one (`40P01`). Taking locks in one global order (venue → bookable → member → bookings by id) prevents it. | `BookingTransactions.hold`, `BookingRepository.lockStaleHolds` | M1.5 |
+| `@Modifying` + conditional UPDATE | A JPQL/SQL `UPDATE` from a repository; returns the row count. `WHERE status = 'HELD' AND …` makes it a compare-and-set: 0 rows = someone changed it first. `clearAutomatically` drops stale entities afterwards. | `BookingRepository.confirm`, `cancel`, `expireHolds` | M1.5 |
+| `saveAndFlush` to surface constraint errors | `save` may delay the INSERT to commit time, outside your `try`; `saveAndFlush` sends it now so the violation can be caught and translated. | `BookingTransactions.hold` | M1.5 |
+| Exclusion violation `23P01` and its name | PostgreSQL's error for an exclusion constraint. Hibernate does not extract the constraint name for it, so it is read from the message with Hibernate's own template. | `ConstraintViolations` | M1.5 |
+| `Propagation.MANDATORY` | The method must run inside an existing transaction, else it fails. Right for lock methods: a lock outside a transaction is released at once. | `CatalogService.lockForBooking`, `MemberLock.lock` | M1.5 |
+| `noRollbackFor` | Normally a thrown runtime exception rolls the transaction back. `noRollbackFor = DomainException.class` keeps the writes, so a run-out hold is saved as `EXPIRED` even though the caller gets a 409. | `BookingTransactions.confirm`, `cancel` | M1.5 |
+| `cast(:x as Instant) is null` in JPQL | PostgreSQL cannot infer the type of a bare `? is null` parameter (error `42P18`); the cast tells it. | `BookingRepository.findMine` | M1.5 |
 
 ## 6. Spring Cloud and the platform
 
@@ -172,6 +184,9 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | `@ParameterizedTest` + `@CsvSource` | One test run once per input row. | `LocalSlotGridTest.gridSizes` | M1.4 |
 | Mockito default answers | An unstubbed method returns a default: `0` for `Integer` too, not `null`; stub `null` explicitly when it matters. | `RuleResolverTest` | M1.4 |
 | Dates relative to "today" in tests | Tests compute dates from `LocalDate.now(zone)` so they pass on any day without a fixed clock. | `AvailabilityIT` | M1.4 |
+| A movable test clock | The service's `Clock` bean is replaced in tests by real time plus an offset the test can move, so a 5-minute hold runs out instantly. | `support/MovableClock`, `BookingLifecycleIT` | M1.5 |
+| `@SpringJUnitConfig` + `@MockitoBean` | A small Spring context with only the listed beans (no Boot, no database); `@MockitoBean` puts a Mockito mock in it. Needed to test behavior that only exists on Spring proxies, like `@Retryable`. | `BookingRetryTest` | M1.5 |
+| Making a test fail on purpose first | A new assertion is checked against the code without the fix; if it still passes, the test proves nothing (here: macOS clocks have no nanoseconds, so the test moves the clock by 123 ns). | `BookingLifecycleIT.holdCreated_FRBK01` | M1.5 |
 
 ## 9. Architecture ideas behind the code
 
@@ -185,4 +200,8 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | One rules resolver | Every rule value comes from one place (override → type → category), so no code ever branches on a category. | `RuleResolver` | M1.4 |
 | Read view vs decision | Availability is an unlocked read and can be stale a moment later; the database constraint decides the booking (M1.5). | `AvailabilityService` | M1.4 |
 | Module API between modules | Availability reads bookings through `BookingOccupancy`, never the booking table; the DTO carries no member. | `BookingOccupancy`, `OccupiedRange` | M1.4 |
+| Spring Framework 7 `@Retryable` | Built into `spring-context` (enable with `@EnableResilientMethods`): reruns a method on chosen exceptions, with delay and jitter. Placed on a different bean from `@Transactional`, so each attempt is a fresh transaction. Only for retry-safe failures (deadlock), never for business refusals. | `BookingService`, `config/RetryConfig` | M1.5 |
+| Checks first, database decides | Rules in Java give clear early answers, but two requests can pass them at the same moment; the exclusion constraints at INSERT are the guarantee. | `BookingRules`, `BookingTransactions.hold` | M1.5 |
+| 404 instead of 403 for other people's data | Answering "not found" hides that the booking exists at all (FR-ROLE-04). | `BookingTransactions.owned`, `BookingService.get` | M1.5 |
+| Lazy cleanup at the point of use | Run-out holds that block a new hold are expired inside that hold's transaction, so correctness never waits for the background job (FR-EXP-02/04). | `BookingRepository.lockStaleHolds` | M1.5 |
 

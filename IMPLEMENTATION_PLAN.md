@@ -158,8 +158,8 @@ Delivered as three PRs, in the order a → b → c (owner decisions 2026-11-06):
 ### M1.5 Booking engine core `L`
 
 1. **Objective.** Hold, confirm, cancel through the gateway with database-backed conflict protection.
-2. **Tasks.** `BookingRules` (BR-01, 05, 06, 09 now; BR-14 framework); `createHold` (bookable `FOR SHARE`, member `FOR UPDATE`, stale-hold sweep for bookable and member, `occupied_until`, insert HELD); confirm/cancel as conditional UPDATEs; `404` for others' bookings; admin cancel path; `ConstraintViolationMapper`; `GET /bookings/me`, `/bookings/{id}`; transaction retry on `40P01` (D-11).
-3. **Files/modules.** booking-service `booking/**`, `common/error`, `common/tx`.
+2. **Tasks.** `BookingRules` (BR-01, 05, 06, 09 now; BR-14 framework); `createHold` (bookable `FOR SHARE`, member `FOR UPDATE`, stale-hold sweep for bookable and member, `occupied_until`, insert HELD); confirm/cancel as conditional UPDATEs; `404` for others' bookings; admin cancel path; `ConstraintViolations` (constraint name → error code); `GET /bookings/me`, `/bookings/{id}`; transaction retry on `40P01` (D-11, Spring 7 `@Retryable`).
+3. **Files/modules.** booking-service `booking/**`, `common/exception`, `config/RetryConfig`; catalog and member lock methods.
 4. **Dependencies.** M1.4.
 5. **Tests.** Unit: rules, service with Mockito. Integration `BookingLifecycleIT`: hold 201; confirm; second confirm 409; confirm after expiry (moved clock) 409 + EXPIRED (FS-08); overlap 409 `SLOT_TAKEN`; same member elsewhere overlapping 409 `MEMBER_OVERLAP` (FS-02); stale hold doesn't block (FS-21); other member's booking 404 (FS-15); admin cancel.
 6. **Acceptance.** FR-BK-01..09, BR-10..13 verified through the API; conflicts never return 500.

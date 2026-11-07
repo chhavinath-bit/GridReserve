@@ -1,11 +1,13 @@
 package com.gridreserve.booking.catalog.service;
 
+import com.gridreserve.booking.catalog.dto.BookableInfo;
 import com.gridreserve.booking.catalog.dto.BookableResponse;
 import com.gridreserve.booking.catalog.dto.BookableSchedule;
 import com.gridreserve.booking.catalog.dto.BookableSummaryResponse;
 import com.gridreserve.booking.catalog.dto.CategoryResponse;
 import com.gridreserve.booking.catalog.dto.CountryResponse;
 import com.gridreserve.booking.catalog.dto.CountryTimeZonesResponse;
+import com.gridreserve.booking.catalog.dto.LockedBookable;
 import com.gridreserve.booking.catalog.dto.VenueResponse;
 import com.gridreserve.booking.catalog.dto.VenueSummaryResponse;
 import com.gridreserve.booking.catalog.entity.Bookable;
@@ -25,12 +27,15 @@ import com.gridreserve.common.web.error.DomainException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -104,6 +109,32 @@ public class CatalogService {
         return new BookableSchedule(bookable.getId(), bookable.getBookableType().getLabel(), resolve(bookable));
     }
 
+    /**
+     * For hold creation: locks the venue, then the bookable, {@code FOR SHARE} (lock order, CLAUDE.md
+     * §8.3) and reads them after the locks are held, so the active flags are current. A lock only
+     * means something inside the caller's transaction (it lasts until that ends), so one is required.
+     * Inactive bookables are returned, not hidden: the booking module answers {@code 422
+     * BOOKABLE_INACTIVE} (BR-06).
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public LockedBookable lockForBooking(long bookableId) {
+        venues.lockForShareByBookable(bookableId).orElseThrow(() -> notFound("No such bookable."));
+        bookables.lockForShare(bookableId);
+        Bookable bookable = visibleBookable(bookableId, true);
+        return new LockedBookable(info(bookable), bookable.isActive() && bookable.getVenue().isActive(),
+                resolve(bookable));
+    }
+
+    /** Names for a list of bookings in one query, inactive bookables included (old bookings show them). */
+    public Map<Long, BookableInfo> describe(Collection<Long> bookableIds) {
+        if (bookableIds.isEmpty()) {
+            return Map.of();
+        }
+        return bookables.findWithVenueByIdIn(bookableIds).stream()
+                .map(CatalogService::info)
+                .collect(Collectors.toMap(BookableInfo::bookableId, Function.identity()));
+    }
+
     public List<CountryResponse> countries() {
         return countryZones.findCountryCodes().stream().map(CountryResponse::new).toList();
     }
@@ -134,6 +165,11 @@ public class CatalogService {
         return bookables.findWithRulesById(id)
                 .filter(bookable -> includeInactive || (bookable.isActive() && bookable.getVenue().isActive()))
                 .orElseThrow(() -> notFound("No such bookable."));
+    }
+
+    private static BookableInfo info(Bookable bookable) {
+        return new BookableInfo(bookable.getId(), bookable.getName(), bookable.getBookableType().getLabel(),
+                bookable.getVenue().getName(), bookable.getVenue().getTimeZone());
     }
 
     private static DomainException notFound(String message) {
