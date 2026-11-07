@@ -13,8 +13,8 @@ import { StatusBadge } from '@/components/patterns/StatusBadge'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { effectiveStatus } from '@/lib/bookingStatus'
-import { formatRange } from '@/lib/time'
+import { canCancel, effectiveStatus } from '@/lib/bookingStatus'
+import { formatDay, formatRange, formatTime } from '@/lib/time'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 
@@ -126,6 +126,9 @@ function BookingCard({ booking, now }: { booking: Booking; now: number }) {
   })
 
   const active = status === 'HELD' || (status === 'CONFIRMED' && new Date(booking.end).getTime() > now)
+  // After the cutoff the button stays visible but disabled, with the reason next to it (DESIGN_SYSTEM §4.2).
+  const cancelClosed = active && !canCancel(booking, now)
+  const closedNote = `cancel-closed-${booking.id}`
 
   return (
     <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -142,6 +145,12 @@ function BookingCard({ booking, now }: { booking: Booking; now: number }) {
           <span className="text-subtle-foreground">({booking.venueTimeZone})</span>
         </span>
         {status === 'HELD' ? <HoldTimer deadline={deadline} onExpire={settle} /> : null}
+        {cancelClosed && booking.cancellableUntil ? (
+          <span id={closedNote} className="text-sm text-subtle-foreground">
+            Cancellations closed {formatDay(booking.cancellableUntil, booking.venueTimeZone)},{' '}
+            {formatTime(booking.cancellableUntil, booking.venueTimeZone)}. Contact the venue to change this booking.
+          </span>
+        ) : null}
         {error ? (
           <Alert variant="destructive" role="alert" className="mt-1">
             {error}
@@ -165,7 +174,13 @@ function BookingCard({ booking, now }: { booking: Booking; now: number }) {
               </Button>
             </>
           ) : (
-            <Button size="sm" variant="outline" onClick={() => setConfirmingCancel(true)}>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={cancelClosed}
+              aria-describedby={cancelClosed ? closedNote : undefined}
+              onClick={() => setConfirmingCancel(true)}
+            >
               {status === 'HELD' ? 'Release' : 'Cancel booking'}
             </Button>
           )}

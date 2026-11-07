@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Booking } from '@/api/types'
 import { tabOf } from '@/features/bookings/MyBookingsPage'
 import { holdDeadline } from '@/features/bookings/hold'
-import { effectiveStatus } from './bookingStatus'
+import { canCancel, effectiveStatus } from './bookingStatus'
 
 const NOW = Date.parse('2026-11-07T10:00:00Z')
 
@@ -20,7 +20,21 @@ const booking = (overrides: Partial<Booking>): Booking => ({
   createdAt: '2026-11-07T09:58:00Z',
   cancelledAt: null,
   cancelledBy: null,
+  cancellableUntil: '2026-11-08T02:30:00Z',
   ...overrides,
+})
+
+describe('cancel button (CXL-01/02)', () => {
+  it('is offered until cancellableUntil, then closed', () => {
+    const confirmed = booking({ cancellableUntil: '2026-11-07T10:30:00Z' })
+    expect(canCancel(confirmed, NOW)).toBe(true)
+    expect(canCancel(confirmed, Date.parse('2026-11-07T10:30:00Z'))).toBe(false)
+  })
+
+  it('is never offered for cancelled, expired or run-out bookings', () => {
+    expect(canCancel(booking({ status: 'CANCELLED', cancellableUntil: null }), NOW)).toBe(false)
+    expect(canCancel(booking({ status: 'HELD', expiresAt: '2026-11-07T09:59:00Z', cancellableUntil: '2026-11-07T09:59:00Z' }), NOW)).toBe(false)
+  })
 })
 
 describe('booking status shown to the member', () => {
