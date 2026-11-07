@@ -19,6 +19,11 @@ public final class MovableClock extends Clock {
         offset = offset.plus(duration);
     }
 
+    /** From now on, "now" is {@code target} plus however much real time passes. */
+    public void moveTo(Instant target) {
+        offset = Duration.between(Instant.now(), target);
+    }
+
     public void reset() {
         offset = Duration.ZERO;
     }

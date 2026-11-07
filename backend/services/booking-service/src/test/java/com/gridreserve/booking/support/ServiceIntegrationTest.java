@@ -19,7 +19,9 @@ import java.lang.annotation.Target;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "CONFIG_IMPORT=optional:classpath:/no-config-server.yml",
         "spring.cloud.config.enabled=false",
-        "eureka.client.enabled=false"
+        "eureka.client.enabled=false",
+        // Tests run the hold-expiry sweep themselves (HoldExpiryJobIT), never on a timer in the background.
+        "gridreserve.holds.expiry.enabled=false"
 })
 @ContextConfiguration(initializers = TestJwtKeys.class)
 @Import({PostgresTestcontainer.class, MovableClockConfig.class})
