@@ -13,7 +13,7 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 | M1.3b Refresh tokens, logout, register logs in | Done (owner reviewed; [review guide](reviews/M1.3b-review.md)) | 2026-11-06 | `7b7edb9` (merge of PR #7); config repo `aa5775a` (merge of PR #4); CI on `main` (`7b7edb9`) green, 36 + 60 tests |
 | M1.3c Token checks in the gateway and booking-service | Done (owner reviewed; [review guide](reviews/M1.3c-review.md)) | 2026-11-06 | `2792e21` (merge of PR #8); no config repo change; CI on `main` (`2792e21`) green, 36 + 78 tests |
 | M1.3d Sign-in with Google and GitHub | **Dropped** (owner, 2026-11-06): too much work for its value; optional extension, design kept in the docs (D-35 withdrawn). M1.3 is complete with a, b, c. | 2026-11-06 | — |
-| M1.4 Catalog, countries and availability | Built; **awaiting owner review** ([review guide](reviews/M1.4-review.md)) | 2026-11-06 | branch `m1.4-catalog-availability`; no config repo change |
+| M1.4 Catalog, countries and availability | Done (owner reviewed; [review guide](reviews/M1.4-review.md)) | 2026-11-06 | `2e8e88f` (merge of PR #10); no config repo change; CI on `main` (`2e8e88f`) green; local `verify` on `main` 2026-11-07: 156 tests, 0 failures |
 
 ---
 
@@ -365,7 +365,7 @@ What the new tests execute (behavior): gateway forwards a valid token unchanged 
 ### Open issues for later milestones
 - PROJECT.md §6 says roles are "checked early at the gateway"; the gateway checks only the token (D-38). PROJECT.md unchanged by rule; tell the owner.
 
-## M1.4 Catalog, countries and availability — Built, awaiting owner review (2026-11-06)
+## M1.4 Catalog, countries and availability — Done (2026-11-06)
 
 **Built (booking-service):**
 - Catalog reads (FR-CAT-01..06, FR-CAT-14): `GET /categories` (with bookable types; EXCLUSIVE types first, then by label), `/venues?categoryId=` and `/venues/{venueId}/bookables` (paginated, API-04), `/venues/{id}` (zone + weekly hours), `/bookables/{id}` (effective rules, own or venue hours), `/countries`, `/countries/{code}/time-zones`. Members get only active items (inactive → 404); admins may pass `includeInactive=true`.
