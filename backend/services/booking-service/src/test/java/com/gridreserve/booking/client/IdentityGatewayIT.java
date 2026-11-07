@@ -63,6 +63,12 @@ class IdentityGatewayIT {
     @Autowired
     ServiceTokens tokens;
 
+    @Autowired
+    io.micrometer.core.instrument.MeterRegistry meters;
+
+    @org.springframework.beans.factory.annotation.Value("${local.server.port}")
+    int port;
+
     private static final String USERS = "/internal/users";
     private static final String TOKENS = "/internal/service-tokens";
     // "booking-service:test-client-secret" in Base64, as in test/resources/no-config-server.yml.
@@ -203,5 +209,36 @@ class IdentityGatewayIT {
 
         assertThat(gateway.ping().instance()).isEqualTo("unavailable (fallback)");
         assertThat(identity.findAll(postRequestedFor(urlPathEqualTo(TOKENS))).size()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("RES-08: circuit-breaker state, retries and bulkhead are Micrometer metrics")
+    void resilienceMetrics() {
+        identity.stubFor(get(urlPathEqualTo(USERS)).willReturn(okJson("[]")));
+        gateway.members(List.of(1L));
+
+        assertThat(meters.find("resilience4j.circuitbreaker.state").tag("name", IdentityGateway.POLICY)
+                .tag("state", "closed").gauge().value()).isEqualTo(1);
+        assertThat(meters.find("resilience4j.retry.calls").tag("name", IdentityGateway.POLICY).meters()).isNotEmpty();
+        assertThat(meters.find("resilience4j.bulkhead.available.concurrent.calls").tag("name", IdentityGateway.POLICY)
+                .gauges()).isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("RES-08 / RES-07: health shows the circuit to admins only, and an open circuit doesn't make booking unhealthy")
+    void healthShowsCircuitToAdminsOnly() {
+        circuit().transitionToOpenState();
+        com.gridreserve.booking.support.Http http = new com.gridreserve.booking.support.Http(port);
+
+        com.gridreserve.booking.support.Http.Response asAdmin = http.get("/actuator/health",
+                com.gridreserve.booking.support.TestJwtKeys.adminToken());
+        assertThat(asAdmin.status()).isEqualTo(200);
+        assertThat(asAdmin.body().get("status").asString()).isEqualTo("UP");
+        assertThat(asAdmin.body().get("components").get("circuitBreakers").get("details")
+                .get(IdentityGateway.POLICY).get("state").asString()).isEqualTo("OPEN");
+
+        com.gridreserve.booking.support.Http.Response anonymous = http.get("/actuator/health", null);
+        assertThat(anonymous.status()).isEqualTo(200);
+        assertThat(anonymous.body().has("components")).isFalse();
     }
 }

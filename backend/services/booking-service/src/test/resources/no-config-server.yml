@@ -46,8 +46,21 @@ resilience4j:
         retry-exceptions:
           - com.gridreserve.booking.client.IdentityErrors$IdentityUnavailableException
           - feign.RetryableException
+  ratelimiter:
+    configs:
+      default:
+        limit-for-period: 20   # RES-05: per instance, per second
+        limit-refresh-period: 1s
+        timeout-duration: 0
   bulkhead:
     instances:
       identity-service:
         max-concurrent-calls: 10   # RES-04
         max-wait-duration: 0
+
+management:
+  endpoint:
+    health:
+      # RES-08: details (circuit-breaker states included) for admins only.
+      show-details: when-authorized
+      roles: ADMIN
