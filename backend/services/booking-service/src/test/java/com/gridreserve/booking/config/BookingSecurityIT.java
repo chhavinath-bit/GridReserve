@@ -79,6 +79,29 @@ class BookingSecurityIT {
         assertThat(response.statusCode()).isEqualTo(200);
     }
 
+    private static String serviceToken() {
+        return TestJwtKeys.sign(TestJwtKeys.KEYS, TestJwtKeys.KEY_ID, TestJwtKeys.claims(java.time.Instant.now())
+                .subject("booking-service").claim("role", "SERVICE").build());
+    }
+
+    @Test
+    @DisplayName("D-19: a service token can't act as a member: user APIs need MEMBER or ADMIN → 403")
+    void serviceTokenIsNotAMember() throws Exception {
+        HttpResponse<String> response = get("/api/v1/categories", serviceToken());
+
+        assertThat(response.statusCode()).isEqualTo(403);
+        assertThat(response.body()).contains("\"code\":\"FORBIDDEN\"");
+    }
+
+    @Test
+    @DisplayName("Actuator beyond health/info needs ADMIN or SERVICE: a member → 403; admin and service pass security")
+    void actuatorNeedsAdminOrService() throws Exception {
+        assertThat(get("/actuator/metrics", TestJwtKeys.memberToken()).statusCode()).isEqualTo(403);
+        // In tests the endpoint isn't exposed (404); the point is that security let these through.
+        assertThat(get("/actuator/metrics", TestJwtKeys.adminToken()).statusCode()).isNotIn(401, 403);
+        assertThat(get("/actuator/metrics", serviceToken()).statusCode()).isNotIn(401, 403);
+    }
+
     @Test
     @DisplayName("FS-16/FR-ROLE-03: a MEMBER on an admin path → 403 FORBIDDEN")
     void memberOnAdminPathForbidden_FS16() throws Exception {
