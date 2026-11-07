@@ -64,6 +64,9 @@ class IdentityGatewayIT {
     io.github.resilience4j.bulkhead.BulkheadRegistry bulkheads;
 
     @Autowired
+    io.github.resilience4j.retry.RetryRegistry retries;
+
+    @Autowired
     ServiceTokens tokens;
 
     @Autowired
@@ -255,6 +258,11 @@ class IdentityGatewayIT {
     @DisplayName("PLAT-05: a configuration refresh rebuilds the identity-service policies with the new values")
     void refreshRebuildsPolicies_PLAT05() {
         assertThat(circuit().getCircuitBreakerConfig().getFailureRateThreshold()).isEqualTo(50);
+        // This test changes shared state (the policies in the registries); it puts the originals back at the
+        // end, so tests that run after it see exactly the policies built at startup.
+        CircuitBreaker originalCircuit = circuit();
+        io.github.resilience4j.bulkhead.Bulkhead originalBulkhead = bulkheads.bulkhead(IdentityGateway.POLICY);
+        io.github.resilience4j.retry.Retry originalRetry = retries.retry(IdentityGateway.POLICY);
         // What a changed config repo plus POST /actuator/refresh does, inside the test.
         environment.getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource("changed-config", java.util.Map.of(
                 "resilience4j.circuitbreaker.instances.identity-service.failure-rate-threshold", "70",
@@ -267,6 +275,9 @@ class IdentityGatewayIT {
         } finally {
             environment.getPropertySources().remove("changed-config");
             refresher.refresh();
+            circuitBreakers.replace(IdentityGateway.POLICY, originalCircuit);
+            bulkheads.replace(IdentityGateway.POLICY, originalBulkhead);
+            retries.replace(IdentityGateway.POLICY, originalRetry);
         }
         assertThat(circuit().getCircuitBreakerConfig().getFailureRateThreshold()).isEqualTo(50);
     }
