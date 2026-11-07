@@ -2,7 +2,7 @@
 
 Everything the Phase 1 code uses, grouped by topic. **Since** names the milestone that introduced it, so you can study in the order the code was written. Each milestone adds its new rows in its own PR (CLAUDE.md §2), and each review guide's "Learn first" table repeats that milestone's rows.
 
-Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud → Security → Testing. Sections 1–3 are the base for everything else.
+Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud → Security → Testing. Sections 1–3 are the base for everything else. Section 10 is the frontend (from M1.6).
 
 ## 1. Java language (Java 21)
 
@@ -205,3 +205,32 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | 404 instead of 403 for other people's data | Answering "not found" hides that the booking exists at all (FR-ROLE-04). | `BookingTransactions.owned`, `BookingService.get` | M1.5 |
 | Lazy cleanup at the point of use | Run-out holds that block a new hold are expired inside that hold's transaction, so correctness never waits for the background job (FR-EXP-02/04). | `BookingRepository.lockStaleHolds` | M1.5 |
 
+## 10. Frontend (React, TypeScript, Vite)
+
+| Concept | What it is | Where | Since |
+|---|---|---|---|
+| Vite dev server and proxy | Serves the app with instant reloads; `server.proxy` forwards `/api` to the gateway, so the browser sees one origin (no CORS, the refresh cookie just works). `vite build` makes the static files for production. | `frontend/vite.config.ts` | M1.6 |
+| `tsconfig` strict options | `strict`, `noUncheckedIndexedAccess` (an array lookup may be `undefined`), `verbatimModuleSyntax` (type-only imports are marked `import type`). Catch bugs at compile time. | `frontend/tsconfig.json` | M1.6 |
+| Path alias `@/` | `@/components/ui/button` instead of `../../components/ui/button`; set in both `tsconfig.json` and `vite.config.ts`. | `frontend/vite.config.ts` | M1.6 |
+| Tailwind 4 with CSS variables (`@theme inline`) | Design tokens are CSS variables on `:root` and `.dark`; `@theme inline` turns them into class names like `bg-primary`. Switching the `.dark` class on `<html>` switches every color at once. | `src/styles/globals.css` | M1.6 |
+| shadcn/ui and Radix | shadcn is not a library: its components are copied into our repo (`components/ui`) and we own them. Radix provides the hard parts underneath (keyboard, focus, ARIA), e.g. the Select. | `components/ui/select.tsx`, `components.json` | M1.6 |
+| `class-variance-authority` (`cva`) and `cn` | `cva` declares a component's variants (`primary`, `outline`, ...) in one place; `cn` joins classes and lets the later Tailwind class win (`tailwind-merge`). | `components/ui/button.tsx`, `lib/utils.ts` | M1.6 |
+| TanStack Query `useQuery` / `useMutation` | Server state with caching, loading and error flags. A query key (`['availability', id, date]`) names the data; `invalidateQueries` after a hold or a 409 makes every view of that data refetch. | `features/availability/SlotPickerPage.tsx`, `api/queryKeys.ts` | M1.6 |
+| React Router data router and guards | `createBrowserRouter` with nested routes; `RequireAuth` renders `<Outlet />` for signed-in users and `<Navigate>` to `/login?returnTo=…` otherwise. | `app/router.tsx`, `features/auth/RequireAuth.tsx` | M1.6 |
+| URL as state (`useSearchParams`) | The chosen category and date live in the URL (`?category=2`, `?date=…`), so reload, back/forward and shared links keep them. | `BrowsePage`, `SlotPickerPage` | M1.6 |
+| React context for the session | `AuthProvider` holds who is signed in and exposes `login`, `logout`; components read it with `useAuth()`. The token itself stays inside `api/client.ts`. | `features/auth/AuthContext.tsx` | M1.6 |
+| Access token in memory, refresh cookie | The token is a module variable (gone on reload, unreadable to other tabs and to stored-data theft); the `HttpOnly` cookie, which JavaScript can't read, restores it via `/auth/refresh`. | `api/client.ts` | M1.6 |
+| Single-flight refresh | When several requests get `401 TOKEN_EXPIRED` at once, they all await one shared refresh promise, then retry once. | `api/client.ts` `refreshSession` | M1.6 |
+| `Intl.DateTimeFormat` with `timeZone` | Formats an instant in any IANA zone, independent of the browser's zone; used for every time shown (venue time, FR-UI-04). | `lib/time.ts` | M1.6 |
+| Clock-skew-safe countdown | The hold's length (`expiresAt − createdAt`, both server times) is added to the moment the answer arrived; a wrong device clock can't shorten or lengthen it. | `features/bookings/hold.ts` | M1.6 |
+| Pure render and `useNow` | React may render a component any number of times, so render code must not read changing values like `Date.now()`; time comes from state that a timer updates. Enforced by `eslint-plugin-react-hooks` 7. | `lib/useNow.ts`, `HoldTimer` | M1.6 |
+| `useEffect` with `setInterval` and cleanup | Starts a ticking timer after render and stops it in the cleanup function, so no timer outlives the component. | `components/patterns/HoldTimer.tsx` | M1.6 |
+| Roving tabindex | Only one cell of a grid is in the Tab order (`tabIndex=0`); arrow keys move focus between cells. Keeps keyboard users from tabbing through 17 slots. | `components/patterns/SlotGrid.tsx` | M1.6 |
+| ARIA: `aria-pressed`, `aria-disabled`, live regions | Toggle buttons say whether they are on; disabled-but-focusable cells are announced; `aria-live` regions announce the hold's last minute (polite) and conflicts (assertive). | `SlotGrid`, `HoldTimer`, `ConflictNotice` | M1.6 |
+| Theme before first paint | A tiny inline script in `index.html` sets the `.dark` class before React loads, so dark-mode users never see a white flash. Only the theme preference is stored in `localStorage`. | `index.html`, `lib/theme.tsx` | M1.6 |
+| `import.meta.env.DEV` and dead-code removal | `true` only in the dev server; code behind `if (!import.meta.env.DEV) return []` is dropped from production builds (the component gallery). | `app/router.tsx` | M1.6 |
+| Vitest + React Testing Library | Vitest runs tests in a simulated browser (jsdom); RTL renders components and finds elements the way users do (`getByRole('button', { name: '10:00, free' })`). | `*.test.ts(x)` | M1.6 |
+| `vi.stubGlobal('fetch')` and fake timers | Replace `fetch` with a fake server, and the clock with one the test moves (`vi.advanceTimersByTime`), so network and time are deterministic. | `api/client.test.ts`, `HoldTimer.test.tsx` | M1.6 |
+| `user-event` for keyboard tests | Simulates real typing and key presses (`{ArrowDown}`, `{Enter}`), including focus movement. | `SlotGrid.test.tsx` | M1.6 |
+| ESLint flat config | `eslint.config.js` with `typescript-eslint` and the React hooks rules (rules of hooks, purity, dependencies). | `frontend/eslint.config.js` | M1.6 |
+| `npm ci` and exact versions | `npm ci` installs exactly what `package-lock.json` says (CI and fresh clones); every package is pinned without `^`. | `frontend/package.json`, CI | M1.6 |

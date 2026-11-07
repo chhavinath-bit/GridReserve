@@ -287,9 +287,9 @@ Rows marked ✓ were run successfully in M1.1 (2026-11-05); the others are plann
 | Single test ✓ | `cd backend && ./mvnw -pl services/booking-service -am test -Dtest=BookingServiceApplicationTest -Dsurefire.failIfNoSpecifiedTests=false` | |
 | Single integration test ✓ | `cd backend && ./mvnw -pl services/booking-service -am verify -Dit.test=BookingConstraintsIT -Dtest=none -Dsurefire.failIfNoSpecifiedTests=false -Dfailsafe.failIfNoSpecifiedTests=false` | `*IT` classes run in `verify` (Failsafe), not in `test`; Docker must be running |
 | Refresh config on all instances | `scripts/refresh-config.sh [service-id]` | Needs admin/service credential from env |
-| Install frontend deps | `cd frontend && npm ci` | |
-| Run frontend | `cd frontend && npm run dev` | Vite proxies `/api` to the gateway on `:8080` |
-| Frontend type check / unit tests / build | `cd frontend && npm run typecheck` · `npm test` · `npm run build` | |
+| Install frontend deps ✓ | `cd frontend && npm ci` | Node ≥ 24 (`frontend/.nvmrc`) |
+| Run frontend ✓ | `cd frontend && npm run dev` | `http://localhost:5173`; Vite proxies `/api` to the gateway on `:8080`; gallery at `/dev/components` |
+| Frontend type check / lint / unit tests / build ✓ | `cd frontend && npm run typecheck` · `npm run lint` · `npm test` · `npm run build` | |
 | End-to-end tests | `cd frontend && npm run e2e` | Playwright; needs the Compose stack |
 | Full stack from images | `cd infra && docker compose --profile full up --build` | From M1.10 |
 
@@ -339,6 +339,7 @@ Rows marked ✓ were run successfully in M1.1 (2026-11-05); the others are plann
 - Keep the build host-agnostic (Dockerfiles + environment variables + config server); the deploy host is chosen before the first Phase 1 deployment.
 - (2026-11-06, M1.3) Tokens are signed and verified with Spring Security's OAuth2 resource server and Nimbus JOSE (`NimbusJwtEncoder` / `NimbusJwtDecoder`) instead of jjwt: Boot-managed versions, no second Jackson, built-in Bearer filters for servlet services and the reactive gateway (D-34). Service-to-service authentication: short-lived service JWTs signed by identity-service, built with the first internal call in M1.9 (D-19). M1.3 is delivered as three PRs: M1.3a identity core, M1.3b refresh tokens, M1.3c verification in gateway and booking.
 - (2026-11-06, M1.3b) Refresh tokens are **not rotated** (D-37): one opaque token per login, stored as SHA-256, sliding 7-day expiry, logout deletes the row, expired rows deleted at login (no cleanup job). Replaces rotation, token families and reuse detection.
+- (2026-11-07, M1.6) Frontend packages (D-UI-3, M1.6 subset): `radix-ui`, `class-variance-authority`, `clsx`, `tailwind-merge`, `lucide-react`, `tw-animate-css`, `sonner`, `@fontsource-variable/inter`; lint with `eslint`, `typescript-eslint`, `eslint-plugin-react-hooks`; TypeScript 6.0 (typescript-eslint does not support 7 yet). All pinned exactly. `react-day-picker` and `@tanstack/react-table` stay pending. Frontend CI job on Node 24 (`frontend/.nvmrc`).
 - (2026-11-07, M1.5) Deadlock retry (D-11): Spring Framework 7 `@Retryable` on `BookingService`, around the transactions in `BookingTransactions` (separate bean, so each attempt is a new transaction); 3 attempts, only on `PessimisticLockingFailureException`; business refusals never retried. Holds last 5 minutes (constant `HOLD_DURATION`). Confirm and cancel record a run-out hold as `EXPIRED` before refusing (`noRollbackFor = DomainException`).
 - (2026-11-06, M1.4) Availability in whole local days (today … today + horizon − 1; later → `422 BEYOND_HORIZON`; past dates all `PAST`); categories and countries are unpaginated; CAPACITY availability → `422 WRONG_BOOKING_MODEL` until Phase 2 (D-39).
 - (2026-11-06, M1.3c) The gateway verifies access tokens with `common-web`'s shared rules (webmvc is optional in `common-web`, so the gateway stays reactive); it checks validity only, and every service verifies again and enforces roles. `/api/v1/auth/**` ignores the `Authorization` header. booking-service creates `member` rows with `MemberProvisioner` from hold creation (M1.5), not per request (D-38).

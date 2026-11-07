@@ -248,7 +248,8 @@ Each section: **role**, **why**, **how it interacts**, **alternatives rejected**
 | PostgreSQL | 16 (same tag in Compose, Testcontainers, prod) | — |
 | Redis | 7 (P4) | — |
 | Node.js | Current LTS | — |
-| React, React Router, TanStack Query, Tailwind, Vite, Vitest, Playwright | Latest stable | — |
+| React 19.3, React Router 8.5, TanStack Query 5.107, Tailwind CSS 4.3, Vite 8.3, TypeScript 6.0, Vitest 5.1 | Pinned exactly in `frontend/package.json` (M1.6); Node 24 LTS (`frontend/.nvmrc`) | TypeScript stays on 6.0 until `typescript-eslint` supports 7 |
+| Playwright | Latest stable when added (M1.13) | — |
 | Nimbus JOSE, Flyway, Testcontainers | Latest stable, managed by BOMs where possible | Artifact names may differ on Boot 4 |
 
 ## 6. Note on CLAUDE.md
