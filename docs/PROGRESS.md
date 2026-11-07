@@ -14,6 +14,7 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 | M1.3c Token checks in the gateway and booking-service | Done (owner reviewed; [review guide](reviews/M1.3c-review.md)) | 2026-11-06 | `2792e21` (merge of PR #8); no config repo change; CI on `main` (`2792e21`) green, 36 + 78 tests |
 | M1.3d Sign-in with Google and GitHub | **Dropped** (owner, 2026-11-06): too much work for its value; optional extension, design kept in the docs (D-35 withdrawn). M1.3 is complete with a, b, c. | 2026-11-06 | — |
 | M1.4 Catalog, countries and availability | Done (owner reviewed; [review guide](reviews/M1.4-review.md)) | 2026-11-06 | `2e8e88f` (merge of PR #10); no config repo change; CI on `main` (`2e8e88f`) green; local `verify` on `main` 2026-11-07: 156 tests, 0 failures |
+| M1.5 Booking engine core (hold, confirm, cancel) | Built; **awaiting owner review** ([review guide](reviews/M1.5-review.md)) | 2026-11-07 | branch `m1.5-booking-engine`; no config repo change |
 
 ---
 
@@ -405,6 +406,51 @@ What the new tests execute (behavior): grid sizes for 15/30/60-minute slots, anc
 
 ### Open issues for later milestones
 - Whether a whole booking (duration + buffer) fits is checked at booking time (M1.5), not in availability; the frontend picker (M1.6) should only offer starts where `minDuration` fits.
+
+---
+
+## M1.5 Booking engine core: hold, confirm, cancel — Built, awaiting owner review (2026-11-07)
+
+**Built (booking-service):**
+- `POST /bookings` (hold, `201` + `Location`, `HELD` for 5 minutes), `POST /bookings/{id}/confirm`, `POST /bookings/{id}/cancel` (optional `reason`), `GET /bookings/me` (newest start first; `status`, `from`, `to`, paged), `GET /bookings/{id}` (FR-BK-01..07). The owner is the token's `sub`; another member's booking is `404` (FR-ROLE-04); admins read and cancel any booking (`cancelledBy: ADMIN`) and book only for themselves.
+- Hold transaction (`booking/service/BookingTransactions`): venue and bookable `FOR SHARE` (`CatalogService.lockForBooking`), member `FOR UPDATE` (`member/service/MemberLock`), rules BR-01, 06, 09, 05 in the BR-14 order (`BookingRules`), run-out holds in the way expired in one `ORDER BY id FOR UPDATE` statement (FR-EXP-02), insert with `occupied_until = end + buffer`. The member row is created first in its own short transaction (`MemberProvisioner`, D-38).
+- Confirm and cancel are conditional UPDATEs; a run-out hold is saved as `EXPIRED` before the refusal (`noRollbackFor`), so confirm answers `409 HOLD_EXPIRED` and cancel `409 INVALID_STATE`; other wrong states `409 INVALID_STATE` (BR-13).
+- `common/exception/ConstraintViolations`: `ex_booking_bookable_overlap` → `409 SLOT_TAKEN`, `ex_booking_member_overlap` → `409 MEMBER_OVERLAP`; unknown constraints stay 500. New codes `SLOT_TAKEN`, `MEMBER_OVERLAP`, `HOLD_EXPIRED`, `INVALID_STATE`, `BOOKABLE_INACTIVE`, `START_IN_PAST`.
+- Deadlock retry (D-11): Spring Framework 7 `@Retryable` on `BookingService` (`config/RetryConfig` enables it), 3 attempts, only on `PessimisticLockingFailureException`.
+- Docs: D-11 settled (ARCHITECTURE §19.1, CLAUDE.md §15.1), REQUIREMENTS v0.11 (FR-BK-03/04 clarified), IMPLEMENTATION_PLAN M1.5 file names, README "Book with curl" and status, review guide, learning file.
+
+**Plan deviations:** the plan named the mapper `ConstraintViolationMapper` and a `common/tx` package; the code follows identity-service's existing `ConstraintViolations` name, and the retry needs only `config/RetryConfig` plus the annotation. Hold duration is a constant (`HOLD_DURATION`, A-04), not configuration.
+
+**Dependencies added:** none (`@Retryable` is in `spring-context` 7, already present).
+
+### Test results
+
+`cd backend && ./mvnw -B verify` on 2026-11-07 (after the last code commit): **BUILD SUCCESS**, 188 tests, 0 failures, 0 skipped.
+
+| Module | Surefire (`*Test`) | Failsafe (`*IT`) |
+|---|---|---|
+| common-web | 22 | — |
+| config-server / discovery-server | 1 / 1 | — |
+| api-gateway | 2 | 8 |
+| identity-service | 10 | 32 |
+| booking-service | 22 (new: `BookingRulesTest` 3, `BookingRetryTest` 3, `ConstraintViolationsTest` 2) | 90 (new: `BookingLifecycleIT` 24) |
+
+What the new tests execute (behavior): hold 201 with `Location`, names from the catalog, `expiresAt` ≈ now + 5 min, the same timestamps on a later read, member row created; same slot → `SLOT_TAKEN` with one active row; back-to-back allowed (BR-12); trainer buffer blocks 10:45 and allows 11:00; same member elsewhere → `MEMBER_OVERLAP` (FS-02); another member's run-out hold and the member's own run-out hold don't block and end `EXPIRED` (FS-21, FR-EXP-02); BR-01 (reversed times, missing fields with `fieldErrors`), BR-05, BR-06 (bookable and venue), BR-09, BR-06 before BR-05, unknown bookable 404; confirm once then `INVALID_STATE`; confirm after expiry `HOLD_EXPIRED` with the row saved `EXPIRED` (FS-08); admin can't confirm another's hold (404); member cancel with reason then `INVALID_STATE`; admin cancel of a confirmed booking frees the slot at once (CXL-03/05); cancel after expiry; reason > 200 → 400; another member's booking 404 for read, confirm and cancel (FS-15); owner and admin read; `/me` order, paging, status and time filters, bad status 400. Unit: rule order; retry once after a deadlock, give up after 3, never retry `SLOT_TAKEN`; constraint names mapped, unknown name kept.
+
+**Mutation checks (all reverted):** `@Transactional` without `noRollbackFor` on confirm fails `confirmAfterExpiry_FS08`; no stale-hold sweep fails `staleHoldOnBookableDoesNotBlock_FS21` and `ownStaleHoldDoesNotBlock_FREXP02`; not reading the `23P01` name fails both BR-10 tests and `memberOverlapRejected_FS02` (500); an ownership filter that is always true fails `othersBookingNotFound_FS15` and `onlyOwnerConfirms`.
+
+**First runs that failed (fixed, not weakened):** overlaps answered 500: Hibernate does not extract the constraint name for exclusion violations (`23P01`), so `ConstraintViolations` reads it from PostgreSQL's message with Hibernate's template; `/bookings/me` answered 500: PostgreSQL could not type `? is null` for the time filters (`42P18`), fixed with `cast(:from as Instant)`.
+
+**Through the Compose stack** (`docker compose up -d --build --wait booking-service`, demo accounts): alice holds Court B → 201, `Location: /api/v1/bookings/1`; bob same slot → 409 `SLOT_TAKEN`; availability shows 18:00 TAKEN, 17:00 and 19:00 FREE; bob reads alice's booking → 404; alice confirms → 200, again → 409 `INVALID_STATE`; `/me?status=CONFIRMED` → 1 item; admin cancels with a reason → 200 `cancelledBy: ADMIN`; bob holds the slot → 201 and cancels → `cancelledBy: MEMBER`; no token → 401. **Found here:** the 201 showed `createdAt` with nanoseconds and a later GET with microseconds (Linux clock vs PostgreSQL); hold times are now truncated to microseconds, and `holdCreated_FRBK01` moves the clock by 123 ns so it fails on any OS without the fix (checked).
+
+### Not covered yet
+- BR-02, 03, 04, 07, 08 and the cancellation cutoff (CXL-02..04) are M1.7; until then a hold outside opening hours or off the grid is accepted.
+- No hold-expiry job (M1.7); run-out holds are cleaned up lazily (confirm, cancel, a blocking hold) and ignored by availability.
+- Concurrency proofs (CONC-01..05, 09, 10) are M1.8; the deadlock retry is tested with a mocked deadlock only.
+- Idempotency key and audit (M1.12); admin booking list (M1.11).
+
+### Open issues for later milestones
+- From M1.4: whether a whole booking (duration + buffer) fits the opening hours is BR-02/BR-04, now planned in M1.7 (not M1.5).
 
 ---
 

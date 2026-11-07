@@ -1,6 +1,7 @@
 # GridReserve — Requirements
 
-> Version 0.10 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Version 0.11 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Changes from v0.10 (M1.5, 2026-11-07, D-11): FR-BK-03 and FR-BK-04 state what happens to a booking that is not in the expected state: confirming an expired hold answers `409 HOLD_EXPIRED` (also when it was already marked EXPIRED), any other state `409 INVALID_STATE`; a hold that has run out cannot be cancelled (it is recorded `EXPIRED`, `409 INVALID_STATE`); `cancelledBy` is `ADMIN` only when an admin cancels another member's booking.
 > Changes from v0.9 (M1.4, owner decisions 2026-11-06, D-39): availability works in whole local days (today to today + horizon − 1; later dates `422 BEYOND_HORIZON`, past dates all `PAST`); categories and countries are unpaginated reference lists (API-04); availability for a CAPACITY bookable returns `422 WRONG_BOOKING_MODEL` until Phase 2 (FR-AV-04, FR-AV-07).
 > Changes from v0.8 (owner decision, 2026-11-06, D-35 withdrawn): **sign-in with Google and GitHub is removed from Phase 1** and kept as an optional extension (US-30, FR-AUTH-15..19, FS-42..44, A-29 marked; not built). Email and password stay the only sign-in.
 > Changes from v0.7 (M1.3c, 2026-11-06, D-38): FR-ROLE-01 states which gateway paths are public and that the auth endpoints ignore the `Authorization` header (an expired access token sent along must not block a refresh).
@@ -275,8 +276,8 @@ Acceptance criteria use Given / When / Then. Each story links to the requirement
 
 - **FR-BK-01** `POST /api/v1/bookings` with `{bookableId, start, end}` shall create a booking in status `HELD` with `expiresAt = now + 5 min`, returning `201` and a `Location` header.
 - **FR-BK-02** All rules in section 6 shall be validated before insert; the database constraints (BR-10, BR-11) are the final guard.
-- **FR-BK-03** `POST /api/v1/bookings/{id}/confirm` shall move `HELD → CONFIRMED` if `now < expiresAt`; otherwise mark it `EXPIRED` and return `409 HOLD_EXPIRED`.
-- **FR-BK-04** `POST /api/v1/bookings/{id}/cancel` shall move `HELD` or `CONFIRMED` → `CANCELLED` according to section 8, with an optional `reason` (max 200 chars).
+- **FR-BK-03** `POST /api/v1/bookings/{id}/confirm` shall move `HELD → CONFIRMED` if `now < expiresAt`; otherwise mark it `EXPIRED` and return `409 HOLD_EXPIRED`. Only the owner may confirm (anyone else, admins included, gets `404`). Confirming a booking already `EXPIRED` also answers `409 HOLD_EXPIRED`; confirming one in any other state answers `409 INVALID_STATE`.
+- **FR-BK-04** `POST /api/v1/bookings/{id}/cancel` shall move `HELD` or `CONFIRMED` → `CANCELLED` according to section 8, with an optional `reason` (max 200 chars). A `HELD` booking whose hold has run out is not cancelled: it is recorded as `EXPIRED` and the answer is `409 INVALID_STATE` (CXL-01). `cancelledBy` is `MEMBER` when the owner cancels (also an admin cancelling their own booking) and `ADMIN` when an admin cancels another member's booking.
 - **FR-BK-05** `GET /api/v1/bookings/me?status=&from=&to=&page=&size=` shall list the caller's bookings, newest start first by default.
 - **FR-BK-06** `GET /api/v1/bookings/{id}` shall return a booking the caller owns (or any booking, for ADMIN).
 - **FR-BK-07** Every booking response shall include: `id`, `bookableId`, `bookableName`, `bookableLabel`, `venueName`, `venueTimeZone`, `start`, `end`, `status`, `expiresAt` (if HELD), `createdAt`, `cancelledAt`, `cancelledBy` (`MEMBER`/`ADMIN`/`SYSTEM`).
