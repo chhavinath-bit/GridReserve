@@ -12,6 +12,7 @@ import com.gridreserve.booking.common.dto.PageResponse;
 import com.gridreserve.booking.member.service.MemberProvisioner;
 import com.gridreserve.common.web.error.CommonErrorCode;
 import com.gridreserve.common.web.error.DomainException;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -19,9 +20,11 @@ import org.springframework.resilience.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.sql.SQLException;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -39,13 +42,15 @@ public class BookingService {
     private final MemberProvisioner members;
     private final BookingRepository bookings;
     private final CatalogService catalog;
+    private final BookingMetrics metrics;
 
     public BookingService(BookingTransactions transactions, MemberProvisioner members, BookingRepository bookings,
-                          CatalogService catalog) {
+                          CatalogService catalog, BookingMetrics metrics) {
         this.transactions = transactions;
         this.members = members;
         this.bookings = bookings;
         this.catalog = catalog;
+        this.metrics = metrics;
     }
 
     /**
@@ -56,17 +61,31 @@ public class BookingService {
     public BookingResponse hold(long memberId, CreateHoldRequest request) {
         BookingRules.checkTimes(request.start(), request.end());
         members.ensure(memberId);
-        return transactions.hold(memberId, request);
+        return counted(() -> transactions.hold(memberId, request));
     }
 
     @Retryable(includes = PessimisticLockingFailureException.class, maxRetries = 2, delay = 50, jitter = 25)
     public BookingResponse confirm(long memberId, long bookingId) {
-        return transactions.confirm(memberId, bookingId);
+        return counted(() -> transactions.confirm(memberId, bookingId));
     }
 
     @Retryable(includes = PessimisticLockingFailureException.class, maxRetries = 2, delay = 50, jitter = 25)
     public BookingResponse cancel(long callerId, boolean admin, long bookingId, String reason) {
-        return transactions.cancel(callerId, admin, bookingId, reason);
+        return counted(() -> transactions.cancel(callerId, admin, bookingId, reason));
+    }
+
+    /**
+     * Runs one attempt and counts it if PostgreSQL killed it for a deadlock. The retry proxy sits outside
+     * this method, so every failed attempt passes through here once.
+     */
+    private <T> T counted(Supplier<T> attempt) {
+        try {
+            return attempt.get();
+        } catch (PessimisticLockingFailureException ex) {
+            metrics.lockFailure(NestedExceptionUtils.getMostSpecificCause(ex) instanceof SQLException sql
+                    && sql.getSQLState() != null ? sql.getSQLState() : "unknown");
+            throw ex;
+        }
     }
 
     /** One booking: the owner's, or any for an admin; otherwise 404 (FR-BK-06, FR-ROLE-04). */

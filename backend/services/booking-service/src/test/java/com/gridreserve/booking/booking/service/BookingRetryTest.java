@@ -15,6 +15,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 import java.time.Instant;
 
@@ -33,7 +34,7 @@ import static org.mockito.Mockito.when;
  * transaction class mocked so it can fail on demand. Without Spring there would be no retry proxy.
  */
 @SpringJUnitConfig
-@Import({RetryConfig.class, BookingService.class})
+@Import({RetryConfig.class, BookingService.class, BookingMetrics.class, SimpleMeterRegistry.class})
 class BookingRetryTest {
 
     private static final CreateHoldRequest REQUEST = new CreateHoldRequest(1L,
@@ -54,6 +55,9 @@ class BookingRetryTest {
     @Autowired
     BookingService service;
 
+    @Autowired
+    BookingMetrics metrics;
+
     // How Spring reports PostgreSQL's 40P01 (deadlock detected) through JPA.
     private static CannotAcquireLockException deadlock() {
         return new CannotAcquireLockException("deadlock detected");
@@ -65,8 +69,11 @@ class BookingRetryTest {
         BookingResponse created = mock(BookingResponse.class);
         when(transactions.hold(anyLong(), eq(REQUEST))).thenThrow(deadlock()).thenReturn(created);
 
+        double before = metrics.lockFailures();
         assertThat(service.hold(7L, REQUEST)).isSameAs(created);
         verify(transactions, times(2)).hold(7L, REQUEST);
+        // The failed attempt is counted once (gridreserve.db.retries), the successful one not.
+        assertThat(metrics.lockFailures() - before).isEqualTo(1);
     }
 
     @Test

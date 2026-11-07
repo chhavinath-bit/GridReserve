@@ -41,20 +41,22 @@ class BookingTransactions {
     private final CatalogService catalog;
     private final MemberLock memberLock;
     private final HoldExpiryMetrics expiryMetrics;
+    private final BookingMetrics bookingMetrics;
     private final Clock clock;
 
     BookingTransactions(BookingRepository bookings, CatalogService catalog, MemberLock memberLock,
-                        HoldExpiryMetrics expiryMetrics, Clock clock) {
+                        HoldExpiryMetrics expiryMetrics, BookingMetrics bookingMetrics, Clock clock) {
         this.bookings = bookings;
         this.catalog = catalog;
         this.memberLock = memberLock;
         this.expiryMetrics = expiryMetrics;
+        this.bookingMetrics = bookingMetrics;
         this.clock = clock;
     }
 
     /**
-     * Creates a HELD booking (FR-BK-01). Locks in the global order (CLAUDE.md §8.3): venue and bookable
-     * {@code FOR SHARE}, member {@code FOR UPDATE}, then the stale holds in the way. Rules in the BR-14
+     * Creates a HELD booking (FR-BK-01). Locks in the global order (CLAUDE.md §8.3): venue {@code FOR
+     * SHARE}, bookable {@code FOR UPDATE} (D-41), member {@code FOR UPDATE}, then the stale holds in the way. Rules in the BR-14
      * order; the member limit (BR-08) is counted under the member lock, so two parallel holds of one
      * member can't both see room for one more. The insert is the real decision on overlaps: the exclusion
      * constraints reject one even if two requests got this far at the same time.
@@ -83,8 +85,13 @@ class BookingTransactions {
             // Flush now, so a constraint violation surfaces here and not at commit, outside this try.
             bookings.saveAndFlush(hold);
         } catch (DataIntegrityViolationException ex) {
-            throw ConstraintViolations.translate(ex);
+            RuntimeException translated = ConstraintViolations.translate(ex);
+            if (translated instanceof DomainException conflict) {
+                bookingMetrics.conflict(conflict.errorCode().code());
+            }
+            throw translated;
         }
+        bookingMetrics.created(bookable.categoryCode(), bookable.typeCode());
         return BookingMapper.toResponse(hold, bookable.info());
     }
 
