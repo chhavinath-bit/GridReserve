@@ -49,6 +49,11 @@ public class TestJwtKeys implements ApplicationContextInitializer<ConfigurableAp
         return sign(KEYS, KEY_ID, claims(Instant.now()).build());
     }
 
+    /** A valid MEMBER token for {@code userId}, issued now. */
+    public static String memberToken(long userId) {
+        return sign(KEYS, KEY_ID, claims(Instant.now()).subject(Long.toString(userId)).build());
+    }
+
     /** A valid ADMIN token for user 1, issued now. */
     public static String adminToken() {
         return sign(KEYS, KEY_ID, claims(Instant.now()).subject("1").claim("role", "ADMIN").build());
