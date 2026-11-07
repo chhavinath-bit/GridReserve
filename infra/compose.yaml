@@ -95,6 +95,8 @@ services:
       IDENTITY_DB_USER: ${IDENTITY_DB_USER}
       IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD}
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
+      # Service clients allowed to get service tokens (D-19): only the SHA-256 of each secret.
+      BOOKING_SERVICE_CLIENT_SECRET_SHA256: ${BOOKING_SERVICE_CLIENT_SECRET_SHA256}
     depends_on:
       postgres:
         condition: service_healthy
@@ -121,6 +123,8 @@ services:
       DB_HOST: postgres
       BOOKING_DB_USER: ${BOOKING_DB_USER}
       BOOKING_DB_PASSWORD: ${BOOKING_DB_PASSWORD}
+      # Its own client secret for service tokens from identity-service (D-19).
+      BOOKING_SERVICE_CLIENT_SECRET: ${BOOKING_SERVICE_CLIENT_SECRET}
     depends_on:
       postgres:
         condition: service_healthy

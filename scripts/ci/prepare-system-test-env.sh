@@ -5,7 +5,8 @@
 #   <workspace>/GridReserve   (this repo)
 #   <workspace>/gridreserve-config
 #
-# 1. Writes infra/.env from .env.example with random database passwords.
+# 1. Writes infra/.env from .env.example with random database passwords and a random service-client
+#    secret for booking-service (with its SHA-256 for identity-service).
 # 2. Generates a new RSA key pair: the private key goes into infra/.env (JWT_PRIVATE_KEY), the public key
 #    replaces the dev public key in the runner's copy of gridreserve-config/application.yml.
 # Nothing is committed or pushed; the runner is discarded after the job. Values are never printed.
@@ -21,12 +22,17 @@ openssl pkey -in "$work/private.pem" -pubout -out "$work/public.pem"
 private_one_line="$(awk 'NF {printf "%s\\n", $0}' "$work/private.pem")"
 
 python3 - "$app_dir/infra/.env.example" "$app_dir/infra/.env" "$private_one_line" <<'PY'
-import secrets, sys
+import hashlib, secrets, sys
 example, target, private_key = sys.argv[1], sys.argv[2], sys.argv[3]
+client_secret = secrets.token_hex(32)
 lines = []
 for line in open(example):
     if line.startswith("JWT_PRIVATE_KEY="):
         line = "JWT_PRIVATE_KEY=" + private_key + "\n"
+    elif line.startswith("BOOKING_SERVICE_CLIENT_SECRET="):
+        line = "BOOKING_SERVICE_CLIENT_SECRET=" + client_secret + "\n"
+    elif line.startswith("BOOKING_SERVICE_CLIENT_SECRET_SHA256="):
+        line = "BOOKING_SERVICE_CLIENT_SECRET_SHA256=" + hashlib.sha256(client_secret.encode()).hexdigest() + "\n"
     elif "=change-me" in line:
         line = line.replace("change-me", secrets.token_hex(16))
     lines.append(line)
