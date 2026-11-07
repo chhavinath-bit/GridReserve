@@ -27,6 +27,7 @@
 | Social sign-in | Spring Security OAuth2 client | Sign in with Google (OIDC) and GitHub (OAuth2) in identity-service (D-35 withdrawn) | Optional extension, not planned |
 | Frontend | React + TypeScript + Tailwind CSS | Single-page app | P1 |
 | Frontend tooling | Vite, TanStack Query, React Router | Build, server state, routing | P1 |
+| Forms | Formik + Yup | Form state and client-side validation mirroring the backend rules (owner request, M1.6) | P1 |
 | UI components | shadcn/ui (copied into the repo) on Radix primitives; design tokens as CSS variables | Accessible, reusable, themeable components (DESIGN_SYSTEM.md) | P1 |
 | Frontend tests | Vitest + React Testing Library; Playwright | Unit/component tests; end-to-end tests | P1 |
 | Cache / distributed rate limits | Redis 7 | Availability cache (booking service); gateway rate limiting | **P4 only** |
@@ -248,7 +249,8 @@ Each section: **role**, **why**, **how it interacts**, **alternatives rejected**
 | PostgreSQL | 16 (same tag in Compose, Testcontainers, prod) | — |
 | Redis | 7 (P4) | — |
 | Node.js | Current LTS | — |
-| React, React Router, TanStack Query, Tailwind, Vite, Vitest, Playwright | Latest stable | — |
+| React 19.3, React Router 8.5, TanStack Query 5.107, Tailwind CSS 4.3, Vite 8.3, TypeScript 6.0, Vitest 5.1, Formik 2.4, Yup 1.7 | Pinned exactly in `frontend/package.json` (M1.6); Node 24 LTS (`frontend/.nvmrc`) | TypeScript stays on 6.0 until `typescript-eslint` supports 7 |
+| Playwright | Latest stable when added (M1.13) | — |
 | Nimbus JOSE, Flyway, Testcontainers | Latest stable, managed by BOMs where possible | Artifact names may differ on Boot 4 |
 
 ## 6. Note on CLAUDE.md

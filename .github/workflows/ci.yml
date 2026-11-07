@@ -33,3 +33,34 @@ jobs:
       # (Testcontainers works on GitHub's Ubuntu runners, which have Docker).
       - name: Build and test
         run: ./mvnw -B verify
+
+  frontend:
+    name: Frontend checks and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      # Node version from frontend/.nvmrc (24 LTS); npm cache keyed on package-lock.json.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install exact locked versions
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit and component tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build

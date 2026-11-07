@@ -1,0 +1,192 @@
+/*
+ * GridReserve design tokens (DESIGN_SYSTEM.md §3). The only place colors are defined: components use
+ * the Tailwind names mapped in @theme below (bg-primary, text-muted-foreground, ...), never raw values.
+ * Light on :root, dark on .dark (set on <html> before first paint, see index.html).
+ */
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@fontsource-variable/inter';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* 3.1 core */
+  --background: #ffffff;
+  --canvas: #f7f7f8;
+  --card: #ffffff;
+  --popover: #ffffff;
+  --foreground: #18181b;
+  --card-foreground: #18181b;
+  --popover-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #52525b;
+  --subtle-foreground: #71717a;
+  --border: #e4e4e7;
+  --input: #8a8a93;
+  --ring: #4f46e5;
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-foreground: #ffffff;
+  --primary-soft: #eef0ff;
+  --primary-soft-foreground: #3730a3;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --accent: #eef0ff;
+  --accent-foreground: #3730a3;
+
+  /* 3.2 status */
+  --success: #15803d;
+  --success-soft: #ecfdf3;
+  --success-soft-foreground: #166534;
+  --warning: #b45309;
+  --warning-soft: #fff7e6;
+  --warning-soft-foreground: #92400e;
+  --destructive: #dc2626;
+  --destructive-hover: #b91c1c;
+  --destructive-foreground: #ffffff;
+  --destructive-soft: #fef2f2;
+  --destructive-soft-foreground: #991b1b;
+
+  /* 3.3 slot states (SlotGrid only) */
+  --slot-taken: #f4f4f5;
+  --slot-taken-foreground: #626269;
+
+  /* 3.6 radius and elevation */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --shadow-sm: 0 1px 2px 0 rgb(24 24 27 / 0.06), 0 1px 3px 0 rgb(24 24 27 / 0.08);
+  --shadow-lg: 0 10px 30px -10px rgb(24 24 27 / 0.25), 0 4px 10px -4px rgb(24 24 27 / 0.12);
+}
+
+.dark {
+  --background: #0b0b0e;
+  --canvas: #0b0b0e;
+  --card: #141418;
+  --popover: #141418;
+  --foreground: #f4f4f5;
+  --card-foreground: #f4f4f5;
+  --popover-foreground: #f4f4f5;
+  --muted: #1c1c21;
+  --muted-foreground: #a1a1aa;
+  --subtle-foreground: #8b8b94;
+  --border: #27272a;
+  --input: #6b6b75;
+  --ring: #8b8cf8;
+  --primary: #8b8cf8;
+  --primary-hover: #a5a6fa;
+  --primary-foreground: #14123a;
+  --primary-soft: #1e1d3f;
+  --primary-soft-foreground: #c7c8fd;
+  --secondary: #1c1c21;
+  --secondary-foreground: #f4f4f5;
+  --accent: #1e1d3f;
+  --accent-foreground: #c7c8fd;
+
+  --success: #4ade80;
+  --success-soft: #0e2a1a;
+  --success-soft-foreground: #86efac;
+  --warning: #fbbf24;
+  --warning-soft: #2e2108;
+  --warning-soft-foreground: #fcd34d;
+  --destructive: #f87171;
+  --destructive-hover: #fca5a5;
+  --destructive-foreground: #2a0a0a;
+  --destructive-soft: #2e1010;
+  --destructive-soft-foreground: #fca5a5;
+
+  --slot-taken: #1c1c21;
+  --slot-taken-foreground: #8b8b94;
+
+  /* Dark mode elevates with lighter surfaces, not shadows (§3.6). */
+  --shadow-sm: none;
+  --shadow-lg: 0 0 0 1px #27272a;
+}
+
+@theme inline {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-background: var(--background);
+  --color-canvas: var(--canvas);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-foreground: var(--primary-soft-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-soft-foreground: var(--success-soft-foreground);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-soft-foreground: var(--warning-soft-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-hover: var(--destructive-hover);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-destructive-soft-foreground: var(--destructive-soft-foreground);
+  --color-slot-taken: var(--slot-taken);
+  --color-slot-taken-foreground: var(--slot-taken-foreground);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-lg: var(--shadow-lg);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    @apply bg-canvas text-foreground font-sans antialiased;
+  }
+  /* Focus ring: 2 px ring with 2 px offset on every interactive element (§7). */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.01em;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  /* TAKEN slots: a diagonal hatch, so the state is visible without color (§3.3). */
+  .hatch {
+    background-image: repeating-linear-gradient(
+      135deg,
+      transparent 0 6px,
+      color-mix(in srgb, var(--slot-taken-foreground) 18%, transparent) 6px 7px
+    );
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}

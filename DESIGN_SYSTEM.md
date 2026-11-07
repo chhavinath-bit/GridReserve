@@ -49,6 +49,8 @@ Tokens are CSS variables defined once (`src/styles/globals.css`) for `:root` (li
 | `--primary-soft` | `#EEF0FF` | `#1E1D3F` | Selected rows, active nav, highlights |
 | `--primary-soft-foreground` | `#3730A3` | `#C7C8FD` | Text on primary-soft |
 
+Implementation aliases (no new colors, so no new contrast pairs): shadcn's `--muted`, `--secondary` reuse `--slot-taken`'s neutral (`#F4F4F5` / `#1C1C21`), and `--accent` / `--accent-foreground` reuse `--primary-soft` / `--primary-soft-foreground`.
+
 ### 3.2 Color — status
 
 | Token | Light | Dark | Use |
@@ -217,6 +219,6 @@ Letter spacing `-0.01em` for 20 px and above. Never more than two weights on one
 |---|---|---|
 | D-UI-1 | Calm, precise SaaS style; neutral + single indigo accent | Decided 2026-11-05 |
 | D-UI-2 | shadcn/ui + Radix, Tailwind, light + dark tokens | Decided 2026-11-05 |
-| D-UI-3 | Supporting UI packages: shadcn's standard helpers (`class-variance-authority`, `clsx`, `tailwind-merge`, `lucide-react` icons, `tw-animate-css`), `sonner` (toasts), `react-day-picker` (calendar), `@tanstack/react-table` (admin tables), `@fontsource-variable/inter` (self-hosted font) | **Pending approval** at M1.6 (exact list shown before install) |
+| D-UI-3 | Supporting UI packages: shadcn's standard helpers (`class-variance-authority`, `clsx`, `tailwind-merge`, `lucide-react` icons, `tw-animate-css`), `radix-ui` (the primitives), `sonner` (toasts), `@fontsource-variable/inter` (self-hosted font) | **Decided 2026-11-07** (M1.6, owner approved the exact list). `react-day-picker` (calendar) and `@tanstack/react-table` (admin tables) still **pending**, asked when first needed |
 | D-UI-4 | `@axe-core/playwright` for automated accessibility checks | **Pending approval** at M1.13 |
 | D-UI-5 | Storybook vs dev-only component gallery route | Gallery route (no new dependency) unless Storybook is approved |

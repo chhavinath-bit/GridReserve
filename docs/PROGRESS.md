@@ -14,7 +14,8 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 | M1.3c Token checks in the gateway and booking-service | Done (owner reviewed; [review guide](reviews/M1.3c-review.md)) | 2026-11-06 | `2792e21` (merge of PR #8); no config repo change; CI on `main` (`2792e21`) green, 36 + 78 tests |
 | M1.3d Sign-in with Google and GitHub | **Dropped** (owner, 2026-11-06): too much work for its value; optional extension, design kept in the docs (D-35 withdrawn). M1.3 is complete with a, b, c. | 2026-11-06 | — |
 | M1.4 Catalog, countries and availability | Done (owner reviewed; [review guide](reviews/M1.4-review.md)) | 2026-11-06 | `2e8e88f` (merge of PR #10); no config repo change; CI on `main` (`2e8e88f`) green; local `verify` on `main` 2026-11-07: 156 tests, 0 failures |
-| M1.5 Booking engine core (hold, confirm, cancel) | Built; **awaiting owner review** ([review guide](reviews/M1.5-review.md)) | 2026-11-07 | branch `m1.5-booking-engine`; no config repo change |
+| M1.5 Booking engine core (hold, confirm, cancel) | Done (owner reviewed; [review guide](reviews/M1.5-review.md)) | 2026-11-07 | `5eb2abc` (merge of PR #11); no config repo change; CI on `main` (`5eb2abc`) green; local `verify` on `main` 2026-11-07: 188 tests, 0 failures |
+| M1.6 Thin vertical slice (frontend through the gateway) | Built; **awaiting owner review** ([review guide](reviews/M1.6-review.md)) | 2026-11-07 | branch `m1.6-frontend-slice`; no config repo change |
 
 ---
 
@@ -409,7 +410,7 @@ What the new tests execute (behavior): grid sizes for 15/30/60-minute slots, anc
 
 ---
 
-## M1.5 Booking engine core: hold, confirm, cancel — Built, awaiting owner review (2026-11-07)
+## M1.5 Booking engine core: hold, confirm, cancel — Done (2026-11-07)
 
 **Built (booking-service):**
 - `POST /bookings` (hold, `201` + `Location`, `HELD` for 5 minutes), `POST /bookings/{id}/confirm`, `POST /bookings/{id}/cancel` (optional `reason`), `GET /bookings/me` (newest start first; `status`, `from`, `to`, paged), `GET /bookings/{id}` (FR-BK-01..07). The owner is the token's `sub`; another member's booking is `404` (FR-ROLE-04); admins read and cancel any booking (`cancelledBy: ADMIN`) and book only for themselves.
@@ -451,6 +452,60 @@ What the new tests execute (behavior): hold 201 with `Location`, names from the 
 
 ### Open issues for later milestones
 - From M1.4: whether a whole booking (duration + buffer) fits the opening hours is BR-02/BR-04, now planned in M1.7 (not M1.5).
+
+---
+
+## M1.6 Thin vertical slice: frontend through the gateway — Built, awaiting owner review (2026-11-07)
+
+**Built (`frontend/`, new):**
+- Vite 8 + React 19 + TypeScript 6 (strict) + Tailwind 4 + TanStack Query + React Router; dev server on `:5173` proxies `/api` to the gateway.
+- Design tokens (DESIGN_SYSTEM §3) as CSS variables for light and dark, applied before first paint; theme toggle (System / Light / Dark, the only thing in `localStorage`).
+- Base components in the shadcn style on `radix-ui` (Button with loading, Input, Label, Select, Card, Badge, Skeleton, Alert, Toaster).
+- Patterns: `AppShell`, `PageHeader`, `StatusBadge`, `DateStrip`, `SlotGrid` (roving tabindex, arrow keys, state in words and with the hatch for TAKEN), `HoldTimer` (announces at 1 minute and expiry), `ConflictNotice`, loading / error / empty states with the "temporarily unavailable" variant.
+- `api/client.ts`: access token in memory only, `X-GridReserve-Client` header, single-flight refresh on `401 TOKEN_EXPIRED` with one retry, session end on failed refresh, standard error JSON → `ApiError` with one message per code (`api/errors.ts`), non-JSON 5xx and network errors → temporary codes.
+- Pages: Login, Register (session restored on reload through the refresh cookie; `returnTo` limited to same-site paths; Formik + Yup validation mirroring identity-service's rules: required fields, email format, password 8–72 on register, name ≤ 100, no minimum on login; an invalid form sends no request; errors under each field, a summary and focus on the first wrong field; server field errors still shown under their field), Browse (category in the URL → venue cards), Venue (bookables grouped by type label; CAPACITY shown as "Sessions coming soon"), Slot picker (date strip for the horizon, grid in venue time, min/max-aware selection, Hold → countdown → Confirm / Release, 409 → notice + refetch, HOLD_EXPIRED → "Pick again"), My bookings (Upcoming / Past / Cancelled & expired; confirm or release a live hold, cancel with an inline confirmation).
+- Dev-only gallery `/dev/components` (every component, light and dark side by side), left out of production builds.
+- CI: new `frontend` job (Node 24 from `.nvmrc`; `npm ci`, typecheck, lint, test, build).
+- Docs: D-UI-3 decided (DESIGN_SYSTEM §10, CLAUDE.md §15.1), CLAUDE.md §13 frontend commands verified, TECH_STACK versions pinned, README "Run the frontend" and status, review guide, learning file §10.
+
+**Dependencies added (approved 2026-11-07):** runtime `react`, `react-dom` 19.3.1, `react-router` 8.5.1, `@tanstack/react-query` 5.107.1, `radix-ui` 1.8.1, `class-variance-authority` 0.7.1, `clsx` 2.1.1, `tailwind-merge` 3.7.0, `lucide-react` 1.70.0, `sonner` 2.0.8, `@fontsource-variable/inter` 5.3.0; dev `typescript` 6.0.3, `vite` 8.3.6, `@vitejs/plugin-react` 6.2.1, `tailwindcss` + `@tailwindcss/vite` 4.3.5, `tw-animate-css` 1.4.0, `vitest` 5.1.0, `jsdom` 31.0.0, `@testing-library/react` 16.3.3, `@testing-library/jest-dom` 7.0.1, `@testing-library/user-event` 14.6.8, `@types/react`, `@types/react-dom` 19.3.0, `@types/node` 26.6.6, `eslint` 10.14.0, `typescript-eslint` 8.72.1, `eslint-plugin-react-hooks` 7.1.1; later in M1.6, on the owner's request, `formik` 2.4.9 and `yup` 1.7.1 (runtime). npm 12 blocked `fsevents`' install script (optional macOS file watcher); not approved, not needed.
+
+**Plan deviations:** base components were written by hand in the shadcn style instead of with the shadcn CLI (the CLI installs packages on its own; this keeps the approved list exact); `components.json` is present so the CLI can be used later. No `react-day-picker`: the date strip covers the 7-day horizon.
+
+### Test results
+
+`cd frontend` on 2026-11-07: `npm run typecheck` clean; `npm run lint` 0 problems; `npm test` **9 files, 36 tests passed**; `npm run build` succeeds (main bundle 626 kB, 197 kB gzipped, of which Formik + Yup add about 79 kB / 25 kB; gallery not included).
+
+| File | Tests | What it executes |
+|---|---|---|
+| `api/client.test.ts` | 8 | token and client header sent; standard error JSON → `ApiError` with our message and `requestId`; HTML 502 → `SERVICE_UNAVAILABLE`, failed fetch → `NETWORK_ERROR`; two parallel `TOKEN_EXPIRED` → **one** refresh, both retried with the new token (5 calls); failed refresh → session ended once; no retry on 403/404/409; auth calls use `credentials: include` without the access token; refresh sends the client header |
+| `lib/time.test.ts` | 5 | venue zone vs another zone; range format; "today" is the venue's date (20:00Z is tomorrow in Kolkata); month end; countdown |
+| `features/availability/selection.test.ts` | 5 | minimum on first click, extend to max, restart beyond max; clear on reselect; not across TAKEN; trainer picks 3 × 15 min; refusal with a reason |
+| `components/patterns/SlotGrid.test.tsx` | 3 | state names in words and `aria-pressed`/`aria-disabled`; only FREE selectable; Tab lands on the first free slot, arrows/Home/End move, Enter selects, one cell in the tab order |
+| `components/patterns/HoldTimer.test.tsx` | 1 | countdown, one-minute announcement, expiry fired exactly once (fake timers) |
+| `lib/bookingStatus.test.ts` | 3 | run-out HELD shown as EXPIRED; tab sorting; countdown from the hold's length despite a wrong device clock |
+| `features/auth/schemas.test.ts` | 5 | register: valid form; every field required, spaces are not a name; email format; password 8 / 72 / 73; name 101 → error; login: required only, no minimum |
+| `features/availability/SlotPickerPage.test.tsx` | 2 | after a confirm, picking another slot brings back "Hold slot" and sends the next hold, and the confirmed slot is no longer "held by you"; while a hold is live, another pick shows "Confirm or release your current hold first." |
+| `features/auth/AuthForms.test.tsx` | 4 | login empty submit: no request, both messages, summary, `aria-invalid` + description, focus on Email; valid login sends trimmed email, wrong credentials shown for the form; register bad email + short password: no request, focus on Email; server field error (72 bytes) shown under Password |
+
+Backend unchanged since M1.5 (local `verify` on `main` 188 tests, 0 failures, see the M1.5 row).
+
+**Mutation checks (all reverted):** no `validationSchema` on the login form fails "an empty submit sends nothing"; no single-flight in `refreshSession` fails "share one refresh"; every slot selectable fails "selects free slots only" and "names every state in words"; no effective expiry fails "shows as EXPIRED" and the tab test.
+
+**First runs that failed (fixed, not weakened):** TypeScript 6 rejects `baseUrl` (deprecated), removed; ESLint's React hooks rules found `Date.now()` read during render in three places (fixed with `useNow` and lazy state) and a `useCallback` the compiler can't keep (removed); the HoldTimer test showed that a timeout re-armed after each render can stall, so the timer now uses `setInterval`; one SlotGrid test had a wrong expectation (6 slots have no second row below the third), corrected; the schema test helper kept Yup's last message per field, while Formik shows the first (an empty password breaks "required" and "min 8"), corrected to match Formik; the gallery chunk was still emitted in production builds, now excluded.
+
+**Found by the owner in the browser (fixed):** after confirming, the panel kept the confirmed card, so a newly selected slot had no "Hold slot" button and no request was sent; the confirmed slot also kept the "held by you" look. Now a new pick after a confirmed or expired booking resets the panel, "held by you" shows only for a live hold, and during a live hold a pick explains what to do. Covered by `SlotPickerPage.test.tsx` (failed before the fix).
+
+**Through the real dev server and stack** (Vite on `:5173`, Compose stack): every module compiles; the browser's requests replayed with curl through the proxy (same origin, `Origin: http://localhost:5173`, `X-GridReserve-Client: web`, cookie jar): refresh without a cookie 401 → login sets the `HttpOnly` cookie on `/api/v1/auth` → `/me` Alice Demo → Sports → Sunrise Turf → Court A (label Court, Asia/Kolkata, 60/60/120, horizon 7) → tomorrow 17 slots → hold 201 → bob same slot 409 `SLOT_TAKEN` → confirm CONFIRMED → "reload": refresh with the cookie gives a new token, session restored → My bookings lists it → refresh without the client header 403 → cancel → logout 204, refresh afterwards 401. The hold answer from the old container still showed nanoseconds; after rebuilding booking-service from M1.5's code it shows microseconds, as fixed in M1.5. Routing after the rebuild took about 48 s.
+
+### Not covered yet
+- **No real browser run by Claude** (no headless browser on this machine; Playwright is M1.13): rendering, clicks, the visible countdown, keyboard use, both themes and the two-window race are for the owner's check (review guide §2).
+- Playwright end-to-end tests (M1.13); admin screens (M1.11); `Idempotency-Key` on holds (M1.12).
+- Bundle splitting (M1.13); mobile bottom sheet for the summary (M1.13).
+- The top bar likely overflows at phone width (~460 px of content in one row); not fixed yet, owner to decide.
+
+### Open issues for later milestones
+- The gateway took up to ~48 s to route to a rebuilt booking-service (the README says ~15 s); worth measuring in M1.9 (Eureka and load-balancer cache intervals).
 
 ---
 

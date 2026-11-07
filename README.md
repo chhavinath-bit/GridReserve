@@ -2,7 +2,7 @@
 
 One booking platform for many kinds of venues: library rooms and seats, sports courts, parking bays, clinic appointments and gym sessions. A member picks a category, a venue and a bookable, holds a time slot for five minutes and confirms it. Double-booking is impossible, even under heavy concurrent load and with several service instances running.
 
-> **Status: Phase 1, M1.5.** Config server, Eureka, gateway, identity and booking services run together. identity-service registers users (and logs them in at once), issues RS256 access tokens plus a refresh-token cookie (sliding 7 days, logout ends it) and answers `/api/v1/me`. The gateway refuses requests without a valid access token, and booking-service checks the token and the role again itself, without calling identity-service. booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. booking-service serves the catalog (categories, venues, bookables with their effective rules, countries and time zones) and slot availability for a date (M1.4). Members hold a slot for 5 minutes, confirm it and cancel it; admins can cancel any booking (M1.5). The full set of booking rules and the hold-expiry job come next (M1.6 is the first frontend slice, M1.7 the rules). Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
+> **Status: Phase 1, M1.6.** Config server, Eureka, gateway, identity and booking services run together. identity-service registers users (and logs them in at once), issues RS256 access tokens plus a refresh-token cookie (sliding 7 days, logout ends it) and answers `/api/v1/me`. The gateway refuses requests without a valid access token, and booking-service checks the token and the role again itself, without calling identity-service. booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. booking-service serves the catalog (categories, venues, bookables with their effective rules, countries and time zones) and slot availability for a date (M1.4). Members hold a slot for 5 minutes, confirm it and cancel it; admins can cancel any booking (M1.5). A React frontend runs the whole journey in the browser through the gateway (M1.6). The full set of booking rules and the hold-expiry job come next (M1.7). Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## What this project demonstrates
 
@@ -143,6 +143,25 @@ curl -s -X POST localhost:8080/api/v1/bookings/1/cancel -H "$H" -H "$J" -d '{"re
 ```
 
 The same slot for another member answers `409 SLOT_TAKEN`; the same member at the same time on another bookable answers `409 MEMBER_OVERLAP`. Both come from PostgreSQL exclusion constraints, not from a Java check, so they hold even when two requests arrive together. Admins can cancel any booking (`cancelledBy: ADMIN`) but book only for themselves. In this milestone a hold checks only that the times are in order, the bookable and venue are active, the bookable is booked by time slot, and the start is in the future; opening hours, the slot grid, durations, the horizon and the per-member limit are checked from M1.7, and the cancellation cutoff too.
+
+### Run the frontend
+
+The React app (`frontend/`) talks only to the gateway. In development Vite serves it on `http://localhost:5173` and forwards `/api` to the gateway on `:8080`, so the browser sees one origin and the refresh cookie works without CORS. Needs Node 24 or newer (`frontend/.nvmrc`) and the Compose stack running.
+
+```bash
+cd frontend
+npm ci            # exact versions from package-lock.json
+npm run dev       # http://localhost:5173, log in with a demo account above
+```
+
+The slice in M1.6: log in or register → pick a category, venue and bookable → pick a date and a free time (times in the venue's zone) → **Hold slot** (5-minute countdown) → **Confirm booking** → **My bookings** (Upcoming, Past, Cancelled & expired; confirm, release or cancel from there). A reload keeps you logged in: the access token lives only in memory and is restored from the `HttpOnly` refresh cookie. Try the race: open a second browser profile as bob, select the same slot in both, hold in one, then the other answers "This slot was just taken" and refreshes the free times. The theme switch (System / Light / Dark) is in the top bar. In development `http://localhost:5173/dev/components` shows every component in every state, light and dark side by side (not part of production builds).
+
+```bash
+npm run typecheck   # TypeScript, strict
+npm run lint        # ESLint with the React hooks rules
+npm test            # Vitest + React Testing Library
+npm run build       # production build into frontend/dist
+```
 
 ### Access-token keys
 
