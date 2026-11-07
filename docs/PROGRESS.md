@@ -593,6 +593,8 @@ What the new tests execute (behavior): per type (Room 30/30–180, Seat 60/60–
 
 **CONC-10** (`./mvnw -B -pl system-tests -Psystem-tests verify`, stack with `--scale booking-service=2`, config clone on `m1.8-concurrency`): **22/22 passed** in 11.2 s (2 instances UP; 20 × [1 × 201, 49 × SLOT_TAKEN, one active row]; both instances served: the counters read 525/525 including 25/25 from the two earlier runs, so 500/500 in this run; no lock failures). Slowest round 0.50 s.
 
+**CI (run 42390661312, commit `427b5f8`):** backend, frontend and the new "System tests" job all green. The system-test job built a fresh stack with two booking instances (config branch `m1.8-concurrency`, picked by name): 22/22, `instance 1 handled 500 holds, instance 2 handled 500`, `pg_stat_database.deadlocks` 0 → 0.
+
 **Mutation checks:** bookable `FOR SHARE` again → `ConcurrencyIT` CONC-01 did not finish within 10 minutes (normally ~10 s) and was stopped; the runs before the fix on the same code show the failures (above). Gateway bulkhead on → CONC-10 fails with 503 (the runs before the config fix).
 
 **First runs that failed (fixed, not weakened):** the image build failed once the parent pom listed `system-tests` (the Dockerfile copied only libs, platform, services); it now copies the module's pom. The first commit of this milestone would not have compiled on its own (two files left out); amended before pushing.
