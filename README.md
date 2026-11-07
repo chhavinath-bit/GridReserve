@@ -2,7 +2,7 @@
 
 One booking platform for many kinds of venues: library rooms and seats, sports courts, parking bays, clinic appointments and gym sessions. A member picks a category, a venue and a bookable, holds a time slot for five minutes and confirms it. Double-booking is impossible, even under heavy concurrent load and with several service instances running.
 
-> **Status: Phase 1, M1.6.** Config server, Eureka, gateway, identity and booking services run together. identity-service registers users (and logs them in at once), issues RS256 access tokens plus a refresh-token cookie (sliding 7 days, logout ends it) and answers `/api/v1/me`. The gateway refuses requests without a valid access token, and booking-service checks the token and the role again itself, without calling identity-service. booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. booking-service serves the catalog (categories, venues, bookables with their effective rules, countries and time zones) and slot availability for a date (M1.4). Members hold a slot for 5 minutes, confirm it and cancel it; admins can cancel any booking (M1.5). A React frontend runs the whole journey in the browser through the gateway (M1.6). The full set of booking rules and the hold-expiry job come next (M1.7). Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
+> **Status: Phase 1, M1.7.** Config server, Eureka, gateway, identity and booking services run together. identity-service registers users (and logs them in at once), issues RS256 access tokens plus a refresh-token cookie (sliding 7 days, logout ends it) and answers `/api/v1/me`. The gateway refuses requests without a valid access token, and booking-service checks the token and the role again itself, without calling identity-service. booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. booking-service serves the catalog (categories, venues, bookables with their effective rules, countries and time zones) and slot availability for a date (M1.4). Members hold a slot for 5 minutes, confirm it and cancel it; admins can cancel any booking (M1.5). A React frontend runs the whole journey in the browser through the gateway (M1.6). Every booking rule (hours, grid, length, horizon, per-member limit, cancellation cutoff) is enforced and a background job expires unconfirmed holds (M1.7). The concurrency proof, including two booking-service instances, is next (M1.8). Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## What this project demonstrates
 
@@ -142,7 +142,27 @@ curl -s localhost:8080/api/v1/bookings/1 -H "$H"                            # on
 curl -s -X POST localhost:8080/api/v1/bookings/1/cancel -H "$H" -H "$J" -d '{"reason":"Plans changed"}'   # 200 CANCELLED
 ```
 
-The same slot for another member answers `409 SLOT_TAKEN`; the same member at the same time on another bookable answers `409 MEMBER_OVERLAP`. Both come from PostgreSQL exclusion constraints, not from a Java check, so they hold even when two requests arrive together. Admins can cancel any booking (`cancelledBy: ADMIN`) but book only for themselves. In this milestone a hold checks only that the times are in order, the bookable and venue are active, the bookable is booked by time slot, and the start is in the future; opening hours, the slot grid, durations, the horizon and the per-member limit are checked from M1.7, and the cancellation cutoff too.
+The same slot for another member answers `409 SLOT_TAKEN`; the same member at the same time on another bookable answers `409 MEMBER_OVERLAP`. Both come from PostgreSQL exclusion constraints, not from a Java check, so they hold even when two requests arrive together. Admins can cancel any booking (`cancelledBy: ADMIN`) but book only for themselves.
+
+### Booking rules and defaults
+
+Every hold is checked in this order; the first rule that fails is the answer (REQUIREMENTS BR-14): times in order (`400`) → bookable and venue active → booked by time slot → start in the future → within the horizon → inside that weekday's opening hours, on one local date → on the slot grid → allowed length → fewer than 3 active bookings in the category (all `422`, each with its own code) → no overlap (`409`, decided by PostgreSQL). Times are the venue's local time; the horizon is today plus the next 6 days there.
+
+| Bookable type | Slot grid | Length | Buffer after |
+|---|---|---|---|
+| Study Room | 30 min | 30 min – 3 h | — |
+| Study Seat | 60 min | 1 – 4 h | — |
+| Sports Court | 60 min | 1 – 2 h | — |
+| Parking Bay | 60 min | 1 – 12 h | — |
+| Clinic Doctor | 30 min | exactly 30 min | — |
+| Gym Trainer | 15 min | exactly 45 min | 15 min (one client per hour) |
+| Study Hall, Gym Class | sessions (CAPACITY, Phase 2) | | |
+
+Per category: cancellation cutoff 2 hours, at most 3 active bookings (HELD or CONFIRMED, not yet ended), horizon 7 days. A bookable may override the type's grid, length and buffer, and may have its own weekly hours.
+
+**Cancelling:** a live hold any time; a confirmed booking until 2 hours before its start (after that `422 CUTOFF_PASSED`); admins until it ends; nothing after the end (`409 INVALID_STATE`). Every booking response has `cancellableUntil`, so the UI can disable Cancel in time.
+
+**Hold expiry:** a hold that isn't confirmed within 5 minutes stops blocking the slot at once (every check compares `expires_at` with now). The `HoldExpiryJob` marks such holds `EXPIRED` every 30 seconds, safely on any number of booking-service instances; settings `gridreserve.holds.expiry.{enabled,interval,batch-size}` (defaults on, 30 s, 100).
 
 ### Run the frontend
 
@@ -174,7 +194,7 @@ cd backend
 ./mvnw -B verify
 ```
 
-`verify` runs unit tests (`*Test`, Surefire) and integration tests against a real PostgreSQL 16 in a Testcontainer (`*IT`, Failsafe). The schema guarantees are proven in `services/booking-service/src/test/java/com/gridreserve/booking/schema/BookingConstraintsIT.java`; registration, login and tokens in `services/identity-service/src/test/java/com/gridreserve/identity/auth/AuthFlowIT.java`; the refresh cookie, logout and the CSRF check in `RefreshFlowIT.java` next to it. The gateway's token check is in `platform/api-gateway/src/test/java/com/gridreserve/gateway/GatewayTokenCheckIT.java`, booking-service's in `services/booking-service/src/test/java/com/gridreserve/booking/config/BookingSecurityIT.java`. The catalog and availability are covered by `CatalogIT` and `AvailabilityIT` (integration) and `RuleResolverTest` and `LocalSlotGridTest` (unit, including daylight-saving days). Hold, confirm and cancel are covered by `booking/BookingLifecycleIT` (integration, with a movable clock so holds can run out without waiting) and `BookingRulesTest`, `BookingRetryTest` and `ConstraintViolationsTest` (unit). Tests generate throwaway keys; no key is needed to run them.
+`verify` runs unit tests (`*Test`, Surefire) and integration tests against a real PostgreSQL 16 in a Testcontainer (`*IT`, Failsafe). The schema guarantees are proven in `services/booking-service/src/test/java/com/gridreserve/booking/schema/BookingConstraintsIT.java`; registration, login and tokens in `services/identity-service/src/test/java/com/gridreserve/identity/auth/AuthFlowIT.java`; the refresh cookie, logout and the CSRF check in `RefreshFlowIT.java` next to it. The gateway's token check is in `platform/api-gateway/src/test/java/com/gridreserve/gateway/GatewayTokenCheckIT.java`, booking-service's in `services/booking-service/src/test/java/com/gridreserve/booking/config/BookingSecurityIT.java`. The catalog and availability are covered by `CatalogIT` and `AvailabilityIT` (integration) and `RuleResolverTest` and `LocalSlotGridTest` (unit, including daylight-saving days). Hold, confirm and cancel are covered by `booking/BookingLifecycleIT` (integration, with a movable clock so holds can run out without waiting), `CancellationIT` (the cutoff's edges) and `HoldExpiryJobIT` (two sweeps in parallel, 20 repetitions), and by `BookingRulesTest` (every rule per type, table-driven), `BookingRetryTest` and `ConstraintViolationsTest` (unit). Tests generate throwaway keys; no key is needed to run them.
 
 All demo data is fictional.
 

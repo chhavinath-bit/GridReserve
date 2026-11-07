@@ -1,6 +1,7 @@
 # GridReserve — Requirements
 
-> Version 0.11 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Version 0.12 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Changes from v0.11 (M1.7, owner decisions 2026-11-07, D-40): BR-07 counts the horizon in **whole local days** like availability (a start on a local date before today + horizon), so the API and the picker always agree; FR-BK-07 adds `cancellableUntil`; BR-08 states that bookings on inactive bookables of the category count too and that a hold that has run out does not.
 > Changes from v0.10 (M1.5, 2026-11-07, D-11): FR-BK-03 and FR-BK-04 state what happens to a booking that is not in the expected state: confirming an expired hold answers `409 HOLD_EXPIRED` (also when it was already marked EXPIRED), any other state `409 INVALID_STATE`; a hold that has run out cannot be cancelled (it is recorded `EXPIRED`, `409 INVALID_STATE`); `cancelledBy` is `ADMIN` only when an admin cancels another member's booking.
 > Changes from v0.9 (M1.4, owner decisions 2026-11-06, D-39): availability works in whole local days (today to today + horizon − 1; later dates `422 BEYOND_HORIZON`, past dates all `PAST`); categories and countries are unpaginated reference lists (API-04); availability for a CAPACITY bookable returns `422 WRONG_BOOKING_MODEL` until Phase 2 (FR-AV-04, FR-AV-07).
 > Changes from v0.8 (owner decision, 2026-11-06, D-35 withdrawn): **sign-in with Google and GitHub is removed from Phase 1** and kept as an optional extension (US-30, FR-AUTH-15..19, FS-42..44, A-29 marked; not built). Email and password stay the only sign-in.
@@ -280,7 +281,7 @@ Acceptance criteria use Given / When / Then. Each story links to the requirement
 - **FR-BK-04** `POST /api/v1/bookings/{id}/cancel` shall move `HELD` or `CONFIRMED` → `CANCELLED` according to section 8, with an optional `reason` (max 200 chars). A `HELD` booking whose hold has run out is not cancelled: it is recorded as `EXPIRED` and the answer is `409 INVALID_STATE` (CXL-01). `cancelledBy` is `MEMBER` when the owner cancels (also an admin cancelling their own booking) and `ADMIN` when an admin cancels another member's booking.
 - **FR-BK-05** `GET /api/v1/bookings/me?status=&from=&to=&page=&size=` shall list the caller's bookings, newest start first by default.
 - **FR-BK-06** `GET /api/v1/bookings/{id}` shall return a booking the caller owns (or any booking, for ADMIN).
-- **FR-BK-07** Every booking response shall include: `id`, `bookableId`, `bookableName`, `bookableLabel`, `venueName`, `venueTimeZone`, `start`, `end`, `status`, `expiresAt` (if HELD), `createdAt`, `cancelledAt`, `cancelledBy` (`MEMBER`/`ADMIN`/`SYSTEM`).
+- **FR-BK-07** Every booking response shall include: `id`, `bookableId`, `bookableName`, `bookableLabel`, `venueName`, `venueTimeZone`, `start`, `end`, `status`, `expiresAt` (if HELD), `createdAt`, `cancelledAt`, `cancelledBy` (`MEMBER`/`ADMIN`/`SYSTEM`), `cancellableUntil` (the last moment the owner can cancel: `expiresAt` while HELD, `start − cancellationCutoff` when CONFIRMED, null otherwise; added in v0.12).
 - **FR-BK-08** Allowed status transitions are only those in BR-13. Any other transition returns `409 INVALID_STATE`.
 - **FR-BK-09** Booking operations shall not call any other service synchronously inside the booking transaction (RES-07).
 
@@ -334,8 +335,8 @@ All rule values come from the resolver in FR-CAT-05. "Local" = venue time zone.
 | **BR-04** | `minDuration ≤ end − start ≤ maxDuration`. | `422 DURATION_INVALID` |
 | **BR-05** | `start > now`. | `422 START_IN_PAST` |
 | **BR-06** | Bookable and its venue are active. | `422 BOOKABLE_INACTIVE` |
-| **BR-07** | `start < now + bookingHorizonDays` (default 7). **[A-07]** | `422 BEYOND_HORIZON` |
-| **BR-08** | Per-member limit: the member's active bookings with `end > now` **in the same category** must be < `maxActiveBookingsPerMember` (default 3) before the new one. HELD counts. Checked while holding a row lock on the member (CONC-05). | `422 MEMBER_LIMIT_REACHED` |
+| **BR-07** | The start's **local date** is before today + `bookingHorizonDays` at the venue (default 7: today and the next 6 days), the same whole-day horizon availability uses (D-39, D-40). **[A-07]** | `422 BEYOND_HORIZON` |
+| **BR-08** | Per-member limit: the member's active bookings with `end > now` **in the same category** must be < `maxActiveBookingsPerMember` (default 3) before the new one. HELD counts while its hold is live; a hold that has run out does not. Bookings on inactive bookables of the category count too. Checked while holding a row lock on the member (CONC-05). | `422 MEMBER_LIMIT_REACHED` |
 | **BR-09** | Booking model check: `POST /bookings` with `start/end` only works for EXCLUSIVE bookables. | `422 WRONG_BOOKING_MODEL` |
 | **BR-10** | **No double-booking (DB).** Exclusion constraint on `(bookable_id WITH =, tstzrange(start_time, occupied_until, '[)') WITH &&)` for active rows; `occupied_until = end + buffer`, stored at insert. | `409 SLOT_TAKEN` |
 | **BR-11** | **No member overlap (DB).** Exclusion constraint on `(member_id WITH =, tstzrange(start_time, end_time, '[)') WITH &&)` for active rows, across all categories and both models. | `409 MEMBER_OVERLAP` |

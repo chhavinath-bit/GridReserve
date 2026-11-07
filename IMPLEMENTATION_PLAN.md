@@ -179,7 +179,7 @@ Delivered as three PRs, in the order a → b → c (owner decisions 2026-11-06):
 
 1. **Objective.** Every P1 rule enforced in order; expired holds cleaned up on any number of instances.
 2. **Tasks.** BR-02, 03, 04, 07, 08, 14; CXL-01..06; `SchedulingConfig` (bounded `gr-sched-*`); `HoldExpiryJob` with `SKIP LOCKED` and per-row transactions; metrics by expiry layer; graceful shutdown.
-3. **Files/modules.** booking-service `booking/service/*`, `common/config`.
+3. **Files/modules.** booking-service `booking/service/*` (`BookingRules`, `HoldExpiryService`, `HoldExpiryMetrics`), `booking/job/HoldExpiryJob`, `config/SchedulingConfig`; catalog `EffectiveRules.firstDateBeyondHorizon`; frontend My bookings (`cancellableUntil`).
 4. **Dependencies.** M1.6.
 5. **Tests.** Table-driven `BookingRulesTest` per rule and per type default (Room 30/3h, Seat 60/4h, Doctor 30 exact, Bay 12h, Trainer 45 + 15 buffer on a 15-min grid, booking on a closed weekday, booking outside that weekday's hours), boundaries, order; `HoldExpiryJobIT` (two job runs in parallel do not double-process); `CancellationIT` with a fixed clock.
 6. **Acceptance.** BR-01..14, CXL-01..06, FR-EXP-01..04 covered by named tests.
