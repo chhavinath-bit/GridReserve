@@ -7,6 +7,8 @@ import com.gridreserve.booking.booking.entity.BookingStatus;
 import com.gridreserve.booking.booking.entity.CancelledBy;
 import com.gridreserve.booking.booking.mapper.BookingMapper;
 import com.gridreserve.booking.booking.repository.BookingRepository;
+import com.gridreserve.booking.booking.service.HoldExpiryMetrics.Layer;
+import com.gridreserve.booking.catalog.dto.BookableInfo;
 import com.gridreserve.booking.catalog.dto.LockedBookable;
 import com.gridreserve.booking.catalog.service.CatalogService;
 import com.gridreserve.booking.common.exception.BookingErrorCode;
@@ -38,20 +40,24 @@ class BookingTransactions {
     private final BookingRepository bookings;
     private final CatalogService catalog;
     private final MemberLock memberLock;
+    private final HoldExpiryMetrics expiryMetrics;
     private final Clock clock;
 
-    BookingTransactions(BookingRepository bookings, CatalogService catalog, MemberLock memberLock, Clock clock) {
+    BookingTransactions(BookingRepository bookings, CatalogService catalog, MemberLock memberLock,
+                        HoldExpiryMetrics expiryMetrics, Clock clock) {
         this.bookings = bookings;
         this.catalog = catalog;
         this.memberLock = memberLock;
+        this.expiryMetrics = expiryMetrics;
         this.clock = clock;
     }
 
     /**
      * Creates a HELD booking (FR-BK-01). Locks in the global order (CLAUDE.md §8.3): venue and bookable
-     * {@code FOR SHARE}, member {@code FOR UPDATE}, then the stale holds in the way. The insert is the
-     * real decision: the exclusion constraints reject an overlap even if two requests got this far at
-     * the same time.
+     * {@code FOR SHARE}, member {@code FOR UPDATE}, then the stale holds in the way. Rules in the BR-14
+     * order; the member limit (BR-08) is counted under the member lock, so two parallel holds of one
+     * member can't both see room for one more. The insert is the real decision on overlaps: the exclusion
+     * constraints reject one even if two requests got this far at the same time.
      */
     @Transactional
     public BookingResponse hold(long memberId, CreateHoldRequest request) {
@@ -59,13 +65,16 @@ class BookingTransactions {
         Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
         LockedBookable bookable = catalog.lockForBooking(request.bookableId());
         memberLock.lock(memberId);
-        BookingRules.checkHold(bookable, request.start(), now);
+        BookingRules.checkHold(bookable, request.start(), request.end(), now);
+        long active = bookings.countActive(memberId, catalog.bookableIdsInCategory(bookable.categoryId()), now,
+                BookingStatus.CONFIRMED, BookingStatus.HELD);
+        BookingRules.checkMemberLimit(active, bookable.rules());
 
         Instant occupiedUntil = request.end().plus(Duration.ofMinutes(bookable.rules().bufferMinutes()));
         List<Long> stale = bookings.lockStaleHolds(request.bookableId(), memberId, request.start(), request.end(),
                 occupiedUntil, now);
         if (!stale.isEmpty()) {
-            bookings.expireHolds(stale, now);
+            expiryMetrics.expired(Layer.HOLD, bookings.expireHolds(stale, now));
         }
 
         Booking hold = Booking.hold(memberId, request.bookableId(), request.start(), request.end(), occupiedUntil,
@@ -92,7 +101,7 @@ class BookingTransactions {
             return reload(bookingId);
         }
         // Not confirmed: either the hold ran out (record that now) or the booking is past HELD.
-        bookings.expireHolds(List.of(bookingId), now);
+        expiryMetrics.expired(Layer.CONFIRM, bookings.expireHolds(List.of(bookingId), now));
         BookingStatus current = currentStatus(bookingId);
         if (current == BookingStatus.EXPIRED) {
             throw new DomainException(BookingErrorCode.HOLD_EXPIRED,
@@ -102,21 +111,34 @@ class BookingTransactions {
     }
 
     /**
-     * HELD or CONFIRMED → CANCELLED (FR-BK-04), by the owner or an admin. The cutoff rules (CXL-02..04)
-     * come in M1.7. Cancelling frees the slot at once: the row stops being active in this transaction.
-     * Like confirm, a run-out hold is saved as EXPIRED before the refusal, so no rollback on refusal.
+     * HELD or CONFIRMED → CANCELLED (FR-BK-04, CXL-01..06), by the owner or an admin. The policy is part
+     * of the conditional UPDATE: a live hold can always be cancelled (CXL-01); a confirmed booking by a
+     * member only until start minus the category's cutoff (CXL-02), by an admin until it ends (CXL-03);
+     * nothing after the end (CXL-04). Cancelling frees the slot at once (CXL-05). If the UPDATE refuses,
+     * the current row says why. Like confirm, a run-out hold is saved as EXPIRED before the refusal.
      */
     @Transactional(noRollbackFor = DomainException.class)
     public BookingResponse cancel(long callerId, boolean admin, long bookingId, String reason) {
         Instant now = clock.instant();
         Booking booking = owned(bookingId, callerId, admin);
         CancelledBy by = booking.getMemberId() == callerId ? CancelledBy.MEMBER : CancelledBy.ADMIN;
-        if (bookings.cancel(bookingId, by.name(), reason, now) == 1) {
+        Duration cutoff = Duration.ofMinutes(describe(booking).cancellationCutoffMinutes());
+        Instant confirmedStartAfter = admin ? Instant.EPOCH : now.plus(cutoff);
+        if (bookings.cancel(bookingId, by.name(), reason, confirmedStartAfter, now) == 1) {
             return reload(bookingId);
         }
-        // A hold that ran out is recorded as EXPIRED, so the answer names its real state.
-        bookings.expireHolds(List.of(bookingId), now);
-        throw invalidState(currentStatus(bookingId));
+
+        expiryMetrics.expired(Layer.CANCEL, bookings.expireHolds(List.of(bookingId), now));
+        Booking current = bookings.findById(bookingId).orElseThrow();
+        boolean active = current.getStatus() == BookingStatus.HELD || current.getStatus() == BookingStatus.CONFIRMED;
+        if (active && !current.getEndTime().isAfter(now)) {
+            throw new DomainException(BookingErrorCode.INVALID_STATE, "This booking has already ended.");
+        }
+        if (current.getStatus() == BookingStatus.CONFIRMED) {
+            throw new DomainException(BookingErrorCode.CUTOFF_PASSED, "Cancellations close "
+                    + formatCutoff(cutoff) + " before the start. Contact the venue to change this booking.");
+        }
+        throw invalidState(current.getStatus());
     }
 
     /**
@@ -136,8 +158,20 @@ class BookingTransactions {
 
     private BookingResponse reload(long bookingId) {
         Booking booking = bookings.findById(bookingId).orElseThrow();
-        return BookingMapper.toResponse(booking, catalog.describe(List.of(booking.getBookableId()))
-                .get(booking.getBookableId()));
+        return BookingMapper.toResponse(booking, describe(booking));
+    }
+
+    private BookableInfo describe(Booking booking) {
+        return catalog.describe(List.of(booking.getBookableId())).get(booking.getBookableId());
+    }
+
+    // "2 hours", "90 minutes": cutoffs are configured in minutes per category.
+    private static String formatCutoff(Duration cutoff) {
+        long minutes = cutoff.toMinutes();
+        if (minutes % 60 == 0) {
+            return minutes == 60 ? "1 hour" : minutes / 60 + " hours";
+        }
+        return minutes + " minutes";
     }
 
     private static DomainException invalidState(BookingStatus status) {

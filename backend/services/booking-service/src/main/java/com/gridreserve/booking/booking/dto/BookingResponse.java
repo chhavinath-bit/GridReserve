@@ -7,7 +7,9 @@ import java.time.Instant;
 
 /**
  * One booking as every endpoint returns it (FR-BK-07). Names come from the catalog at read time; the
- * booking row stores only IDs. {@code expiresAt} is set only while HELD.
+ * booking row stores only IDs. {@code expiresAt} is set only while HELD. {@code cancellableUntil} is the
+ * last moment the owner can cancel (CXL-01/02): the hold's expiry, or start minus the category's cutoff
+ * for a confirmed booking; null once that is no longer possible in any case (cancelled, expired).
  */
 public record BookingResponse(
         long id,
@@ -22,5 +24,6 @@ public record BookingResponse(
         Instant expiresAt,
         Instant createdAt,
         Instant cancelledAt,
-        CancelledBy cancelledBy) {
+        CancelledBy cancelledBy,
+        Instant cancellableUntil) {
 }

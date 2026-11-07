@@ -13,6 +13,7 @@ import org.springframework.data.repository.query.Param;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Only the booking module uses this repository. Every status change is a conditional UPDATE that names
@@ -73,18 +74,59 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     int confirm(@Param("id") long id, @Param("now") Instant now);
 
     /**
-     * HELD or CONFIRMED → CANCELLED (FR-BK-04). A hold that has run out is not cancelled: it is already
-     * free, and the expiry job marks it EXPIRED.
+     * HELD or CONFIRMED → CANCELLED (FR-BK-04, CXL-01..06), with the whole policy in the WHERE clause so
+     * the rule and the change are one atomic step (a confirm racing this cancel can't slip past the
+     * cutoff): a live hold always; a confirmed booking only if it starts after {@code confirmedStartAfter}
+     * (now + cutoff for members, CXL-02; {@code Instant.EPOCH} for admins, CXL-03); never once it has
+     * ended (CXL-04). A hold that has run out is not cancelled: it is already free.
      */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = """
             UPDATE booking
             SET status = 'CANCELLED', expires_at = NULL, cancelled_at = :now, cancelled_by = :cancelledBy,
                 cancel_reason = :reason, updated_at = :now
-            WHERE id = :id AND (status = 'CONFIRMED' OR (status = 'HELD' AND expires_at > :now))
+            WHERE id = :id AND end_time > :now
+              AND ((status = 'HELD' AND expires_at > :now)
+                OR (status = 'CONFIRMED' AND start_time > :confirmedStartAfter))
             """, nativeQuery = true)
     int cancel(@Param("id") long id, @Param("cancelledBy") String cancelledBy, @Param("reason") String reason,
-               @Param("now") Instant now);
+               @Param("confirmedStartAfter") Instant confirmedStartAfter, @Param("now") Instant now);
+
+    /**
+     * The member's active bookings among {@code bookableIds} that have not ended (BR-08). A hold that has
+     * run out does not count, even before anything marks it EXPIRED.
+     */
+    @Query("""
+            select count(b) from Booking b
+            where b.memberId = :memberId
+              and b.bookableId in :bookableIds
+              and b.endTime > :now
+              and (b.status = :confirmed or (b.status = :held and b.expiresAt > :now))
+            """)
+    long countActive(@Param("memberId") long memberId, @Param("bookableIds") Collection<Long> bookableIds,
+                     @Param("now") Instant now, @Param("confirmed") BookingStatus confirmed,
+                     @Param("held") BookingStatus held);
+
+    /** Run-out holds for the expiry job, oldest first; no lock (each row is locked in its own transaction). */
+    @Query(value = """
+            SELECT id FROM booking
+            WHERE status = 'HELD' AND expires_at <= :now
+            ORDER BY expires_at, id
+            LIMIT :limit
+            """, nativeQuery = true)
+    List<Long> findRunOutHoldIds(@Param("now") Instant now, @Param("limit") int limit);
+
+    /**
+     * Locks one run-out hold, or returns empty if another transaction holds it right now ({@code SKIP
+     * LOCKED}: skip, don't wait) or it is no longer a run-out hold. Lets several job instances share the
+     * work without blocking each other (FR-EXP-01).
+     */
+    @Query(value = """
+            SELECT id FROM booking
+            WHERE id = :id AND status = 'HELD' AND expires_at <= :now
+            FOR UPDATE SKIP LOCKED
+            """, nativeQuery = true)
+    Optional<Long> lockRunOutHold(@Param("id") long id, @Param("now") Instant now);
 
     /**
      * The caller's bookings (FR-BK-05); each filter is optional. PostgreSQL cannot tell the type of a
