@@ -474,7 +474,7 @@ What the new tests execute (behavior): hold 201 with `Location`, names from the 
 
 ### Test results
 
-`cd frontend` on 2026-11-07: `npm run typecheck` clean; `npm run lint` 0 problems; `npm test` **8 files, 34 tests passed**; `npm run build` succeeds (main bundle 626 kB, 197 kB gzipped, of which Formik + Yup add about 79 kB / 25 kB; gallery not included).
+`cd frontend` on 2026-11-07: `npm run typecheck` clean; `npm run lint` 0 problems; `npm test` **9 files, 36 tests passed**; `npm run build` succeeds (main bundle 626 kB, 197 kB gzipped, of which Formik + Yup add about 79 kB / 25 kB; gallery not included).
 
 | File | Tests | What it executes |
 |---|---|---|
@@ -485,6 +485,7 @@ What the new tests execute (behavior): hold 201 with `Location`, names from the 
 | `components/patterns/HoldTimer.test.tsx` | 1 | countdown, one-minute announcement, expiry fired exactly once (fake timers) |
 | `lib/bookingStatus.test.ts` | 3 | run-out HELD shown as EXPIRED; tab sorting; countdown from the hold's length despite a wrong device clock |
 | `features/auth/schemas.test.ts` | 5 | register: valid form; every field required, spaces are not a name; email format; password 8 / 72 / 73; name 101 → error; login: required only, no minimum |
+| `features/availability/SlotPickerPage.test.tsx` | 2 | after a confirm, picking another slot brings back "Hold slot" and sends the next hold, and the confirmed slot is no longer "held by you"; while a hold is live, another pick shows "Confirm or release your current hold first." |
 | `features/auth/AuthForms.test.tsx` | 4 | login empty submit: no request, both messages, summary, `aria-invalid` + description, focus on Email; valid login sends trimmed email, wrong credentials shown for the form; register bad email + short password: no request, focus on Email; server field error (72 bytes) shown under Password |
 
 Backend unchanged since M1.5 (local `verify` on `main` 188 tests, 0 failures, see the M1.5 row).
@@ -492,6 +493,8 @@ Backend unchanged since M1.5 (local `verify` on `main` 188 tests, 0 failures, se
 **Mutation checks (all reverted):** no `validationSchema` on the login form fails "an empty submit sends nothing"; no single-flight in `refreshSession` fails "share one refresh"; every slot selectable fails "selects free slots only" and "names every state in words"; no effective expiry fails "shows as EXPIRED" and the tab test.
 
 **First runs that failed (fixed, not weakened):** TypeScript 6 rejects `baseUrl` (deprecated), removed; ESLint's React hooks rules found `Date.now()` read during render in three places (fixed with `useNow` and lazy state) and a `useCallback` the compiler can't keep (removed); the HoldTimer test showed that a timeout re-armed after each render can stall, so the timer now uses `setInterval`; one SlotGrid test had a wrong expectation (6 slots have no second row below the third), corrected; the schema test helper kept Yup's last message per field, while Formik shows the first (an empty password breaks "required" and "min 8"), corrected to match Formik; the gallery chunk was still emitted in production builds, now excluded.
+
+**Found by the owner in the browser (fixed):** after confirming, the panel kept the confirmed card, so a newly selected slot had no "Hold slot" button and no request was sent; the confirmed slot also kept the "held by you" look. Now a new pick after a confirmed or expired booking resets the panel, "held by you" shows only for a live hold, and during a live hold a pick explains what to do. Covered by `SlotPickerPage.test.tsx` (failed before the fix).
 
 **Through the real dev server and stack** (Vite on `:5173`, Compose stack): every module compiles; the browser's requests replayed with curl through the proxy (same origin, `Origin: http://localhost:5173`, `X-GridReserve-Client: web`, cookie jar): refresh without a cookie 401 → login sets the `HttpOnly` cookie on `/api/v1/auth` → `/me` Alice Demo → Sports → Sunrise Turf → Court A (label Court, Asia/Kolkata, 60/60/120, horizon 7) → tomorrow 17 slots → hold 201 → bob same slot 409 `SLOT_TAKEN` → confirm CONFIRMED → "reload": refresh with the cookie gives a new token, session restored → My bookings lists it → refresh without the client header 403 → cancel → logout 204, refresh afterwards 401. The hold answer from the old container still showed nanoseconds; after rebuilding booking-service from M1.5's code it shows microseconds, as fixed in M1.5. Routing after the rebuild took about 48 s.
 

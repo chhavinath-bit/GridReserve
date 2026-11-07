@@ -88,6 +88,7 @@ function SlotPicker({ bookable }: { bookable: Bookable }) {
   const confirm = useMutation({
     mutationFn: (bookingId: number) => bookingApi.confirm(bookingId),
     onSuccess: (booking) => {
+      setHint(null)
       setHold((current) => (current ? { ...current, booking, phase: 'confirmed' } : current))
       toast.success('Booking confirmed')
       refreshAfterChange()
@@ -105,6 +106,7 @@ function SlotPicker({ bookable }: { bookable: Bookable }) {
     mutationFn: (bookingId: number) => bookingApi.cancel(bookingId),
     onSuccess: () => {
       setHold(null)
+      setHint(null)
       toast('Hold released')
       refreshAfterChange()
     },
@@ -126,6 +128,16 @@ function SlotPicker({ bookable }: { bookable: Bookable }) {
 
   const onSelect = (index: number) => {
     if (!availability.data) return
+    if (hold?.phase === 'held') {
+      // One hold at a time: the panel on the right decides what happens to it.
+      setHint('Confirm or release your current hold first.')
+      return
+    }
+    if (hold) {
+      // The last booking is confirmed or expired: a new pick starts the next booking.
+      setHold(null)
+      setPanelError(null)
+    }
     setConflict(null)
     setHoldError(null)
     const result = nextSelection(availability.data.slots, selected, index, availability.data)
@@ -141,7 +153,7 @@ function SlotPicker({ bookable }: { bookable: Bookable }) {
   const first = slots[selected[0] ?? -1]
   const last = slots[selected[selected.length - 1] ?? -1]
   const heldByMe =
-    hold && hold.phase !== 'expired' && hold.booking.bookableId === bookable.id
+    hold && hold.phase === 'held' && hold.booking.bookableId === bookable.id
       ? slots.flatMap((slot, index) => (overlaps(slot.start, slot.end, hold.booking.start, hold.booking.end) ? [index] : []))
       : []
 
@@ -193,6 +205,7 @@ function SlotPicker({ bookable }: { bookable: Bookable }) {
               onPickAgain={() => {
                 setHold(null)
                 setPanelError(null)
+                setHint(null)
               }}
             />
           ) : (
