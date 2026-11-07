@@ -17,7 +17,7 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 | M1.5 Booking engine core (hold, confirm, cancel) | Done (owner reviewed; [review guide](reviews/M1.5-review.md)) | 2026-11-07 | `5eb2abc` (merge of PR #11); no config repo change; CI on `main` (`5eb2abc`) green; local `verify` on `main` 2026-11-07: 188 tests, 0 failures |
 | M1.6 Thin vertical slice (frontend through the gateway) | Done (owner reviewed in the browser; [review guide](reviews/M1.6-review.md)) | 2026-11-07 | `472a561` (merge of PR #12); no config repo change; CI on `main` (`472a561`) green; local on `main` 2026-11-07: backend `verify` 188 tests, 0 failures; frontend typecheck and lint clean, 36 tests passed, build OK |
 | M1.7 All booking rules and hold expiry | Done (owner reviewed; [review guide](reviews/M1.7-review.md)) | 2026-11-07 | `d098f04` (merge of PR #13); no config repo change; CI on `main` (`d098f04`) green; local on `main` 2026-11-07: backend `verify` 251 tests, 0 failures; frontend typecheck and lint clean, 38 tests passed, build OK |
-| M1.8 Concurrency proof (single and two instances) | Built; **awaiting owner review** ([review guide](reviews/M1.8-review.md)) | 2026-11-07 | branch `m1.8-concurrency`; config repo PR #7 (`m1.8-concurrency`) |
+| M1.8 Concurrency proof (single and two instances) | Done (owner reviewed; [review guide](reviews/M1.8-review.md)) | 2026-11-07 | `6c6aa32` (merge of PR #14); config repo `47e40a9` (merge of PR #7); local on `main` 2026-11-07: backend `verify` 351 tests, 0 failures; frontend 38 tests, typecheck, lint, build OK |
 
 ---
 
@@ -557,7 +557,7 @@ What the new tests execute (behavior): per type (Room 30/30–180, Seat 60/60–
 
 ---
 
-## M1.8 Concurrency proof (single and two instances) — Built, awaiting owner review (2026-11-07)
+## M1.8 Concurrency proof (single and two instances) — Done (2026-11-07)
 
 **Built:**
 - booking-service `concurrency/ConcurrencyIT` + `Parallel` (start gate): CONC-01 (50 members, one slot), CONC-02 (10 mutually overlapping ranges), CONC-03 (one member, 10 seats, same time), CONC-04 (confirm racing the expiry job at the expiry moment), CONC-05 (one member, 10 holds, limit 3); `@RepeatedTest(20)` each, asserting exact outcomes, database rows and zero lock failures.
