@@ -15,7 +15,7 @@ The latest verified checkpoint is the most recent milestone below marked **Done*
 | M1.3d Sign-in with Google and GitHub | **Dropped** (owner, 2026-11-06): too much work for its value; optional extension, design kept in the docs (D-35 withdrawn). M1.3 is complete with a, b, c. | 2026-11-06 | — |
 | M1.4 Catalog, countries and availability | Done (owner reviewed; [review guide](reviews/M1.4-review.md)) | 2026-11-06 | `2e8e88f` (merge of PR #10); no config repo change; CI on `main` (`2e8e88f`) green; local `verify` on `main` 2026-11-07: 156 tests, 0 failures |
 | M1.5 Booking engine core (hold, confirm, cancel) | Done (owner reviewed; [review guide](reviews/M1.5-review.md)) | 2026-11-07 | `5eb2abc` (merge of PR #11); no config repo change; CI on `main` (`5eb2abc`) green; local `verify` on `main` 2026-11-07: 188 tests, 0 failures |
-| M1.6 Thin vertical slice (frontend through the gateway) | Built; **awaiting owner review** ([review guide](reviews/M1.6-review.md)) | 2026-11-07 | branch `m1.6-frontend-slice`; no config repo change |
+| M1.6 Thin vertical slice (frontend through the gateway) | Done (owner reviewed in the browser; [review guide](reviews/M1.6-review.md)) | 2026-11-07 | `472a561` (merge of PR #12); no config repo change; CI on `main` (`472a561`) green; local on `main` 2026-11-07: backend `verify` 188 tests, 0 failures; frontend typecheck and lint clean, 36 tests passed, build OK |
 
 ---
 
@@ -455,7 +455,7 @@ What the new tests execute (behavior): hold 201 with `Location`, names from the 
 
 ---
 
-## M1.6 Thin vertical slice: frontend through the gateway — Built, awaiting owner review (2026-11-07)
+## M1.6 Thin vertical slice: frontend through the gateway — Done (2026-11-07)
 
 **Built (`frontend/`, new):**
 - Vite 8 + React 19 + TypeScript 6 (strict) + Tailwind 4 + TanStack Query + React Router; dev server on `:5173` proxies `/api` to the gateway.
