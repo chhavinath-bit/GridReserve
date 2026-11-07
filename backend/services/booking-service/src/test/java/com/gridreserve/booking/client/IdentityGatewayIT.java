@@ -61,10 +61,19 @@ class IdentityGatewayIT {
     CircuitBreakerRegistry circuitBreakers;
 
     @Autowired
+    io.github.resilience4j.bulkhead.BulkheadRegistry bulkheads;
+
+    @Autowired
     ServiceTokens tokens;
 
     @Autowired
     io.micrometer.core.instrument.MeterRegistry meters;
+
+    @Autowired
+    org.springframework.cloud.context.refresh.ContextRefresher refresher;
+
+    @Autowired
+    org.springframework.core.env.ConfigurableEnvironment environment;
 
     @org.springframework.beans.factory.annotation.Value("${local.server.port}")
     int port;
@@ -240,5 +249,25 @@ class IdentityGatewayIT {
         com.gridreserve.booking.support.Http.Response anonymous = http.get("/actuator/health", null);
         assertThat(anonymous.status()).isEqualTo(200);
         assertThat(anonymous.body().has("components")).isFalse();
+    }
+
+    @Test
+    @DisplayName("PLAT-05: a configuration refresh rebuilds the identity-service policies with the new values")
+    void refreshRebuildsPolicies_PLAT05() {
+        assertThat(circuit().getCircuitBreakerConfig().getFailureRateThreshold()).isEqualTo(50);
+        // What a changed config repo plus POST /actuator/refresh does, inside the test.
+        environment.getPropertySources().addFirst(new org.springframework.core.env.MapPropertySource("changed-config", java.util.Map.of(
+                "resilience4j.circuitbreaker.instances.identity-service.failure-rate-threshold", "70",
+                "resilience4j.bulkhead.instances.identity-service.max-concurrent-calls", "4")));
+        try {
+            refresher.refresh();
+
+            assertThat(circuit().getCircuitBreakerConfig().getFailureRateThreshold()).isEqualTo(70);
+            assertThat(bulkheads.bulkhead(IdentityGateway.POLICY).getBulkheadConfig().getMaxConcurrentCalls()).isEqualTo(4);
+        } finally {
+            environment.getPropertySources().remove("changed-config");
+            refresher.refresh();
+        }
+        assertThat(circuit().getCircuitBreakerConfig().getFailureRateThreshold()).isEqualTo(50);
     }
 }
