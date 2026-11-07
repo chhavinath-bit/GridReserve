@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Optional;
 
 public interface MemberRepository extends JpaRepository<Member, Long> {
 
@@ -19,4 +20,8 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
     @Query(value = "INSERT INTO member (id, created_at) VALUES (:id, :now) ON CONFLICT (id) DO NOTHING",
             nativeQuery = true)
     int insertIfAbsent(@Param("id") long id, @Param("now") Instant now);
+
+    /** Locks the member's row until the transaction ends; empty if the row doesn't exist. */
+    @Query(value = "SELECT id FROM member WHERE id = :id FOR UPDATE", nativeQuery = true)
+    Optional<Long> lockForUpdate(@Param("id") long id);
 }

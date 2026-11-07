@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 public interface BookableRepository extends JpaRepository<Bookable, Long> {
@@ -26,4 +28,13 @@ public interface BookableRepository extends JpaRepository<Bookable, Long> {
     @EntityGraph(attributePaths = {"venue", "bookableType", "bookableType.category"})
     @Query("select b from Bookable b where b.id = :id")
     Optional<Bookable> findWithRulesById(@Param("id") Long id);
+
+    /** Locks the bookable {@code FOR SHARE}, second in the lock order after its venue (CONC-09). */
+    @Query(value = "SELECT id FROM bookable WHERE id = :id FOR SHARE", nativeQuery = true)
+    Optional<Long> lockForShare(@Param("id") long id);
+
+    /** Several bookables with their venue and type in one query, for labelling a list of bookings. */
+    @EntityGraph(attributePaths = {"venue", "bookableType"})
+    @Query("select b from Bookable b where b.id in :ids")
+    List<Bookable> findWithVenueByIdIn(@Param("ids") Collection<Long> ids);
 }
