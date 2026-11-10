@@ -813,6 +813,8 @@ What the new tests execute (behavior): FS-17 replay (same body and `Location`, `
 
 **CI, first run (42893725631) failed in the system tests:** CONC-10's setup read the venue list through the gateway right after the readiness check and got a body without `items` (an error answer); every other job was green (incl. booking-service 70 + 352 and CONC-08). The CI log keeps only the last 200 lines per service, so the answer itself is lost; the likely cause is the first catalog query of a fresh booking instance on the slower runner (a 504 or 503 through the gateway). Locally the system tests passed 27/27 twice on this branch. Fix in the test, not the product: `Stack.awaitCatalogReadable` waits until an authenticated catalog read answers 200 four times in a row (both instances served one), and the bookable lookup now fails with the status and body if it ever gets anything else. Not retried blindly; the next CI run is the check.
 
+**CI, second run (42896222132, commit `9477e3f`):** all 10 jobs green: booking-service 70 unit + 352 IT, frontend, all seven images, system tests 27/27 against config `main` (CONC-10 500/500, FS-34 17 of 20 reads 200 during the kill, within the allowed 2xx/503). One green run doesn't prove the timing issue is gone; if it comes back, the lookup now reports the exact answer.
+
 **Live check through the gateway** (dev stack): the same key twice → 201 twice with the same booking and `Location`, the second with `Idempotent-Replayed: true` (the header passes the gateway both ways); same key, other times → 422 `IDEMPOTENCY_KEY_REUSED`; confirm and cancel; the audit endpoint lists `→HELD`, `HELD→CONFIRMED`, `CONFIRMED→CANCELLED "Live check"`, all MEMBER with Bob's ID; a member gets 403 there.
 
 ### Not covered yet
