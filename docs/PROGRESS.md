@@ -774,4 +774,5 @@ What the new tests execute (behavior): create venue and bookable (201, Location,
 
 ## Open issues
 
+- **My bookings pagination** (owner decision 2026-11-11; do it in M1.13): the page asks only for `GET /bookings/me?page=0&size=50` and splits Upcoming/Past in the browser, so with more than 50 bookings older ones (and, with many future bookings, the nearest upcoming ones) are missing without notice. Fix: each tab asks the API for its own list (Upcoming `from=now`, soonest first, which needs a small sort option on the endpoint; Past `to=now`, newest first; Cancelled & expired by `status`), with a **Load more** button (TanStack Query `useInfiniteQuery`, owner's choice).
 - **M1.10 live deployment** (owner decision 2026-11-11; finish before M1.14): create the Oracle VM when capacity appears, then `docs/deploy/oracle.md` steps 3–8: prod public key into the config repo, Google Drive token, GitHub variables and secrets, packages public, first release with the smoke test from CI, reboot and fail-fast checks on the host, a backup in Drive and `restore-drill.sh`, tag `first-deploy`, README live URL. Until then the live demo is `scripts/demo-tunnel.sh`.
