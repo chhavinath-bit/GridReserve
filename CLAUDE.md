@@ -102,7 +102,7 @@ Do this at the start of every session, before proposing or changing anything:
 - **Redis:** Phase 4 only. Never the source of truth.
 - **Events between services:** transactional outbox + HTTP push (Phase 5+). No broker.
 - **Tests:** JUnit 5, Mockito, Testcontainers (AssertJ comes with `spring-boot-starter-test`); a stub HTTP server for Feign client tests (WireMock `wiremock-standalone`, test scope, approved 2026-11-07, D-28).
-- **Delivery:** Docker + Docker Compose, GitHub Actions.
+- **Delivery:** Docker + Docker Compose, GitHub Actions; Caddy (TLS and static files in the frontend image), GHCR (images), rclone (encrypted off-site backups), all approved 2026-11-10 (M1.10, D-15).
 - **Not allowed unless I ask:** Kafka, RabbitMQ or any message broker, Spring Cloud Bus, Kubernetes, rules engines, extra frameworks, Lombok, MapStruct, real payment SDKs, more services than listed in section 4. Any library not listed here needs my approval first, including the "pending approval" candidates in the docs (ArchUnit, springdoc, WireMock, distributed tracing, a load-test tool).
 
 ## 6. Architecture rules
@@ -292,7 +292,11 @@ Rows marked ✓ were run successfully in M1.1 (2026-11-05); the others are plann
 | Run frontend ✓ | `cd frontend && npm run dev` | `http://localhost:5173`; Vite proxies `/api` to the gateway on `:8080`; gallery at `/dev/components` |
 | Frontend type check / lint / unit tests / build ✓ | `cd frontend && npm run typecheck` · `npm run lint` · `npm test` · `npm run build` | |
 | End-to-end tests | `cd frontend && npm run e2e` | Playwright; needs the Compose stack |
-| Full stack from images | `cd infra && docker compose --profile full up --build` | From M1.10 |
+| Full stack from images ✓ | `cd infra && FRONTEND_ORIGIN=http://localhost:8000 docker compose --profile full up -d --build --wait` | Adds `web` (Caddy + built frontend) on `http://localhost:8000`, like the deploy host (M1.10) |
+| Smoke test a running site ✓ | `python3 scripts/smoke-test.py http://localhost:8000` (deployed: `https://<site> --host <ip>`) | Page, health, login, refresh, hold/confirm/cancel, private paths 404; `--host` checks platform ports are closed from outside |
+| Laptop demo through a tunnel | `scripts/demo-tunnel.sh` | Cloudflare quick tunnel (needs `cloudflared`); live only while it runs |
+| Deploy / roll back | GitHub Actions → Deploy (automatic after CI on `main`; by hand with a commit SHA to roll back) | Host setup and operations: `docs/deploy/oracle.md` |
+| Backup / restore drill (host) | `docker compose run --rm backup backup.sh` · `scripts/prod/restore-drill.sh` (in `/opt/gridreserve`) | The drill restores the newest off-site backup into a throwaway database |
 
 ## 14. Git workflow and documentation
 
@@ -341,6 +345,7 @@ Rows marked ✓ were run successfully in M1.1 (2026-11-05); the others are plann
 - Keep the build host-agnostic (Dockerfiles + environment variables + config server); the deploy host is chosen before the first Phase 1 deployment.
 - (2026-11-06, M1.3) Tokens are signed and verified with Spring Security's OAuth2 resource server and Nimbus JOSE (`NimbusJwtEncoder` / `NimbusJwtDecoder`) instead of jjwt: Boot-managed versions, no second Jackson, built-in Bearer filters for servlet services and the reactive gateway (D-34). Service-to-service authentication: short-lived service JWTs signed by identity-service, built with the first internal call in M1.9 (D-19). M1.3 is delivered as three PRs: M1.3a identity core, M1.3b refresh tokens, M1.3c verification in gateway and booking.
 - (2026-11-06, M1.3b) Refresh tokens are **not rotated** (D-37): one opaque token per login, stored as SHA-256, sliding 7-day expiry, logout deletes the row, expired rows deleted at login (no cleanup job). Replaces rotation, token families and reuse detection.
+- (2026-11-10, M1.10) Deploy host (D-15), zero budget: **Oracle Cloud Always Free** Ampere A1 VM (arm64), whole stack with Docker Compose (`infra/compose.prod.yaml`, profile prod); fallback: laptop + Cloudflare quick tunnel (`scripts/demo-tunnel.sh`) and a demo video. **Caddy** (frontend image) does TLS for an **sslip.io** name, serves the app and proxies `/api`; only 80/443 public. Images for amd64 + arm64 in **GHCR** tagged by commit SHA; `deploy.yml` releases over SSH after CI on `main`, then smoke-tests; rollback = deploy an older SHA. **Backups:** nightly `pg_dump`, 7 days on the host, encrypted with **rclone** crypt to **Google Drive** (30 days). JWT public keys per profile (prod trusts only its own key, generated on the host). Prod actuator: health, info, refresh.
 - (2026-11-07, M1.9) Service tokens (D-19 built): identity issues 5-minute JWTs with role `SERVICE` for client ID + secret (HTTP Basic, only the SHA-256 kept); `/internal/**` needs role SERVICE; user APIs need MEMBER or ADMIN; actuator beyond health/info needs ADMIN or SERVICE. `IdentityGateway` composes Retry → CircuitBreaker → Bulkhead in code (registries looked up per call); WireMock for client tests (D-28). Gateway timeouts answer `504 UPSTREAM_TIMEOUT`. Resilience settings are refreshable through `ResilienceRefresher`; health component `circuitBreakers` never fails. All in D-42.
 - (2026-11-07, M1.8) Hold creation locks the bookable `FOR UPDATE` (the shared lock deadlocked under parallel holds); no bulkhead on gateway routes; CONC-10 in the `backend/system-tests` module, run in CI on a throwaway Compose stack with two booking instances; deadlocks asserted with `gridreserve.db.retries` (D-41).
 - (2026-11-07, M1.7) Booking horizon in whole local days for both availability and holds; booking responses include `cancellableUntil`; the per-member limit counts by the category's bookable IDs from the catalog service (D-40). `HoldExpiryJob` every 30 s on the `gr-sched-*` pool (2 threads), one transaction per hold with `SKIP LOCKED`.
@@ -356,7 +361,6 @@ Do not assume an answer for these. When a milestone reaches one, present options
 
 | Item | Needed by | Where described |
 |---|---|---|
-| Deploy host, backups, rollback; must fit ~5 JVMs + PostgreSQL (D-15) | M1.10 | IMPLEMENTATION_PLAN.md §3 |
 | UI supporting packages (D-UI-3) and axe accessibility checks (D-UI-4) | M1.6 / M1.13 | DESIGN_SYSTEM.md §10 |
 | Load-test tool (D-13b) | M1.14 | ARCHITECTURE.md §19 |
 | Remaining `D-xx` items (e.g. D-05, D-07, D-24 tracing, D-25 membership credits, D-26) | Phase listed in ARCHITECTURE.md §19 | ARCHITECTURE.md §19 |

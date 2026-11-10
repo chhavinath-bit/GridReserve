@@ -609,9 +609,9 @@ What the new tests execute (behavior): per type (Room 30/30–180, Seat 60/60–
 
 ---
 
-## M1.9 Resilience patterns and configuration refresh — Built, awaiting owner review (2026-11-07)
+## M1.9 Resilience patterns and configuration refresh — Done (2026-11-10)
 
-Delivered as one PR (owner, 2026-11-07). Decisions: D-28 (WireMock), D-42.
+Delivered as one PR (owner, 2026-11-07). Decisions: D-28 (WireMock), D-42. Merged by the owner after review: config PR #8 (`b9b2fc6`), then app PR #15 (`33d9f7c`). CI green on the PR (run 42399691404, commit `9df956c`) and on `main` after the merge (run 42859668166).
 
 **Built:**
 - **Service tokens (D-19):** identity-service `POST /internal/service-tokens` (HTTP Basic client ID + secret; only the SHA-256 kept, constant-time compare; same answer for every refusal) → 5-minute RS256 JWT, role `SERVICE`, `sub` = client ID; `GET /internal/users?ids=` (≤ 100; id, email, display name only). booking-service `ServiceTokens` (cached, renewed 30 s early) and a Feign interceptor adding the token and `X-Request-Id`. Security in both services: `/internal/**` → SERVICE, user APIs → MEMBER or ADMIN, actuator beyond health/info → ADMIN or SERVICE.
@@ -664,6 +664,59 @@ What the new tests execute (behavior): service token for the right secret (role 
 ### Open issues for later milestones
 - One local `verify` run hung for 33 minutes: the thread dump showed the PostgreSQL driver waiting in the login handshake with a fresh Testcontainers database (Docker port forwarding), on a socket without a timeout. Stopped, rerun passed in 1 min 7 s (376 tests). Consider `connectTimeout` / `socketTimeout` on the test datasource so a hang fails fast instead of waiting forever.
 - Remember for M1.10/M1.11: Resilience4j's Spring Boot module targets Boot 3; check each Resilience4j feature we start using on Boot 4 (health, metrics, refresh were not automatic).
+
+---
+
+## M1.10 Container images and first deployment — Built, deployment waits for the host (2026-11-10)
+
+Decision D-15 (owner, 2026-11-10, zero budget): Oracle Cloud Always Free VM + laptop Cloudflare-tunnel fallback; Caddy, GHCR, deploy workflow, nightly backups and rclone approved; backups to Google Drive; sslip.io name; quick tunnel. App PR #16, config PR #9 (merge first).
+
+**Checkpoint before starting (main `33d9f7c`, config `b9b2fc6`):** `./mvnw -B verify` BUILD SUCCESS, 376 tests, 0 failures; frontend type check, lint, 38/38 tests, build; system tests 27/27 on a fresh two-instance stack (CONC-10 500/500 per instance, FS-34 20 of 20 reads 200).
+
+**Built:**
+- `backend/Dockerfile`: the Maven stage runs on the builder's CPU, the runtime stage per platform (amd64 + arm64); `PORT` build arg and a readiness `HEALTHCHECK`; JVM flags in the image (heap 256 MB, metaspace 192 MB, code cache 64 MB, 512 KB stacks, serial GC, exit on OOM), so dev and prod run the same.
+- `frontend/Dockerfile` + `frontend/deploy/Caddyfile`: the built app in Caddy 2.11.7, non-root; `/api/**` and the gateway's `/actuator/health` proxied, other actuator and `/internal` paths 404, SPA fallback, assets cached a year and `index.html` never; security headers; automatic Let's Encrypt when `SITE_ADDRESS` is a hostname.
+- `infra/backup/`: PostgreSQL 16.15 + rclone 1.75.2, non-root; daily at `BACKUP_SCHEDULE` (UTC) with a catch-up backup at start; dump per database with checksums, 7 days local, encrypted copy (rclone crypt) to Google Drive for 30 days; `restore.sh` (from local or off-site); health unhealthy after a failed attempt or a success older than 26 h.
+- `infra/compose.prod.yaml`: published images by commit SHA, profile prod, only Caddy public (80/443), gateway and Eureka on the host's loopback, `restart: unless-stopped`, bounded logs, volumes for data, certificates and backups. `infra/.env.prod.example`.
+- `infra/compose.yaml`: `PORT` build args, JVM flags from the images, `FRONTEND_ORIGIN` for identity, `web` in profile `full` (`http://localhost:8000`).
+- Scripts: `scripts/prod/init-env.sh` (host `.env` with generated secrets and the RS256 key pair, prints only the public key, refuses to overwrite), `release.sh` (pull, `up --wait`, records the previous SHA), `restore-drill.sh` (newest off-site backup into a throwaway database, row counts); `scripts/smoke-test.py`; `scripts/demo-tunnel.sh`.
+- CI: an image job per app (amd64 + arm64; pushed to GHCR on `main`, tagged with the SHA). `deploy.yml`: after CI on `main` (or by hand with a SHA), SSH with a pinned host key, `release.sh`, smoke test from outside including closed ports; skipped until `DEPLOY_HOST` is set.
+- Config repo: dev public key and identity's key-id moved to the dev files (map entries merge across profiles, so a shared key would have been trusted in prod); prod profile: actuator health, info, refresh; `frontend-origin: ${FRONTEND_ORIGIN}`; prod key slot `prod-2026-11` (the key is added once the host has generated it). `scripts/ci/prepare-system-test-env.sh` follows the move.
+- Docs: D-15 (ARCHITECTURE §18–19), REQUIREMENTS v0.15 (PLAT-07, NFR-OPS-05/06), TECH_STACK v0.3 §3.19, CLAUDE.md §5/§13/§15, README (images, tunnel, deployment), `docs/deploy/oracle.md`, review guide, learning rows.
+
+### Test results
+
+`cd backend && ./mvnw -B verify`: unchanged code, see the checkpoint (376). No new Java tests: this milestone is images, Compose, scripts and workflows, checked as below.
+
+**System tests on the new images and config** (stack with two booking instances, dev key moved to `application-dev.yml`): 27/27, CONC-10 500/500 per instance, FS-34 20 of 20 reads 200.
+
+**Memory** (`docker stats` after the system tests, before → after the JVM flags): gateway 542 → 429 MB, booking 635/530 → 551/481 MB, identity 474 → 422 MB, discovery 426 → 380 MB, config 279 → 264 MB; backend containers about 3.0 → 2.5 GB. Metaspace peaks at 126 MB (booking), under the 192 MB cap.
+
+**Profile `full`** (`http://localhost:8000`): `scripts/smoke-test.py` passed every check (page, client route on reload, health UP, sign in, refresh with the cookie alone, foreign Origin 403, hold 201 → confirm 200 → cancel 200, `/internal/**` and other actuator paths 404). With `--host 127.0.0.1` it failed on port 5432, as it should on a laptop where dev publishes ports on loopback.
+
+**Local production rehearsal** (`compose.prod.yaml` as project `gridreserve-prodtest`, secrets from `init-env.sh`, a throwaway prod key, HTTPS through Caddy's own local CA on `https://localhost:8443`): every container healthy; smoke test passed every check over HTTPS (HTTP/2, HSTS, nosniff, frame DENY); refresh cookie `Secure; HttpOnly; SameSite=Strict; Path=/api/v1/auth`; tokens signed with `kid: prod-2026-11`. Hand-made tokens with the same claims: prod key → 200, dev key (kid dev or prod) → 401. The first run caught a backup health check that would have blocked every release (start period 26 h); fixed with the catch-up backup and the new health check, and a failing off-site copy then made `up --wait` fail, as intended.
+
+**Backups:** round trip on the dev database (dump → encrypted stand-in remote → local copy deleted → fetched, checksums OK → restored into a fresh PostgreSQL): 330 users, 124 bookings, 30 bookables, 4 migrations, identical. The remote held only encrypted names and contents. `restore-drill.sh` on the rehearsal restored the off-site copy (counts differed only by the smoke test's writes after the backup).
+
+**PLAT-07 on the dev stack:** a JVM killed with SIGKILL from outside Docker restarted at once and was healthy after about 9 s (`restarts=1`); Config Server stopped and identity restarted → `ConfigClientFailFastException`, 9 restarts with backoff, healthy about 25 s after the Config Server returned. (`docker kill` is a manual stop for Docker and is not restarted; that's Docker's rule, not a failure.)
+
+**CI (run 42868935004, commit `3630fb2`, PR #16):** all 10 jobs green: backend 376 tests, frontend, the seven image builds for amd64 + arm64 (not pushed on a PR), system tests 27/27 against config branch `m1.10-deploy` (CONC-10 500/500, FS-34 18 of 20 reads 200 during the kill).
+
+**Mutations (seen during the work, not staged separately):** a `web` image without the `@private` block served the app's page for `/internal/users` and the smoke test failed on it (200); identity without the right `FRONTEND_ORIGIN` made the smoke test fail on "refresh with the cookie alone" (403).
+
+**Other checks:** `docker compose config` valid for both files (prod: only `web` published on all interfaces); actionlint clean on both workflows; `docker history`, image environment and files of all seven images contain no secrets; `init-env.sh` output file `600`, no placeholder left, SHA-256 matches, key in the one-line format; `release.sh` records the previous SHA and refuses a bad tag without touching `.env`.
+
+### Waiting for the host (owner steps, `docs/deploy/oracle.md`)
+- Oracle account and VM, ports 80/443, Docker; `init-env.sh` on the host; prod public key into config PR #9; Google Drive token; GitHub variables and secrets; packages public after the first push.
+- Then: first release, smoke test from CI, reboot test and fail-fast test on the host, tag `first-deploy`, README live URL.
+
+### Not covered yet
+- Anything on the real host: Let's Encrypt for the sslip.io name, Oracle's firewalls, arm64 images running (built in CI; not run on arm64 yet), Google Drive upload, the deploy workflow end to end, reboot recovery.
+- The images job and deploy workflow have only been linted and run on the PR; pushing to GHCR happens on `main`.
+
+### Open issues for later milestones
+- D-10 (JSON logs in prod) is pending: plain logs for now (Docker's json-file driver already wraps each line; nothing aggregates logs). Owner decision needed.
+- The JVM flags saved about 16 %, less than the ~350 MB per JVM estimated; booking still uses about 550 MB. Enough for the Oracle VM; measure again in M1.14.
 
 ---
 

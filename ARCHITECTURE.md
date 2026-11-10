@@ -822,7 +822,7 @@ Same three-step design as v0.1 (now keyed by `member_id`): Tx A inserts `IN_PROG
 | PostgreSQL down | All DB-backed services `503`, readiness DOWN |
 | Redis down (P4) | Fallbacks (§14) |
 | Bad config refreshed | Validation rejects invalid values; revert via config-repo PR + refresh |
-| Data loss on host | Backups depend on host (D-15) |
+| Data loss on host | Nightly encrypted off-site backups (Google Drive), restore from `backup restore.sh`; a new host is rebuilt from the repo, a fresh `.env` and the saved backup password (D-15, `docs/deploy/oracle.md`) |
 
 ## 16. Authentication and authorization
 
@@ -880,17 +880,30 @@ flowchart LR
         RDL[("redis:7 (P4)")]
     end
     CR[(gridreserve-config<br/>GitHub)] --> CS
-    subgraph Host["Deploy host (D-15)"]
-        FE[Static frontend<br/>same site as gateway]
-        HG[api-gateway public]
-        HS[platform + services private]
-        HDB[(PostgreSQL)]
+    subgraph Host["Oracle Always Free VM, arm64 (D-15): docker compose, profile prod"]
+        WEB["web: Caddy :80/:443<br/>React build + /api proxy + TLS"]
+        HG[api-gateway<br/>loopback only]
+        HS[config · discovery · identity · booking<br/>private network]
+        HDB[(postgres:16.15)]
+        BK[backup: nightly pg_dump]
     end
-    GH["GitHub Actions<br/>build/test all modules · images · system tests"] --> Host
+    GD[(Google Drive<br/>encrypted backups)]
+    U((Browser)) -->|"https://&lt;ip&gt;.sslip.io"| WEB --> HG --> HS --> HDB
+    BK -->|rclone crypt| GD
+    GH["GitHub Actions: tests · images amd64+arm64 → GHCR · system tests"] -->|"deploy.yml: SSH, release.sh &lt;sha&gt;, smoke test"| Host
+    CR --> HS
+    subgraph Laptop["Fallback: laptop + Cloudflare quick tunnel"]
+        TUN[cloudflared] --> LW["web (profile full) :8000"]
+    end
 ```
 
-- Only the gateway (and the static frontend) are public; everything else is on a private network.
-- Memory budget: ~5 JVMs + PostgreSQL in P1 (A-28); this strongly influences the host choice (D-15).
+- **Public surface:** only Caddy (80/443). The gateway and Eureka are published on the host's loopback for the smoke test and the refresh script over SSH; everything else has no published port. Caddy passes `/api/**` and the gateway's `/actuator/health`, answers 404 for other actuator and `/internal` paths, and serves the React build (fallback to `index.html`). One origin for app and API: the refresh cookie stays `SameSite=Strict`, no CORS.
+- **TLS:** Caddy gets and renews a Let's Encrypt certificate for `<ip-with-dashes>.sslip.io` (a free name that resolves to the IP); certificates live in a volume.
+- **Configuration:** profile `prod`; the Config Server's Git backend reads the public config repo's `main`; secrets only in the host's `.env` (created once by `scripts/prod/init-env.sh`, never leaves the host). JWT public keys are per profile, so prod trusts only its own key.
+- **Release and rollback:** CI pushes every image to GHCR tagged with the commit SHA; `deploy.yml` copies the compose file and scripts, runs `release.sh <sha>` (pull, `up -d --wait`), then smoke-tests from outside. Rollback = the same workflow with an older SHA.
+- **Restarts:** `restart: unless-stopped`; a crashed JVM is restarted by Docker; services fail fast without the Config Server and recover once it is back (PLAT-07).
+- **Backups:** nightly `pg_dump` per database, 7 days on the host, encrypted copy (rclone crypt, Google Drive `drive.file` scope) kept 30 days; restore drill into a throwaway database.
+- **Memory:** heap 256 MB plus bounded metaspace, code cache and thread stacks per JVM; about 2.5 GB for the six backend containers under test load (M1.10), well inside the VM.
 
 ## 19. Design decisions: settled and unresolved
 
@@ -914,6 +927,7 @@ flowchart LR
 | D-04 | Outbox introduced in P5 with HTTP push, no broker | 2026-11-04 |
 | D-12 | Access token in memory + refresh-token cookie (rotation removed by D-37) | 2026-10-26 |
 | D-11 | Deadlock retry with Spring Framework 7 `@Retryable` (in `spring-context`, no new library): `BookingService` wraps each write transaction in `BookingTransactions`, 3 attempts (2 retries), 50 ms ± 25 ms, only on `PessimisticLockingFailureException` (PostgreSQL `40P01`/`40001`); business refusals are never retried. The retry sits in a separate bean so each attempt starts a new transaction. Deadlocks are prevented first by the lock order; stale holds swept at hold creation are locked in one statement ordered by id. Rejected: a hand-written loop (more code, same behavior), no retry (a rare unforeseen deadlock would be a 500) | 2026-11-07 (owner, M1.5) |
+| D-15 | M1.10, zero budget: **Oracle Cloud Always Free** Ampere A1 VM (arm64) running the whole stack with Docker Compose (`infra/compose.prod.yaml`, profile prod), plus a **fallback**: the laptop stack shared through a Cloudflare quick tunnel (`scripts/demo-tunnel.sh`) and a demo video. **Caddy** in the frontend image: TLS (Let's Encrypt for an **sslip.io** name), static app, `/api` proxy; only 80/443 public. Images for amd64 and arm64 in **GHCR**, tagged by commit SHA; **deploy.yml** releases over SSH after CI passes on main and smoke-tests from outside; rollback = deploy an older SHA. **Backups:** nightly `pg_dump`, 7 days on the host, encrypted with rclone crypt and copied to **Google Drive** (30 days), restore drill. JWT public keys per profile (prod trusts only its own key; the private key is generated on the host). Prod exposes actuator health, info, refresh (not reachable from outside). Rejected: paid VPS (no budget), Render free tier (512 MB per service, sleeps after 15 min, no private services, Postgres deleted after 30 days), nginx + certbot (more config, a renewal job), cron in the backup container (no environment, needs root) | 2026-11-10 (owner, M1.10) |
 | D-28 | Stub HTTP server for Feign client tests: WireMock (`wiremock-standalone` 3.13, test scope; bundles its own Jetty and Jackson). Rejected: the JDK `HttpServer` (delays, failure sequences and request checks by hand), Spring Cloud Contract stubs | 2026-11-07 (owner, M1.9) |
 | D-42 | M1.9: **Service tokens** (D-19 built): `POST /internal/service-tokens` with HTTP Basic (client ID + secret; identity keeps only the SHA-256, compared in constant time) → 5-minute RS256 JWT, role `SERVICE`, `sub` = client ID; booking caches it (`ServiceTokens`) and a Feign interceptor adds it with `X-Request-Id`. `/internal/**` needs SERVICE; user APIs need MEMBER or ADMIN; actuator beyond health/info needs ADMIN or SERVICE. **IdentityGateway** composes Retry → CircuitBreaker → Bulkhead in code from Resilience4j registries (looked up per call); an `ErrorDecoder` makes 4xx non-retryable and not counted; bulkhead rejections are not counted against identity; Spring Cloud's own Feign circuit breaker is off. Timeouts for every Feign client under `openfeign.client.config.default` (per-client keys are context IDs). **Gateway:** the fallback answers `504 UPSTREAM_TIMEOUT` for timeouts and shows the client's path. **Boot 4 gaps in Resilience4j's Spring Boot module** (it targets Boot 3), filled in booking-service: retry metrics bound with `TaggedRetryMetrics`; a Boot 4 health component `circuitBreakers` (always UP: an open circuit to identity is handled by the fallback); `ResilienceRefresher` rebuilds policies after `/actuator/refresh`. **Refresh:** `scripts/refresh-config.sh` (admin login → Eureka → `POST /actuator/refresh` per instance; in dev via the discovery-server container). Rejected: Resilience4j annotations (AOP order implicit, kept the old policy objects after refresh), a shared secret header per service pair (no expiry) | 2026-11-07 (owner, M1.9) |
 | D-41 | M1.8: hold creation locks the bookable `FOR UPDATE` instead of `FOR SHARE` (the shared lock let conflicting exclusion-constraint inserts deadlock, §8.3); the venue stays `FOR SHARE`. The gateway routes have **no bulkhead**: Spring Cloud CircuitBreaker adds one by default (Resilience4j, 25 concurrent calls) and it made 50 parallel holds fail with 503 and open the circuit breaker; config `spring.cloud.circuitbreaker.bulkhead.resilience4j.enabled: false` (bulkheads stay on services' outbound clients, §10). Metrics `gridreserve.bookings.created{category,type}`, `gridreserve.bookings.conflicts{code}`, `gridreserve.db.retries{sqlstate}`; dev exposes `/actuator/metrics` (token required, not routed). CONC-10 lives in the `backend/system-tests` module (JUnit, `-Psystem-tests`), run in CI against a throwaway Compose stack with two booking instances; CI uses the config branch with the app branch's name when it exists. Deadlocks are asserted through the application counter (PostgreSQL's `pg_stat_database.deadlocks` is reported lazily by pooled connections, so it is only printed). CONC-09 moves to M1.11 (deactivate endpoint), CONC-08 to M1.12 (idempotency). Rejected: keep `FOR SHARE` and rely on the retry (1-second stalls, 500s under bursts), an advisory lock per bookable (same effect, less visible) | 2026-11-07 (owner, M1.8) |
@@ -939,7 +953,6 @@ flowchart LR
 | D-09 | Virtual threads, Tomcat thread limit | on/off | Off until measured | M1.14 |
 | D-10 | JSON logs in prod | Logback encoder (may need a library) / plain | Decide with host | First deploy |
 | D-13b | Load-test tool | JUnit harness / k6 / Gatling | JUnit harness first | M1.14 |
-| D-15 | Deploy host, backups, rollback (must fit ~5 JVMs) | Depends on host | Decide at M1.10 with current limits | M1.10 |
 | D-16b | DST-ambiguous local times in the slot grid | first occurrence / both / skip | Show both with UTC offset | P7 |
 | D-17 | Overlapping sessions on one CAPACITY bookable | forbid / allow | Forbid | P2 |
 | D-23 | Public-key distribution | config repo / JWKS endpoint | Config repo in P1, JWKS later | P1 / later |
@@ -954,5 +967,5 @@ flowchart LR
 | 1 | v0.1 §17 items 1–7 (generated column, promotion after commit, member stale holds, DB clock, idempotency lease, `STALE_UPDATE`, router) | — | **Resolved** in REQUIREMENTS.md v0.2 and this document (2026-11-04). |
 | 2 | REQUIREMENTS.md CXL-07 / D-03 | Synchronous promotion was marked "confirm at P3 start" | **Resolved** 2026-11-05: confirmed by the owner. |
 | 3 | REQUIREMENTS.md NFR-SEC-06 / A-14 | "Login 5 per minute per (IP, email)" — the gateway limiter cannot key on the email without reading the body | Proposal: gateway limits per IP; identity-service adds per-email failed-login throttling (P4). Needs a REQUIREMENTS update when P4 starts. |
-| 4 | Memory budget (A-28) vs free hosting tiers | ~5 JVMs may not fit common free tiers | Resolve with D-15 at M1.10. |
+| 4 | Memory budget (A-28) vs free hosting tiers | ~5 JVMs may not fit common free tiers | **Resolved** 2026-11-10 (D-15): Oracle Always Free A1 VM; about 2.5 GB measured for the backend containers. |
 | 5 | Resilience4j Boot 4 support | Not confirmed when written | M1.1 spike (D-21). |

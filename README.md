@@ -2,7 +2,7 @@
 
 One booking platform for many kinds of venues: library rooms and seats, sports courts, parking bays, clinic appointments and gym sessions. A member picks a category, a venue and a bookable, holds a time slot for five minutes and confirms it. Double-booking is impossible, even under heavy concurrent load and with several service instances running.
 
-> **Status: Phase 1, M1.9.** Config server, Eureka, gateway, identity and booking services run together. identity-service registers users (and logs them in at once), issues RS256 access tokens plus a refresh-token cookie (sliding 7 days, logout ends it) and answers `/api/v1/me`. The gateway refuses requests without a valid access token, and booking-service checks the token and the role again itself, without calling identity-service. booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. booking-service serves the catalog (categories, venues, bookables with their effective rules, countries and time zones) and slot availability for a date (M1.4). Members hold a slot for 5 minutes, confirm it and cancel it; admins can cancel any booking (M1.5). A React frontend runs the whole journey in the browser through the gateway (M1.6). Every booking rule (hours, grid, length, horizon, per-member limit, cancellation cutoff) is enforced and a background job expires unconfirmed holds (M1.7). Double-booking is proven impossible under parallel load, also through the gateway with two booking-service instances (M1.8). Calls between services are protected (timeouts, retry, circuit breaker, bulkhead, fallbacks) and configuration changes reach every instance without a restart (M1.9). Container images and the first deployment are next (M1.10). Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
+> **Status: Phase 1, M1.10.** Config server, Eureka, gateway, identity and booking services run together. identity-service registers users (and logs them in at once), issues RS256 access tokens plus a refresh-token cookie (sliding 7 days, logout ends it) and answers `/api/v1/me`. The gateway refuses requests without a valid access token, and booking-service checks the token and the role again itself, without calling identity-service. booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. booking-service serves the catalog (categories, venues, bookables with their effective rules, countries and time zones) and slot availability for a date (M1.4). Members hold a slot for 5 minutes, confirm it and cancel it; admins can cancel any booking (M1.5). A React frontend runs the whole journey in the browser through the gateway (M1.6). Every booking rule (hours, grid, length, horizon, per-member limit, cancellation cutoff) is enforced and a background job expires unconfirmed holds (M1.7). Double-booking is proven impossible under parallel load, also through the gateway with two booking-service instances (M1.8). Calls between services are protected (timeouts, retry, circuit breaker, bulkhead, fallbacks) and configuration changes reach every instance without a restart (M1.9). Every part runs from container images built for amd64 and arm64; the deployment to a free Oracle Cloud VM, with nightly encrypted backups, is prepared and waits for the host (M1.10). Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## What this project demonstrates
 
@@ -33,8 +33,8 @@ Java 21 · Spring Boot 4 · Spring Cloud (Config, Eureka, Gateway, OpenFeign, Re
 backend/     Java: platform/ (config-server, discovery-server, api-gateway), services/, libs/
 frontend/    React app (from M1.6)
 infra/       Docker Compose and PostgreSQL init
-scripts/     Helper scripts (from M1.9)
-docs/        Progress log
+scripts/     Helper scripts: config refresh, smoke test, tunnel demo, prod/ host scripts
+docs/        Progress log, review guides, learning list, deploy/ host guide
 ```
 
 Runtime configuration lives in a separate repository: [gridreserve-config](https://github.com/chhavinath-bit/gridreserve-config).
@@ -242,9 +242,36 @@ npm test            # Vitest + React Testing Library
 npm run build       # production build into frontend/dist
 ```
 
+### Run the whole app from images
+
+The same images the deploy host runs, on your laptop: Caddy serves the built frontend and passes `/api` to the gateway, like in production.
+
+```bash
+cd infra
+FRONTEND_ORIGIN=http://localhost:8000 docker compose --profile full up -d --build --wait
+# http://localhost:8000
+python3 ../scripts/smoke-test.py http://localhost:8000      # page, login, refresh, hold/confirm/cancel, private paths
+```
+
+`FRONTEND_ORIGIN` tells identity-service which Origin may refresh and log out; leave it unset when you use the Vite dev server on 5173.
+
+### Laptop demo through a tunnel
+
+A temporary public `https://…trycloudflare.com` address for the stack on your laptop, free and without an account (live only while the script runs). Needs `cloudflared` (`brew install cloudflared`):
+
+```bash
+scripts/demo-tunnel.sh     # prints the address; Ctrl-C closes the tunnel
+```
+
+### Deployment
+
+The live site runs on a free Oracle Cloud VM (arm64) with Docker Compose (`infra/compose.prod.yaml`, profile `prod`); only Caddy is public (HTTPS with a Let's Encrypt certificate for an `sslip.io` name). After CI passes on `main`, `.github/workflows/deploy.yml` releases that commit's images over SSH and smoke-tests the public address; rollback is the same workflow with an older commit SHA. Backups run nightly: `pg_dump` per database, kept 7 days on the host and copied encrypted to Google Drive for 30 days. Setting up the host, backups and the restore drill: [docs/deploy/oracle.md](docs/deploy/oracle.md).
+
+**Live demo:** not online yet (the host is being set up). Demo accounts are the ones above.
+
 ### Access-token keys
 
-identity-service signs access tokens with an RSA private key (`JWT_PRIVATE_KEY` in `infra/.env`, never committed); every service verifies them with the matching public key from the config repo (`gridreserve.jwt.public-keys` in `application.yml`, keyed by `kid`). identity-service refuses to start if the two do not match. To make your own dev pair, follow the commands in `infra/.env.example`, put the public key in your config repo clone, and set `gridreserve.jwt.signing.key-id` in `identity-service.yml` to its `kid`.
+identity-service signs access tokens with an RSA private key (`JWT_PRIVATE_KEY` in `infra/.env`, never committed); every service verifies them with the matching public key from the config repo (`gridreserve.jwt.public-keys` in `application-dev.yml`, keyed by `kid`). The keys are per profile, so prod trusts only its own key. identity-service refuses to start if the two do not match. To make your own dev pair, follow the commands in `infra/.env.example`, put the public key in your config repo clone, and set `gridreserve.jwt.signing.key-id` in `identity-service-dev.yml` to its `kid`.
 
 Build and run all backend tests (Docker must be running):
 

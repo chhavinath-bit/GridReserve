@@ -1,5 +1,6 @@
 # GridReserve — Tech Stack
 
+> Version 0.3 (draft). Changes from v0.2 (M1.10, 2026-11-10, D-15): deployment section 3.19 (Oracle Always Free, Caddy, sslip.io, GHCR, rclone), image details and measured memory in 3.15, image job and CD in 3.17.
 > Version 0.2 (draft). Based on [PROJECT.md](PROJECT.md) v0.3 and [REQUIREMENTS.md](REQUIREMENTS.md) v0.2.
 > Requirement IDs (`BR-10`, `PLAT-02`, `RES-03`, …) refer to REQUIREMENTS.md.
 > Changes from v0.1: modular monolith replaced by **microservices from the start** (owner decision 2026-11-04); Spring Boot 3 → **Spring Boot 4** with **Spring Cloud** (Config Server, Eureka, Gateway, LoadBalancer, CircuitBreaker/Resilience4j); `dev`/`prod` profiles; RS256 JWT with refresh-token cookie; React Router, Vitest, RTL and Playwright added. Nothing from v0.1 was removed (Redis cache and rate limiting, Flyway, Actuator/Micrometer, outbox all remain).
@@ -200,8 +201,9 @@ Each section: **role**, **why**, **how it interacts**, **alternatives rejected**
 ### 3.15 Docker and Docker Compose
 
 - **Role.** `infra/compose.yaml` (with `infra/.env`) runs PostgreSQL (init script creates one database and user per service), config server, discovery server, gateway, identity and booking services (and Redis from P4) with health checks and `depends_on: condition: service_healthy`. `docker compose up --scale booking-service=2` demonstrates load balancing. In `dev` the config server mounts the sibling `gridreserve-config` clone.
-- **Images.** One multi-stage Dockerfile per service (Maven build → JRE 21 runtime, non-root, heap capped, NFR-PERF-05).
-- **Memory reality.** Phase 1 runs about 5 JVMs plus PostgreSQL. With ~256 MB heap each that is roughly 2–3 GB RAM including overhead. This matters for the deploy host choice (D-15).
+- **Images.** One multi-stage Dockerfile for every backend app (`backend/Dockerfile`, `MODULE` and `PORT` build args): Maven build → JRE 21 runtime, non-root, readiness `HEALTHCHECK`, bounded JVM memory (heap 256 MB, metaspace 192 MB, code cache 64 MB, 512 KB thread stacks, serial GC, exit on OutOfMemoryError; NFR-PERF-05). The build stage runs on the builder's own CPU (`--platform=$BUILDPLATFORM`), so arm64 images cost little: a jar is the same on every CPU. `frontend/Dockerfile` builds the app into a Caddy image; `infra/backup/Dockerfile` is the backup job (M1.10).
+- **Memory reality.** Phase 1 runs about 5 JVMs plus PostgreSQL. Measured in M1.10 after the system tests: about 2.5 GB for the six backend containers (each JVM 260–550 MB: heap plus metaspace, threads and code). The deploy host (D-15) has room to spare.
+- **Profiles.** `full` adds the `web` container (Caddy + built app) on `http://localhost:8000`, the same front door as the deploy host. `infra/compose.prod.yaml` is the deploy host's file: published images, profile `prod`, only Caddy public.
 - **Alternatives rejected.** *Kubernetes*: not allowed; Compose is enough for the demo and for interviews about the concepts.
 
 ### 3.16 Backend testing: JUnit 5, Mockito, Testcontainers, stub HTTP server
@@ -222,13 +224,22 @@ Each section: **role**, **why**, **how it interacts**, **alternatives rejected**
 
 - **CI on every push/PR:** Java 21 Temurin, Maven cache, `./mvnw verify` for all modules (Testcontainers works on Ubuntu runners); frontend `npm ci`, type check, lint, Vitest, build; build all Docker images.
 - **System-test job** (on PRs to `main` and nightly): `docker compose up`, Playwright and resilience scenarios (FS-32..38) — kept separate because it is slower.
-- **CD** added once the deploy host is chosen (M1.10).
+- **Images job** (M1.10): every app for `linux/amd64` and `linux/arm64` with Buildx (QEMU only for the small runtime stages); pushed to GHCR on `main`, tagged with the commit SHA.
+- **CD** (`deploy.yml`, M1.10): after CI succeeds on `main`, copies the compose file and scripts to the host over SSH (pinned host key), runs `release.sh <sha>`, then smoke-tests the public address from the runner. Rollback: run it by hand with an older SHA.
 
 ### 3.18 Spring Boot Actuator and Micrometer
 
 - **Role.** Per service: `/actuator/health` with liveness/readiness groups (used by Eureka, Compose and the host), `/actuator/refresh` (admin/internal only), metrics: HTTP timings, HikariCP, JVM, Resilience4j (circuit state, retries, bulkhead and rate-limiter rejections), and custom booking metrics (bookings created, conflicts by code, holds expired, outbox backlog).
 - **Exposure.** Only the gateway's `health` is public; everything else is admin/internal (NFR-SEC-08).
 - **Tracing.** Request IDs are propagated in P1; full distributed tracing (Micrometer Tracing + Zipkin or OpenTelemetry) is valuable with microservices but is a new dependency, pending approval (D-24).
+
+### 3.19 Deployment: Oracle Always Free, Caddy, GHCR, rclone (M1.10, D-15)
+
+- **Host.** Oracle Cloud Always Free Ampere A1 VM (arm64, Ubuntu): free, and enough memory for the whole stack. Docker Compose with `restart: unless-stopped` gives restarts with backoff (PLAT-07). *Rejected:* a paid VPS (no budget), Render's free tier (512 MB per service, sleeps after 15 minutes, no private services, its PostgreSQL is deleted after 30 days), Kubernetes (not allowed). Risk: Oracle may reclaim an idle free VM; the deployment is scripted and backups are off-site, so a new VM is rebuilt in under an hour. Fallback for interviews: the laptop stack through a **Cloudflare quick tunnel** (`cloudflared`, free, no account).
+- **Caddy** (2.11, official image, in the frontend image). Serves the React build, passes `/api` and the gateway's health to the gateway, and gets and renews Let's Encrypt certificates by itself. Same origin for app and API, so the refresh cookie stays `SameSite=Strict` without CORS. *Rejected:* nginx + certbot (more config and a renewal job), exposing the gateway directly (TLS and static files in Java).
+- **sslip.io.** A free DNS name that resolves to the IP inside it (`203-0-113-5.sslip.io`), so HTTPS works without buying a domain; a real domain later is one value in `.env`.
+- **GHCR** (GitHub Container Registry). Free for public repositories; images tagged by commit SHA, which also makes rollback a redeploy of an older SHA.
+- **rclone** (1.75, one binary copied into the backup image). Encrypts backups with its `crypt` remote and copies them to Google Drive (`drive.file` scope: only files it created). *Rejected:* keeping backups on the VM only (lost with it), Backblaze B2 / Oracle Object Storage (owner chose Google Drive).
 
 ## 4. Profiles
 

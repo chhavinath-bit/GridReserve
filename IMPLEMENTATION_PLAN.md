@@ -61,7 +61,7 @@ M1.1 platform skeleton + CI + Boot 4 spikes ─► M1.2 booking schema & constra
 | B-1 | Repository location | M0.2 | **Decided**: own repo in this folder. Note: on 2026-11-04 this folder was no longer inside any Git repository, so the "ignore in parent repo" step may be unnecessary; re-check in M0.1. |
 | B-2 | Doc fixes from ARCHITECTURE v0.1 §17 | — | **Confirmed** by the owner in M0.3 (2026-11-05). |
 | B-3/4/5 | Router, frontend tests, token storage | — | **Decided** (React Router; Vitest + RTL + Playwright; refresh-token cookie). |
-| B-6 | Deploy host, backups, rollback (D-15); must fit ~5 JVMs + PostgreSQL | M1.10 | Decide at M1.10 after checking current limits. |
+| B-6 | Deploy host, backups, rollback (D-15); must fit ~5 JVMs + PostgreSQL | M1.10 | **Decided** 2026-11-10: Oracle Cloud Always Free VM + laptop tunnel fallback; nightly encrypted backups to Google Drive; rollback by redeploying an older commit SHA (D-15). |
 | B-7 | Load-test tool (D-13b) | M1.14 | JUnit harness first. |
 | B-8 | Resilience4j on Spring Boot 4 (D-21), gateway variant (D-22), config lookup (D-20), shared lib scope (D-27) | M1.1 | Settle by the M1.1 spike. |
 | B-9 | Service-to-service authentication (D-19) | M1.3 / M1.9 | **Decided** 2026-11-06: service JWTs signed by identity, built in M1.9. |

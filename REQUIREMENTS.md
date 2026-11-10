@@ -1,6 +1,7 @@
 # GridReserve — Requirements
 
-> Version 0.14 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Version 0.15 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Changes from v0.14 (M1.10, 2026-11-10, D-15): PLAT-07 verified with the deploy setup (restart with backoff, fail fast without the Config Server); new NFR-OPS-05 (nightly encrypted off-site backups with a restore drill) and NFR-OPS-06 (every release is one commit's images, smoke-tested from outside; rollback by redeploying an older commit).
 > Changes from v0.13 (M1.9, 2026-11-07, D-42): FR-ROLE-01 adds that user endpoints require role MEMBER or ADMIN (a service token, role SERVICE, is refused there) and actuator endpoints beyond health/info require ADMIN or SERVICE; NFR-TEST-03 names WireMock (D-28 approved).
 > Changes from v0.12 (M1.8, owner decision 2026-11-07, D-41): CONC-09 says hold creation locks the bookable `FOR UPDATE` (not `FOR SHARE`); CONC-09 is proven in M1.11 and CONC-08 in M1.12, where the deactivate endpoint and the idempotency key arrive.
 > Changes from v0.11 (M1.7, owner decisions 2026-11-07, D-40): BR-07 counts the horizon in **whole local days** like availability (a start on a local date before today + horizon), so the API and the picker always agree; FR-BK-07 adds `cancellableUntil`; BR-08 states that bookings on inactive bookables of the category count too and that a hold that has run out does not.
@@ -430,7 +431,7 @@ General rule: correctness comes from database constraints, conditional updates a
 - **PLAT-04** Configuration shall come from the **Config Server**, backed by a separate Git repository, using profiles `dev` and `prod` (`{service}.yml`, `{service}-dev.yml`, `{service}-prod.yml`, shared `application*.yml`). Automated tests use a `test` profile with the config client and Eureka disabled.
 - **PLAT-05** Properties marked refreshable (resilience thresholds, rate-limit settings, feature toggles, CORS origins, job intervals) shall be bound with `@RefreshScope` or `@ConfigurationProperties` rebinding. A refresh script shall find every instance through Eureka and call `POST /actuator/refresh` on each; the endpoint requires authentication and is not routed through the gateway. Booking **rules** are data in the database, not configuration (NFR-MAINT-01).
 - **PLAT-06** Secrets shall never be stored in the config repository; they come from environment variables (or encrypted `{cipher}` values, if approved later).
-- **PLAT-07** A service shall fail fast at startup if the Config Server is unreachable (no in-app retry, so misconfiguration shows up immediately). Recovery comes from the container platform restarting it with backoff: Compose uses `restart: unless-stopped`, and the deploy host must do the same (checked in M1.10). Verified in M1.1 (spike S6): a service started while the Config Server was down recovered on its own once it was back.
+- **PLAT-07** A service shall fail fast at startup if the Config Server is unreachable (no in-app retry, so misconfiguration shows up immediately). Recovery comes from the container platform restarting it with backoff: Compose uses `restart: unless-stopped`, and so does the deploy host (`infra/compose.prod.yaml`, M1.10). Verified in M1.1 (spike S6) and again in M1.10: a service restarted while the Config Server was down failed fast, was restarted with backoff, and became healthy once the Config Server was back; a JVM killed with SIGKILL was restarted by Docker.
 - **PLAT-08** Each service shall own its data: a **separate database per service** (on one PostgreSQL server). No service reads or writes another service's database.
 - **PLAT-09** The gateway shall generate an `X-Request-Id` if missing; every service shall log it and forward it on outbound calls.
 - **PLAT-10** Each service shall expose `/actuator/health` with liveness and readiness groups; Eureka and the gateway shall route only to instances that are UP.
@@ -587,6 +588,8 @@ Not routed by the gateway: `/actuator/**` (except the gateway's own health), `/i
 - **NFR-OPS-02** Every service has its own Dockerfile and is configured only through environment variables plus the Config Server.
 - **NFR-OPS-03** Logs include the request ID; booking state changes are logged at INFO without personal data beyond user ID.
 - **NFR-OPS-04** Startup order is handled by health-based dependencies and client retries, not by fixed sleeps.
+- **NFR-OPS-05** The deployed databases are backed up every night (`pg_dump` per service database), kept 7 days on the host and copied **encrypted** off the host (30 days). A failed or missed backup shows as an unhealthy container. A restore drill restores the newest off-site backup into a throwaway database and compares row counts (M1.10).
+- **NFR-OPS-06** A release deploys the images of exactly one commit (tagged with its SHA) after CI passed, and is smoke-tested from outside the host (journey, private paths, closed ports). Rolling back is deploying an older commit's images; data lives in volumes and is never touched by a release (M1.10).
 
 ### Usability and maintainability
 - **NFR-UX-01** The main journey needs at most 6 clicks after login.
@@ -712,5 +715,5 @@ Items carried over from PROJECT.md §10 are marked (PROJECT).
 | 50-parallel-request test (also through the gateway with two instances) | CONC-01, CONC-10, FS-01, NFR-PERF-03 |
 | Resilience tests pass | RES-*, FS-32..38 |
 | CI is green | NFR-TEST-05 |
-| App is deployed | NFR-OPS-02, NFR-TEST-06 |
+| App is deployed | NFR-OPS-02, NFR-OPS-05, NFR-OPS-06, NFR-TEST-06 |
 | README explains how to run and test | NFR-TEST-06, FR-SEED-02 |
