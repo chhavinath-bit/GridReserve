@@ -35,6 +35,14 @@ public final class Http {
         return send(request, path, bearerToken);
     }
 
+    /** PUTs {@code body} as JSON. */
+    public Response put(String path, String bearerToken, Object body) {
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(baseUrl + path))
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body)));
+        return send(request, path, bearerToken);
+    }
+
     private Response send(HttpRequest.Builder request, String path, String bearerToken) {
         if (bearerToken != null) {
             request.header("Authorization", "Bearer " + bearerToken);

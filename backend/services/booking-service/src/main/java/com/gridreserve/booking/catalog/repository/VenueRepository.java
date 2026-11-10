@@ -32,4 +32,12 @@ public interface VenueRepository extends JpaRepository<Venue, Long> {
             FOR SHARE OF v
             """, nativeQuery = true)
     Optional<Long> lockForShareByBookable(@Param("bookableId") long bookableId);
+
+    /**
+     * Locks the venue {@code FOR UPDATE} to open or close it (FR-CAT-13). It waits for holds being created
+     * on any of its bookables (they hold it {@code FOR SHARE}), and holds that start later wait for it and
+     * then see it inactive (CONC-09). First in the global lock order (CLAUDE.md §8.3).
+     */
+    @Query(value = "SELECT id FROM venue WHERE id = :id FOR UPDATE", nativeQuery = true)
+    Optional<Long> lockForUpdate(@Param("id") long id);
 }

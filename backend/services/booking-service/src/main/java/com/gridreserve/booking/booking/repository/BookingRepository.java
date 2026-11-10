@@ -141,4 +141,30 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
             """)
     Page<Booking> findMine(@Param("memberId") long memberId, @Param("status") BookingStatus status,
                            @Param("from") Instant from, @Param("to") Instant to, Pageable pageable);
+
+    /** Bookings still coming on some bookables (FR-CAT-10): CONFIRMED, or HELD and not run out; not ended. */
+    @Query("""
+            select count(b) from Booking b
+            where b.bookableId in :bookableIds
+              and b.endTime > :now
+              and (b.status = :confirmed or (b.status = :held and b.expiresAt > :now))
+            """)
+    long countScheduled(@Param("bookableIds") Collection<Long> bookableIds, @Param("now") Instant now,
+                        @Param("confirmed") BookingStatus confirmed, @Param("held") BookingStatus held);
+
+    /**
+     * Every member's bookings for admins (FR-ADM-01); each filter optional. {@code anyBookable} = true ignores
+     * {@code bookableIds} (which then holds a placeholder, since an IN list can't be empty).
+     */
+    @Query("""
+            select b from Booking b
+            where (:anyBookable = true or b.bookableId in :bookableIds)
+              and (:status is null or b.status = :status)
+              and (cast(:from as Instant) is null or b.startTime >= :from)
+              and (cast(:to as Instant) is null or b.startTime < :to)
+            """)
+    Page<Booking> findForAdmin(@Param("anyBookable") boolean anyBookable,
+                               @Param("bookableIds") Collection<Long> bookableIds,
+                               @Param("status") BookingStatus status, @Param("from") Instant from,
+                               @Param("to") Instant to, Pageable pageable);
 }

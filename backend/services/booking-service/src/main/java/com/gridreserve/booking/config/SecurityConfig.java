@@ -3,6 +3,7 @@ package com.gridreserve.booking.config;
 import com.gridreserve.common.web.security.JsonSecurityErrorHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
@@ -32,6 +33,9 @@ class SecurityConfig {
                         // Other actuator endpoints (refresh, metrics): an admin or another service (D-19).
                         .requestMatchers("/actuator/**").hasAnyRole("ADMIN", "SERVICE")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        // Catalog changes (FR-CAT-07..16) live next to the reads they change; members only read.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/venues/**", "/api/v1/bookables/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/venues/**", "/api/v1/bookables/**").hasRole("ADMIN")
                         // Everything else, catalog browsing included, needs a signed-in person (PROJECT.md §6); a
                         // service token (role SERVICE) must not act as a member.
                         .anyRequest().hasAnyRole("MEMBER", "ADMIN"))
