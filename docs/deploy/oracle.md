@@ -24,17 +24,25 @@ are fine.
 
 ## 2. The VM (you)
 
-Compute → Instances → Create instance:
+First the network, so the instance form can give the VM a public IP (with "Create new public subnet" in that
+form the public-IP switch stays disabled, because the subnet doesn't exist yet): Networking → Virtual cloud
+networks → **Start VCN Wizard** → **Create VCN with Internet Connectivity**, name `gridreserve-vcn`, defaults,
+Create. That makes a public subnet, an internet gateway, the route and a security list with SSH open.
+
+Then Compute → Instances → Create instance:
 
 | Setting | Value |
 |---|---|
-| Image | Canonical Ubuntu 24.04 (the aarch64 build) |
+| Image | Canonical Ubuntu 24.04 (Minimal) **aarch64**; the warning about the current shape is expected, the shape changes below |
 | Shape | VM.Standard.A1.Flex (Ampere), the most OCPUs and memory the Always Free limit allows (at least 2 OCPU / 8 GB) |
-| Networking | the default VCN and public subnet; **assign a public IPv4 address** |
-| SSH keys | upload your own public key (`~/.ssh/id_ed25519.pub`; create one with `ssh-keygen -t ed25519` if you have none) |
-| Boot volume | 50 GB is plenty (Always Free covers up to 200 GB in total) |
+| Networking | **Select existing**: `gridreserve-vcn` and its **public** subnet; **Automatically assign public IPv4 address**: on |
+| SSH keys | **Paste public keys**: `pbcopy < ~/.ssh/id_ed25519.pub`, then paste (create the pair with `ssh-keygen -t ed25519` if you have none; never upload the file without `.pub`) |
+| Storage | defaults: boot volume 46.6 GB (Always Free covers up to 200 GB in total), in-transit encryption on, no block volumes |
 
-"Out of capacity" is common for Ampere: try another availability domain, or again later.
+"Out of capacity for shape VM.Standard.A1.Flex" is common: try another availability domain (Basic information
+→ Placement; many regions have only AD-1), leave the fault domain to Oracle, use 1 OCPU / 6 GB (enough; resize
+later), or try again at another time of day. Don't upgrade to Pay As You Go to get past it. Meanwhile the
+laptop tunnel (`scripts/demo-tunnel.sh`) is the live demo.
 
 Write down the public IP, e.g. `203.0.113.5`. Your site name is then `203-0-113-5.sslip.io`.
 sslip.io answers every such name with the IP inside it, so there's no DNS to set up.
@@ -50,7 +58,7 @@ Two firewalls must both allow them:
    ssh ubuntu@203.0.113.5
    sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
    sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
-   sudo netfilter-persistent save
+   sudo netfilter-persistent save     # Minimal image: sudo apt-get install -y iptables-persistent first
    ```
 
 Do **not** open 5432, 8080, 8761 or any other port. The stack publishes nothing else to the internet, and

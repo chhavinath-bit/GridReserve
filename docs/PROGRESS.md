@@ -706,6 +706,10 @@ Decision D-15 (owner, 2026-11-10, zero budget): Oracle Cloud Always Free VM + la
 
 **Other checks:** `docker compose config` valid for both files (prod: only `web` published on all interfaces); actionlint clean on both workflows; `docker history`, image environment and files of all seven images contain no secrets; `init-env.sh` output file `600`, no placeholder left, SHA-256 matches, key in the one-line format; `release.sh` records the previous SHA and refuses a bad tag without touching `.env`.
 
+**Laptop tunnel demo (owner, 2026-11-11):** `scripts/demo-tunnel.sh` with `cloudflared` works; the app is reachable at the printed `trycloudflare.com` address.
+
+**Oracle host (owner, 2026-11-11):** account created (card verification hold of SGD 1.38, expected to be reversed); VM creation refused with "Out of capacity for shape VM.Standard.A1.Flex in AD-1", also at 1 OCPU / 6 GB. The owner retries when capacity appears; the guide now has the VCN-wizard step, the image and SSH-key details and the capacity advice.
+
 ### Waiting for the host (owner steps, `docs/deploy/oracle.md`)
 - Oracle account and VM, ports 80/443, Docker; `init-env.sh` on the host; prod public key into config PR #9; Google Drive token; GitHub variables and secrets; packages public after the first push.
 - Then: first release, smoke test from CI, reboot test and fail-fast test on the host, tag `first-deploy`, README live URL.
