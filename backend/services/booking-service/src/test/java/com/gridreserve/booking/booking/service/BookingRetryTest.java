@@ -2,11 +2,8 @@ package com.gridreserve.booking.booking.service;
 
 import com.gridreserve.booking.booking.dto.BookingResponse;
 import com.gridreserve.booking.booking.dto.CreateHoldRequest;
-import com.gridreserve.booking.booking.repository.BookingRepository;
-import com.gridreserve.booking.catalog.service.CatalogService;
 import com.gridreserve.booking.common.exception.BookingErrorCode;
 import com.gridreserve.booking.config.RetryConfig;
-import com.gridreserve.booking.member.service.MemberProvisioner;
 import com.gridreserve.common.web.error.DomainException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,18 +20,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * D-11: {@link BookingService} reruns a transaction PostgreSQL killed to break a deadlock, and nothing
- * else. A small Spring context (no database): the real {@link RetryConfig} and service, with the
+ * D-11: {@link RetriedTransactions} reruns a transaction PostgreSQL killed to break a deadlock, and nothing
+ * else. A small Spring context (no database): the real {@link RetryConfig} and retry bean, with the
  * transaction class mocked so it can fail on demand. Without Spring there would be no retry proxy.
  */
 @SpringJUnitConfig
-@Import({RetryConfig.class, BookingService.class, BookingMetrics.class, SimpleMeterRegistry.class})
+@Import({RetryConfig.class, RetriedTransactions.class, BookingMetrics.class, SimpleMeterRegistry.class})
 class BookingRetryTest {
 
     private static final CreateHoldRequest REQUEST = new CreateHoldRequest(1L,
@@ -43,17 +41,8 @@ class BookingRetryTest {
     @MockitoBean
     BookingTransactions transactions;
 
-    @MockitoBean
-    MemberProvisioner members;
-
-    @MockitoBean
-    BookingRepository bookings;
-
-    @MockitoBean
-    CatalogService catalog;
-
     @Autowired
-    BookingService service;
+    RetriedTransactions service;
 
     @Autowired
     BookingMetrics metrics;
@@ -67,11 +56,11 @@ class BookingRetryTest {
     @DisplayName("D-11: a deadlocked hold is run again in a new transaction and succeeds")
     void retriesAfterDeadlock() {
         BookingResponse created = mock(BookingResponse.class);
-        when(transactions.hold(anyLong(), eq(REQUEST))).thenThrow(deadlock()).thenReturn(created);
+        when(transactions.hold(anyLong(), eq(REQUEST), isNull())).thenThrow(deadlock()).thenReturn(created);
 
         double before = metrics.lockFailures();
-        assertThat(service.hold(7L, REQUEST)).isSameAs(created);
-        verify(transactions, times(2)).hold(7L, REQUEST);
+        assertThat(service.hold(7L, REQUEST, null)).isSameAs(created);
+        verify(transactions, times(2)).hold(7L, REQUEST, null);
         // The failed attempt is counted once (gridreserve.db.retries), the successful one not.
         assertThat(metrics.lockFailures() - before).isEqualTo(1);
     }
@@ -88,10 +77,10 @@ class BookingRetryTest {
     @Test
     @DisplayName("D-11: a business refusal (409 SLOT_TAKEN) is never retried")
     void businessRefusalNotRetried() {
-        when(transactions.hold(anyLong(), eq(REQUEST)))
+        when(transactions.hold(anyLong(), eq(REQUEST), isNull()))
                 .thenThrow(new DomainException(BookingErrorCode.SLOT_TAKEN, "taken"));
 
-        assertThatThrownBy(() -> service.hold(7L, REQUEST)).isInstanceOf(DomainException.class);
-        verify(transactions, times(1)).hold(7L, REQUEST);
+        assertThatThrownBy(() -> service.hold(7L, REQUEST, null)).isInstanceOf(DomainException.class);
+        verify(transactions, times(1)).hold(7L, REQUEST, null);
     }
 }

@@ -3,6 +3,8 @@ package com.gridreserve.booking.booking.service;
 import com.gridreserve.booking.booking.dto.BookingResponse;
 import com.gridreserve.booking.booking.dto.CreateHoldRequest;
 import com.gridreserve.booking.booking.entity.Booking;
+import com.gridreserve.booking.audit.service.Actor;
+import com.gridreserve.booking.audit.service.AuditService;
 import com.gridreserve.booking.booking.entity.BookingStatus;
 import com.gridreserve.booking.booking.entity.CancelledBy;
 import com.gridreserve.booking.booking.mapper.BookingMapper;
@@ -42,15 +44,20 @@ class BookingTransactions {
     private final MemberLock memberLock;
     private final HoldExpiryMetrics expiryMetrics;
     private final BookingMetrics bookingMetrics;
+    private final AuditService audit;
+    private final IdempotencyService idempotency;
     private final Clock clock;
 
     BookingTransactions(BookingRepository bookings, CatalogService catalog, MemberLock memberLock,
-                        HoldExpiryMetrics expiryMetrics, BookingMetrics bookingMetrics, Clock clock) {
+                        HoldExpiryMetrics expiryMetrics, BookingMetrics bookingMetrics, AuditService audit,
+                        IdempotencyService idempotency, Clock clock) {
         this.bookings = bookings;
         this.catalog = catalog;
         this.memberLock = memberLock;
         this.expiryMetrics = expiryMetrics;
         this.bookingMetrics = bookingMetrics;
+        this.audit = audit;
+        this.idempotency = idempotency;
         this.clock = clock;
     }
 
@@ -59,10 +66,12 @@ class BookingTransactions {
      * SHARE}, bookable {@code FOR UPDATE} (D-41), member {@code FOR UPDATE}, then the stale holds in the way. Rules in the BR-14
      * order; the member limit (BR-08) is counted under the member lock, so two parallel holds of one
      * member can't both see room for one more. The insert is the real decision on overlaps: the exclusion
-     * constraints reject one even if two requests got this far at the same time.
+     * constraints reject one even if two requests got this far at the same time. Every change is audited in
+     * this transaction (FR-AUD-02): the new hold, by its member, and each run-out hold swept out of the way, by
+     * the system. With an {@code Idempotency-Key}, the answer is stored here too, so it commits with the booking.
      */
     @Transactional
-    public BookingResponse hold(long memberId, CreateHoldRequest request) {
+    public BookingResponse hold(long memberId, CreateHoldRequest request, IdempotencyKey idempotencyKey) {
         // PostgreSQL keeps microseconds; the response must show the same values a later read returns.
         Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
         LockedBookable bookable = catalog.lockForBooking(request.bookableId());
@@ -76,7 +85,9 @@ class BookingTransactions {
         List<Long> stale = bookings.lockStaleHolds(request.bookableId(), memberId, request.start(), request.end(),
                 occupiedUntil, now);
         if (!stale.isEmpty()) {
+            // Locked above with the same conditions as the UPDATE, so every one of them is expired now.
             expiryMetrics.expired(Layer.HOLD, bookings.expireHolds(stale, now));
+            stale.forEach(id -> expired(id, now));
         }
 
         Booking hold = Booking.hold(memberId, request.bookableId(), request.start(), request.end(), occupiedUntil,
@@ -92,7 +103,13 @@ class BookingTransactions {
             throw translated;
         }
         bookingMetrics.created(bookable.categoryCode(), bookable.typeCode());
-        return BookingMapper.toResponse(hold, bookable.info());
+        // A member always books for themself, also an admin (FR-ADM-03), so the actor is MEMBER.
+        audit.record(hold.getId(), null, BookingStatus.HELD.name(), Actor.person(memberId, false), null, now);
+        BookingResponse response = BookingMapper.toResponse(hold, bookable.info());
+        if (idempotencyKey != null) {
+            idempotency.complete(idempotencyKey, 201, response, hold.getId());
+        }
+        return response;
     }
 
     /**
@@ -105,10 +122,12 @@ class BookingTransactions {
         Instant now = clock.instant();
         owned(bookingId, memberId, false);
         if (bookings.confirm(bookingId, now) == 1) {
+            audit.record(bookingId, BookingStatus.HELD.name(), BookingStatus.CONFIRMED.name(),
+                    Actor.person(memberId, false), null, now);
             return reload(bookingId);
         }
         // Not confirmed: either the hold ran out (record that now) or the booking is past HELD.
-        expiryMetrics.expired(Layer.CONFIRM, bookings.expireHolds(List.of(bookingId), now));
+        expireIfRunOut(Layer.CONFIRM, bookingId, now);
         BookingStatus current = currentStatus(bookingId);
         if (current == BookingStatus.EXPIRED) {
             throw new DomainException(BookingErrorCode.HOLD_EXPIRED,
@@ -127,15 +146,22 @@ class BookingTransactions {
     @Transactional(noRollbackFor = DomainException.class)
     public BookingResponse cancel(long callerId, boolean admin, long bookingId, String reason) {
         Instant now = clock.instant();
-        Booking booking = owned(bookingId, callerId, admin);
+        // Locked, so the status read here is the one the UPDATE below changes: the audit's "from" (HELD or
+        // CONFIRMED) can't be outdated by a confirm in between. Only this one row is locked: no lock-order risk.
+        Booking booking = bookings.lockById(bookingId)
+                .filter(found -> admin || found.getMemberId() == callerId)
+                .orElseThrow(() -> new DomainException(CommonErrorCode.NOT_FOUND, "No such booking."));
+        BookingStatus from = booking.getStatus();
         CancelledBy by = booking.getMemberId() == callerId ? CancelledBy.MEMBER : CancelledBy.ADMIN;
         Duration cutoff = Duration.ofMinutes(describe(booking).cancellationCutoffMinutes());
         Instant confirmedStartAfter = admin ? Instant.EPOCH : now.plus(cutoff);
         if (bookings.cancel(bookingId, by.name(), reason, confirmedStartAfter, now) == 1) {
+            audit.record(bookingId, from.name(), BookingStatus.CANCELLED.name(),
+                    Actor.person(callerId, by == CancelledBy.ADMIN), reason, now);
             return reload(bookingId);
         }
 
-        expiryMetrics.expired(Layer.CANCEL, bookings.expireHolds(List.of(bookingId), now));
+        expireIfRunOut(Layer.CANCEL, bookingId, now);
         Booking current = bookings.findById(bookingId).orElseThrow();
         boolean active = current.getStatus() == BookingStatus.HELD || current.getStatus() == BookingStatus.CONFIRMED;
         if (active && !current.getEndTime().isAfter(now)) {
@@ -146,6 +172,19 @@ class BookingTransactions {
                     + formatCutoff(cutoff) + " before the start. Contact the venue to change this booking.");
         }
         throw invalidState(current.getStatus());
+    }
+
+    // A run-out hold the caller touched is recorded EXPIRED, by the system (the clock ended it, not the caller).
+    private void expireIfRunOut(Layer layer, long bookingId, Instant now) {
+        int expired = bookings.expireHolds(List.of(bookingId), now);
+        expiryMetrics.expired(layer, expired);
+        if (expired == 1) {
+            expired(bookingId, now);
+        }
+    }
+
+    private void expired(long bookingId, Instant now) {
+        audit.record(bookingId, BookingStatus.HELD.name(), BookingStatus.EXPIRED.name(), Actor.SYSTEM, null, now);
     }
 
     /**

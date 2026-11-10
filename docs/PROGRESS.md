@@ -727,9 +727,9 @@ Decision D-15 (owner, 2026-11-10, zero budget): Oracle Cloud Always Free VM + la
 
 ---
 
-## M1.11 Admin catalog management and oversight — Built, awaiting owner review (2026-11-11)
+## M1.11 Admin catalog management and oversight — Done (2026-11-11)
 
-One PR (owner); `version` in the PUT body (owner). Decision D-43. Backend only (admin screens: M1.13). No config-repo change, no migration.
+One PR (owner); `version` in the PUT body (owner). Decision D-43. Merged by the owner after review: app PR #17 (`22d1f7e`); no config PR. The last docs commit (`8c562e4`, the CI line) landed after the merge and is carried into the M1.12 branch. Backend only (admin screens: M1.13). No config-repo change, no migration.
 
 **Checkpoint before starting (main `ad41afb`, config `20137a5`):** `./mvnw -B verify` 376 tests green; frontend type check, lint, 38/38; system tests 27/27 (CONC-10 500/500, FS-34 20 of 20 reads 200).
 
@@ -757,6 +757,8 @@ One PR (owner); `version` in the PUT body (owner). Decision D-43. Backend only (
 
 What the new tests execute (behavior): create venue and bookable (201, Location, version 0, hours incl. 24:00, effective rules vs overrides, members see it); own hours replace the venue's and `null` restores them; field errors at once (zone of another country, closing before opening, a weekday twice; blank name, 3-letter country, opening at 24:00); type from another category; override that breaks the type's default; CAPACITY 422; members 403 on every write; unknown IDs 404; FS-13 (close with a confirmed booking and an open hold → 200 with `activeFutureBookings` 2, the hold can still be confirmed, the booking stays CONFIRMED, new hold 422, member 404 on bookable and availability, hidden in the list, admin still sees it, closing twice 200, reopen takes holds); venue close stops holds, reopen restores exactly the open bookable; stale version 409; two admins saving the same version at once → exactly one 200 and one 409 (20 repetitions); a rule change leaves an existing 2-hour hold unchanged and refuses a new one (`DURATION_INVALID`). Admin list: three bookings newest first with names from **one** identity call carrying both IDs; venue, bookable, status filters alone and combined (and a bookable of another venue → none); paging; size 101 → 400; identity 503 → 200 with IDs only and `memberDetailsAvailable: false`; member 403. CONC-09: 20 holds + 1 deactivation of the bookable or the venue, 20 repetitions each: every 201 committed before the deactivation (commit timestamps), each hold either 201 or 422, the held rows stay HELD, no lock failures. Bookable race: the deactivation landed between holds in 19–20 of 20 runs; venue race: 0 of 20 (19 runs all holds first, 1 run deactivation first), because every hold takes the venue `FOR SHARE` before queuing on the bookable.
 
+**CI (run 42888847477, commit `4c697c7`, PR #17):** all 10 jobs green: booking-service 67 unit + 314 IT (CONC-09 bookable race split 20 of 20, venue 0 of 20), all seven images for amd64 + arm64, system tests 27/27 against config `main` (CONC-10 500/500, FS-34 20 of 20 reads 200).
+
 **Changed test (not weakened):** `BookingSecurityIT.adminOnAdminPathAllowed_FS16` expected 404 for an admin on `/api/v1/admin/bookings` (no endpoint then); it now expects 200.
 
 **Mutation checks (each restored from a backup copy):** reading the bookable before taking the locks in `CatalogService.lockForBooking` (the owner's uncommitted file, restored byte-identical) → `DeactivationRaceIT` 22 of 40 fail on the commit order; no explicit version check → only `staleVersion_FRCAT15` fails (`@Version` still catches simultaneous saves); the optimistic-lock failure not translated → `concurrentEdits_FRCAT15` 20 of 20 fail; without the ADMIN rules for POST/PUT → `adminOnly_FRROLE02` fails.
@@ -769,6 +771,55 @@ What the new tests execute (behavior): create venue and bookable (201, Location,
 ### Open issues for later milestones
 - The venue variant of CONC-09 almost never interleaves (explained above); the guarantee is checked in both orders observed.
 - The live check left "Lakeside Courts" (venue 6) and "Court 1 (clay)" (bookable 31) in the local dev database.
+
+---
+
+## M1.12 Idempotency and audit log — Built, awaiting owner review (2026-11-11)
+
+One PR (owner); all five recommendations approved (normalized request hash, `Idempotent-Replayed` header, foreign keys without cascade, no backfill, one PR). Decision D-44. Migration V5; no config-repo change.
+
+**Checkpoint before starting (main `22d1f7e`):** `./mvnw -B verify` BUILD SUCCESS (467 tests); frontend unchanged since M1.11 (38/38); M1.11's CI (system tests 27/27) on the merged code.
+
+**Built:**
+- `V5__audit_and_idempotency.sql`: `booking_audit` (named CHECKs: actor type, SYSTEM ↔ no user, statuses) and `idempotency_record` (PK `(member_id, idem_key)`, COMPLETED ↔ stored answer), foreign keys without cascade, indexes.
+- Idempotency: `IdempotencyService` (claim with `ON CONFLICT DO NOTHING` and a 30 s lease, reclaim after 24 h, takeover after the lease, complete inside the hold's transaction, store refusal, release, normalized SHA-256 hash, key format check), `IdempotencyRecordRepository` (conditional statements only), `IdempotencyCleanupJob` (hourly), `ErrorCodes` (replaying a stored refusal), `BookingErrorCode` `IDEMPOTENCY_IN_PROGRESS` (409) and `IDEMPOTENCY_KEY_REUSED` (422). `BookingController` reads `Idempotency-Key`, answers replays with `Idempotent-Replayed: true` and the first `Location`.
+- `RetriedTransactions`: the D-11 deadlock retry moved out of `BookingService`, so only the hold's transaction is retried, never the claim.
+- Audit module: `AuditService.record` (`Propagation.MANDATORY`), `BookingAudit`, `Actor`; rows for hold, confirm, cancel (with reason), and every expiry (job, sweep at hold creation, late confirm or cancel) as SYSTEM; cancel locks the booking row first. `GET /admin/bookings/{id}/audit` (ADMIN, 404 for an unknown booking).
+- Frontend: `lib/idempotency.ts` (one key per hold intent), `RequestOptions.headers`, `bookingApi.hold(…, key)`; Slot picker reuses the key on Retry after a temporary failure (incl. `409 IDEMPOTENCY_IN_PROGRESS`, now a temporary code with its message).
+- Tests: `IdempotencyIT`, `AuditIT`, `BookingServiceIdempotencyTest`, `lib/idempotency.test.ts`, a Slot picker Retry test; `support/TestBookings` (9 cleanups), `Http` headers.
+- Docs: D-44, REQUIREMENTS v0.17 (IDEM-03/06/07, FR-AUD-01, CONC-08), ARCHITECTURE module layout, CLAUDE.md §15.1, README "Safe retries and the audit log", review guide, learning rows.
+
+### Test results
+
+`cd backend && ./mvnw -B verify`: **BUILD SUCCESS, 508 tests**, 0 failures, 0 skipped.
+
+| Module | Surefire (`*Test`) | Failsafe (`*IT`) |
+|---|---|---|
+| common-web | 23 | — |
+| config-server / discovery-server | 1 / 1 | — |
+| api-gateway | 2 | 12 |
+| identity-service | 10 | 37 |
+| booking-service | 70 (new: `BookingServiceIdempotencyTest` 3) | 352 (new: `IdempotencyIT` 30, `AuditIT` 8) |
+
+Frontend: type check and lint clean; **42/42** (new: `lib/idempotency.test.ts` 3, Slot picker Retry 1); build OK.
+
+What the new tests execute (behavior): FS-17 replay (same body and `Location`, `Idempotent-Replayed: true`, one booking, record COMPLETED); reformatted JSON (field order, spacing, `.000Z`) counts as the same request; FS-18 different request → 422; keys are per member; a refusal (`SLOT_TAKEN`) is replayed as the same 409 even after the slot became free, while a new key books it; a live lease → 409 `IDEMPOTENCY_IN_PROGRESS`; a run-out lease → takeover and 201; a key older than 24 h → treated as new; the cleanup job deletes only old keys; key too long or with spaces → 400 on `Idempotency-Key`, no key works as before; unit: a 5xx releases the key and stores nothing, a 4xx is stored and keeps it, no key → no claim. CONC-08: 20 parallel requests with one key, 20 repetitions → exactly one created and one booking, the rest replayed or 409; in the full run all 20 repetitions were 1 created + 19 × 409. Audit: hold → confirm → cancel with reason (three rows in order); admin cancel of a member's booking (ADMIN, admin's ID); job expiry, late confirm (`HOLD_EXPIRED` and the EXPIRED row kept) and the sweep by another member's hold (SYSTEM, no user); refused changes (taken slot, confirm twice, cancel inside the cutoff) add no rows; `record` outside a transaction is refused; endpoint 403 for members, 404 for an unknown booking. Frontend: the same intent keeps its key, another slot, bookable or a finished attempt gets a new one; Retry after a 503 sends the same key.
+
+**Changed tests (not weakened):** `MigrationIT` expects V1–V5; `BookingRetryTest` now tests `RetriedTransactions` (same three cases); nine cleanups go through `TestBookings`, because audit and idempotency rows must be deleted before their booking.
+
+**First run found:** Hibernate's schema check refused `request_hash` (`char(64)` in SQL, `varchar` in the entity); the entity now says CHAR, like `Venue.countryCode`.
+
+**Mutation checks (each restored from a backup copy):** key ignored in `BookingService.hold` → 26 failures in `IdempotencyIT`, CONC-08 20/20 (duplicates got `SLOT_TAKEN`/`MEMBER_OVERLAP` from the constraints instead of the first answer); no "same request" check → `keyReused_FS18`; takeover without the lease condition → `inProgress_IDEM05` and CONC-08 20/20; `keyFor` always new → the key test and the Retry test.
+
+**CI, first run (42893725631) failed in the system tests:** CONC-10's setup read the venue list through the gateway right after the readiness check and got a body without `items` (an error answer); every other job was green (incl. booking-service 70 + 352 and CONC-08). The CI log keeps only the last 200 lines per service, so the answer itself is lost; the likely cause is the first catalog query of a fresh booking instance on the slower runner (a 504 or 503 through the gateway). Locally the system tests passed 27/27 twice on this branch. Fix in the test, not the product: `Stack.awaitCatalogReadable` waits until an authenticated catalog read answers 200 four times in a row (both instances served one), and the bookable lookup now fails with the status and body if it ever gets anything else. Not retried blindly; the next CI run is the check.
+
+**Live check through the gateway** (dev stack): the same key twice → 201 twice with the same booking and `Location`, the second with `Idempotent-Replayed: true` (the header passes the gateway both ways); same key, other times → 422 `IDEMPOTENCY_KEY_REUSED`; confirm and cancel; the audit endpoint lists `→HELD`, `HELD→CONFIRMED`, `CONFIRMED→CANCELLED "Live check"`, all MEMBER with Bob's ID; a member gets 403 there.
+
+### Not covered yet
+- The browser Retry path end to end (Playwright, M1.13); the admin audit drawer (M1.13).
+
+### Open issues for later milestones
+- A replayed refusal gets a new `timestamp` and `requestId` (documented in IDEM-06).
 
 ---
 

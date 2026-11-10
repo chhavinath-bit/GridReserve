@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '@/api/client'
 import type { Availability, Bookable, Booking } from '@/api/types'
 import { SlotPickerPage } from './SlotPickerPage'
 
@@ -53,6 +54,9 @@ function renderPage() {
   )
 }
 
+// The Idempotency-Key sent with the n-th hold (0-based).
+const keyOfHold = (n: number): unknown => hold.mock.calls[n]?.[3]
+
 beforeEach(() => {
   hold.mockReset()
   confirm.mockReset()
@@ -75,7 +79,25 @@ describe('SlotPickerPage', () => {
     hold.mockResolvedValueOnce(booking('HELD', slot(12)))
     await user.click(screen.getByRole('button', { name: '18:00, free' }))
     await user.click(await screen.findByRole('button', { name: 'Hold slot' }))
-    expect(hold).toHaveBeenLastCalledWith(7, slot(12).start, slot(12).end)
+    expect(hold).toHaveBeenLastCalledWith(7, slot(12).start, slot(12).end, expect.any(String))
+    // A new booking intent gets a new Idempotency-Key.
+    expect(keyOfHold(1)).not.toBe(keyOfHold(0))
+  })
+
+  it('IDEM-01: Retry after a temporary failure sends the same Idempotency-Key, so the server can\'t book twice', async () => {
+    hold.mockRejectedValueOnce(new ApiError(503, 'SERVICE_UNAVAILABLE', 'This is temporarily unavailable.'))
+    hold.mockResolvedValueOnce(booking('HELD'))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: '16:00, free' }))
+    await user.click(screen.getByRole('button', { name: 'Hold slot' }))
+    await user.click(await screen.findByRole('button', { name: 'Retry' }))
+
+    expect(await screen.findByRole('button', { name: 'Confirm booking' })).toBeInTheDocument()
+    expect(hold).toHaveBeenCalledTimes(2)
+    expect(keyOfHold(0)).toMatch(/^[0-9a-f-]{36}$/)
+    expect(keyOfHold(1)).toBe(keyOfHold(0))
   })
 
   it('while a hold is live, picking another slot explains what to do instead of doing nothing', async () => {

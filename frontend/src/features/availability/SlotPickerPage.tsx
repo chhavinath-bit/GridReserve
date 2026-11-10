@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CloudOff } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { ApiError } from '@/api/client'
@@ -17,6 +17,7 @@ import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { holdDeadline } from '@/features/bookings/hold'
+import { holdIntent, keyFor, type IntentKey } from '@/lib/idempotency'
 import { HoldPanel, type HoldPhase } from '@/features/bookings/HoldPanel'
 import { formatRange, todayIn } from '@/lib/time'
 import { nextSelection } from './selection'
@@ -64,15 +65,25 @@ function SlotPicker({ bookable }: { bookable: Bookable }) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.myBookings })
   }
 
+  // The key of the hold being tried; kept while a temporary failure can be retried (IDEM-01).
+  const holdKey = useRef<IntentKey | null>(null)
+
   const createHold = useMutation({
-    mutationFn: ({ start, end }: { start: string; end: string }) => bookingApi.hold(bookable.id, start, end),
+    mutationFn: ({ start, end }: { start: string; end: string }) => {
+      holdKey.current = keyFor(holdIntent(bookable.id, start, end), holdKey.current)
+      return bookingApi.hold(bookable.id, start, end, holdKey.current.key)
+    },
     onSuccess: (booking) => {
+      holdKey.current = null
       setHold({ booking, phase: 'held', deadline: holdDeadline(booking) })
       setSelected([])
       setPanelError(null)
       refreshAfterChange()
     },
     onError: (error) => {
+      if (!(error instanceof ApiError) || !TEMPORARY_CODES.has(error.code)) {
+        holdKey.current = null // the attempt is over: the next Hold is a new intent with a new key
+      }
       if (error instanceof ApiError && CONFLICT_CODES.has(error.code)) {
         // Someone got there first: say so, drop the stale pick, show fresh availability (FR-UI-05).
         setConflict(error.message)

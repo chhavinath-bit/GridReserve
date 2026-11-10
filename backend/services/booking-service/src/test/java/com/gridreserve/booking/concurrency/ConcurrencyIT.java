@@ -7,6 +7,7 @@ import com.gridreserve.booking.support.Http.Response;
 import com.gridreserve.booking.support.MovableClock;
 import com.gridreserve.booking.support.ServiceIntegrationTest;
 import com.gridreserve.booking.support.TestJwtKeys;
+import com.gridreserve.booking.support.TestBookings;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -66,7 +67,7 @@ class ConcurrencyIT {
     @AfterEach
     void cleanUp() {
         clock.reset();
-        jdbc.update("DELETE FROM booking WHERE member_id BETWEEN ? AND ?", FIRST_MEMBER, FIRST_MEMBER + 99);
+        TestBookings.delete(jdbc, "member_id BETWEEN ? AND ?", FIRST_MEMBER, FIRST_MEMBER + 99);
     }
 
     private long bookable(String name) {

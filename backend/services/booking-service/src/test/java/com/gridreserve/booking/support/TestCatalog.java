@@ -81,7 +81,7 @@ public final class TestCatalog {
     public void removeAll() {
         String bookables = "SELECT id FROM bookable WHERE name LIKE '" + PREFIX + "%'";
         String venues = "SELECT id FROM venue WHERE name LIKE '" + PREFIX + "%'";
-        jdbc.update("DELETE FROM booking WHERE bookable_id IN (" + bookables + ")");
+        TestBookings.delete(jdbc, "bookable_id IN (" + bookables + ")");
         jdbc.update("DELETE FROM bookable_opening_hours WHERE bookable_id IN (" + bookables + ")");
         jdbc.update("DELETE FROM bookable WHERE venue_id IN (" + venues + ") OR name LIKE '" + PREFIX + "%'");
         jdbc.update("DELETE FROM venue_opening_hours WHERE venue_id IN (" + venues + ")");

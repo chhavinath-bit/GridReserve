@@ -5,7 +5,9 @@ import com.gridreserve.booking.booking.entity.Booking;
 import com.gridreserve.booking.booking.entity.BookingStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -167,4 +169,9 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
                                @Param("bookableIds") Collection<Long> bookableIds,
                                @Param("status") BookingStatus status, @Param("from") Instant from,
                                @Param("to") Instant to, Pageable pageable);
+
+    /** One booking, locked {@code FOR UPDATE} for the rest of the transaction (cancel reads its status under it). */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select b from Booking b where b.id = :id")
+    Optional<Booking> lockById(@Param("id") long id);
 }

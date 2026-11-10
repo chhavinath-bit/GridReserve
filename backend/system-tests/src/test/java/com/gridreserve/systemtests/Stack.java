@@ -95,6 +95,31 @@ final class Stack {
     }
 
     /**
+     * Waits until an authenticated catalog read through the gateway answers 200 several times in a row, so round
+     * robin has reached every booking instance and each has served (and warmed up) a real query. {@link
+     * #awaitReady} only proves the instances are registered and the ping answers; on a slow CI runner the
+     * first catalog query of a fresh instance could still fail (PR #18, CI run 42893725631).
+     */
+    static void awaitCatalogReadable(String token, int bookingInstances) throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofMinutes(2).toNanos();
+        int inARow = 0;
+        String last = "not checked yet";
+        while (System.nanoTime() < deadline) {
+            Response venues = get(GATEWAY + "/api/v1/venues?size=100", token);
+            if (venues.status() == 200) {
+                if (++inARow >= 2 * bookingInstances) {
+                    return;
+                }
+                continue;
+            }
+            inARow = 0;
+            last = venues.status() + " " + venues.body();
+            Thread.sleep(500);
+        }
+        throw new IllegalStateException("Catalog not readable through the gateway after 2 minutes: " + last);
+    }
+
+    /**
      * Waits until Eureka's UP booking-service instances are exactly the running containers (same IPs). After
      * a container is killed and replaced, Eureka briefly still lists the dead one and not yet the new one.
      */

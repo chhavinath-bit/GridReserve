@@ -65,6 +65,7 @@ class DoubleBookingThroughGatewaySystemIT {
             assertThat(registered.status()).as("register member %d", index).isEqualTo(201);
             memberTokens.add(registered.body().get("accessToken").asString());
         }
+        Stack.awaitCatalogReadable(adminToken, 2);
         bookableId = findBookable(BOOKABLE);
         LocalDate tomorrow = LocalDate.now(VENUE_ZONE).plusDays(1);
         for (LocalDate day : List.of(tomorrow, tomorrow.plusDays(1))) {
@@ -158,15 +159,21 @@ class DoubleBookingThroughGatewaySystemIT {
     }
 
     private static long findBookable(String name) {
-        for (JsonNode venue : Stack.get(Stack.GATEWAY + "/api/v1/venues?size=100", adminToken).body().get("items")) {
-            for (JsonNode bookable : Stack.get(Stack.GATEWAY + "/api/v1/venues/" + venue.get("id").asLong()
-                    + "/bookables?size=100", adminToken).body().get("items")) {
+        for (JsonNode venue : page(Stack.GATEWAY + "/api/v1/venues?size=100")) {
+            for (JsonNode bookable : page(Stack.GATEWAY + "/api/v1/venues/" + venue.get("id").asLong() + "/bookables?size=100")) {
                 if (bookable.get("name").asString().equals(name)) {
                     return bookable.get("id").asLong();
                 }
             }
         }
         throw new IllegalStateException("No bookable named " + name);
+    }
+
+    // The items of one page; anything but 200 fails with the answer in the message.
+    private static JsonNode page(String url) {
+        Response response = Stack.get(url, adminToken);
+        assertThat(response.status()).as("GET %s answered %s", url, response.body()).isEqualTo(200);
+        return response.body().get("items");
     }
 
     private static int indexOf201(List<Response> responses) {

@@ -1,6 +1,7 @@
 # GridReserve — Requirements
 
-> Version 0.16 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Version 0.17 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Changes from v0.16 (M1.12, 2026-11-11, D-44): IDEM-03 defines "same body" as the same bookable and times (normalized), and replays carry `Idempotent-Replayed: true`; IDEM-06 says a replayed refusal has the same status, code and message (new timestamp and request ID); IDEM-07 says an expired key counts as unused before the cleanup deletes it; FR-AUD-01 names the actor rules. CONC-08 proven.
 > Changes from v0.15 (M1.11, 2026-11-11, D-43): FR-CAT-07/08 say a venue's category and a bookable's venue are fixed after creation, updates carry the `version` read (FR-CAT-15), and CAPACITY bookables can't be created before Phase 2 (`422 WRONG_BOOKING_MODEL`); FR-CAT-09 is checked on the effective rules; FR-ADM-01 gives the response shape (`memberDetailsAvailable`); CONC-09 proven.
 > Changes from v0.14 (M1.10, 2026-11-10, D-15): PLAT-07 verified with the deploy setup (restart with backoff, fail fast without the Config Server); new NFR-OPS-05 (nightly encrypted off-site backups with a restore drill) and NFR-OPS-06 (every release is one commit's images, smoke-tested from outside; rollback by redeploying an older commit).
 > Changes from v0.13 (M1.9, 2026-11-07, D-42): FR-ROLE-01 adds that user endpoints require role MEMBER or ADMIN (a service token, role SERVICE, is refused there) and actuator endpoints beyond health/info require ADMIN or SERVICE; NFR-TEST-03 names WireMock (D-28 approved).
@@ -304,7 +305,7 @@ Acceptance criteria use Given / When / Then. Each story links to the requirement
 
 ### 5.7 Audit log (FR-AUD) — last milestone of P1
 
-- **FR-AUD-01** Every booking state change (create, confirm, cancel, expire; later offer/accept/no-show) shall append one audit row: `bookingId`, `fromStatus`, `toStatus`, `actorUserId` (null for SYSTEM), `actorType`, `reason`, `occurredAt` (UTC).
+- **FR-AUD-01** Every booking state change (create, confirm, cancel, expire; later offer/accept/no-show) shall append one audit row: `bookingId`, `fromStatus`, `toStatus`, `actorUserId` (null for SYSTEM), `actorType`, `reason`, `occurredAt` (UTC). Actor: MEMBER for a change to one's own booking (an admin booking for themself too, FR-ADM-03), ADMIN for an admin cancelling someone else's, SYSTEM for every expiry (job, sweep at hold creation, late confirm or cancel). Bookings created before M1.12 have no history (no backfill).
 - **FR-AUD-02** The audit row shall be written in the same transaction as the change.
 - **FR-AUD-03** Audit rows are append-only. `GET /api/v1/admin/bookings/{id}/audit` returns them in time order.
 
@@ -394,11 +395,11 @@ Applies to Gym classes (type CLASS) and library reading halls (type HALL).
 
 - **IDEM-01** `POST /api/v1/bookings` shall accept an optional `Idempotency-Key` header (1–64 characters, `[A-Za-z0-9_-]`). The frontend shall always send one (UUID v4) per user intent.
 - **IDEM-02** Keys are unique per `(userId, key)` (DB unique constraint).
-- **IDEM-03** Same key + **same request body** (SHA-256 of the canonical body) → the stored status code and body of the first response; no new booking.
+- **IDEM-03** Same key + **same request** (SHA-256 of the normalized `bookableId`, `start`, `end`, so field order, spacing or `…:00.000Z` vs `…:00Z` don't matter) → the stored status code and body of the first response, with the first `Location` and the header `Idempotent-Replayed: true`; no new booking.
 - **IDEM-04** Same key + **different body** → `422 IDEMPOTENCY_KEY_REUSED`.
 - **IDEM-05** First request still in progress → `409 IDEMPOTENCY_IN_PROGRESS`. An in-progress record carries a **lease** (30 s); if the lease has expired (the first request crashed), a retry takes over the key and proceeds.
-- **IDEM-06** Only completed responses are stored (2xx and 4xx business errors). On a 5xx the record is removed so the client may retry with the same key.
-- **IDEM-07** Keys expire after 24 hours **[A-12]**.
+- **IDEM-06** Only completed responses are stored (2xx and 4xx business errors). A replayed 4xx has the first status, `code` and `message`; its `timestamp` and `requestId` are the replay's. On a 5xx the record is removed so the client may retry with the same key. Requests refused before the key is claimed (`400` for times or the key's format) are not stored.
+- **IDEM-07** Keys expire after 24 hours **[A-12]**: an expired key counts as unused at once; an hourly job deletes them.
 - **IDEM-08** `[P5]` Payment webhooks are deduplicated by provider `eventId`; a duplicate returns `200` with no effect.
 - **IDEM-09** `[P7]` Creating a recurring series accepts an `Idempotency-Key` with the same semantics.
 - **IDEM-10** Confirm and cancel are idempotent in effect but not in response: a second confirm → `409 INVALID_STATE`.
@@ -418,7 +419,7 @@ Each guarantee has an integration test against real PostgreSQL (Testcontainers).
 | **CONC-05** | One member, 10 parallel holds in one category at different times, limit 3 → exactly 3 succeed (member row lock). | Parallel test. |
 | **CONC-06** `[P2]` | Last seat: capacity 12 with 11 booked, 20 parallel claims → exactly 1 success, `booked = 12`; 50 claims on an empty session of 12 → exactly 12. | Parallel test. |
 | **CONC-07** `[P2/P3]` | 12 parallel cancellations of 12 seats → `booked = 0`, never negative; one waitlist offer per freed seat. | Parallel test. |
-| **CONC-08** | Two parallel requests with the same `Idempotency-Key` → exactly one booking. | Parallel test. |
+| **CONC-08** | Two parallel requests with the same `Idempotency-Key` → exactly one booking. Proven in M1.12 (`IdempotencyIT`: 20 parallel requests, one key, 20 repetitions: one created, the rest replayed or `409 IDEMPOTENCY_IN_PROGRESS`). | Parallel test. |
 | **CONC-09** | Deactivation racing with new holds → every hold either committed **before** the deactivation (and stays valid) or is rejected with `422 BOOKABLE_INACTIVE`; no hold is created after the deactivation commits. Hold creation locks the venue `FOR SHARE` and the bookable `FOR UPDATE` and re-checks `active`; deactivation locks it `FOR UPDATE` (D-41). Proven in M1.11 (`DeactivationRaceIT`: 20 parallel holds + 1 deactivation of the bookable or of its venue, 20 repetitions each, commit order checked with PostgreSQL commit timestamps). | Race test |
 | **CONC-10** | CONC-01 repeated **through the gateway with two booking-service instances** registered in Eureka and load-balanced → still exactly 1 × 201 and 49 × 409. | System test with Docker Compose (or Testcontainers with two app containers). |
 

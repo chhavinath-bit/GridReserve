@@ -5,6 +5,8 @@ import com.gridreserve.booking.booking.dto.CancelRequest;
 import com.gridreserve.booking.booking.dto.CreateHoldRequest;
 import com.gridreserve.booking.booking.entity.BookingStatus;
 import com.gridreserve.booking.booking.service.BookingService;
+import com.gridreserve.booking.booking.service.HoldResult;
+import com.gridreserve.booking.booking.service.IdempotencyService;
 import com.gridreserve.booking.common.dto.PageResponse;
 import com.gridreserve.booking.common.web.PageParams;
 import com.gridreserve.booking.common.web.Viewer;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -31,16 +34,29 @@ import java.time.Instant;
 @RequestMapping("/api/v1/bookings")
 public class BookingController {
 
+    static final String REPLAYED_HEADER = "Idempotent-Replayed";
+
     private final BookingService bookings;
 
     public BookingController(BookingService bookings) {
         this.bookings = bookings;
     }
 
+    /**
+     * An optional {@code Idempotency-Key} makes retries safe (IDEM-01): the same key with the same request gets
+     * the first answer again, marked {@code Idempotent-Replayed: true}, and no second booking.
+     */
     @PostMapping
-    public ResponseEntity<BookingResponse> hold(@Valid @RequestBody CreateHoldRequest request, Authentication caller) {
-        BookingResponse hold = bookings.hold(Viewer.memberId(caller), request);
-        return ResponseEntity.created(URI.create("/api/v1/bookings/" + hold.id())).body(hold);
+    public ResponseEntity<Object> hold(@Valid @RequestBody CreateHoldRequest request,
+                                       @RequestHeader(name = IdempotencyService.HEADER, required = false) String key,
+                                       Authentication caller) {
+        HoldResult result = bookings.hold(Viewer.memberId(caller), request, key);
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(result.status())
+                .location(URI.create("/api/v1/bookings/" + result.bookingId()));
+        if (result.replayed()) {
+            response.header(REPLAYED_HEADER, "true");
+        }
+        return response.body(result.body());
     }
 
     @PostMapping("/{id}/confirm")

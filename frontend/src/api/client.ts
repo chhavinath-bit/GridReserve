@@ -89,6 +89,8 @@ export interface RequestOptions {
   body?: unknown
   /** Auth endpoints carry the cookie and no access token. */
   authEndpoint?: boolean
+  /** Extra request headers, e.g. Idempotency-Key; sent again unchanged if the call is repeated after a refresh. */
+  headers?: Record<string, string>
   signal?: AbortSignal
 }
 
@@ -106,7 +108,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
 }
 
 async function send(path: string, options: RequestOptions): Promise<Response> {
-  const headers: Record<string, string> = { ...CLIENT_HEADER }
+  const headers: Record<string, string> = { ...CLIENT_HEADER, ...options.headers }
   if (options.body !== undefined) {
     headers['Content-Type'] = 'application/json'
   }
