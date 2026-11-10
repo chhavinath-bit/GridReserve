@@ -9,7 +9,6 @@ x-java-service: &java-service
     SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
     CONFIG_SERVER_URL: http://config-server:8888
     EUREKA_URL: http://discovery-server:8761/eureka/
-    JAVA_TOOL_OPTIONS: "-Xmx256m"
   depends_on:
     config-server:
       condition: service_healthy
@@ -45,13 +44,13 @@ services:
       context: ../backend
       args:
         MODULE: platform/config-server
+        PORT: 8888
     image: gridreserve/config-server:dev
     environment:
       # dev: "native" backend reads the mounted sibling clone of gridreserve-config directly
       # (the checked-out branch, uncommitted edits included). prod uses the Git backend (GitHub).
       SPRING_PROFILES_ACTIVE: native
       CONFIG_NATIVE_LOCATION: file:/config-repo/
-      JAVA_TOOL_OPTIONS: "-Xmx256m"
     volumes:
       - ../../gridreserve-config:/config-repo:ro
     ports:
@@ -68,9 +67,8 @@ services:
       context: ../backend
       args:
         MODULE: platform/discovery-server
+        PORT: 8761
     image: gridreserve/discovery-server:dev
-    environment:
-      JAVA_TOOL_OPTIONS: "-Xmx256m"
     ports:
       - "127.0.0.1:8761:8761"
     healthcheck:
@@ -86,6 +84,7 @@ services:
       context: ../backend
       args:
         MODULE: services/identity-service
+        PORT: 8081
     image: gridreserve/identity-service:dev
     environment:
       <<: *java-env
@@ -97,6 +96,8 @@ services:
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
       # Service clients allowed to get service tokens (D-19): only the SHA-256 of each secret.
       BOOKING_SERVICE_CLIENT_SECRET_SHA256: ${BOOKING_SERVICE_CLIENT_SECRET_SHA256}
+      # The Origin that refresh and logout accept; the laptop demo sets it to its tunnel address.
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
     depends_on:
       postgres:
         condition: service_healthy
@@ -116,6 +117,7 @@ services:
       context: ../backend
       args:
         MODULE: services/booking-service
+        PORT: 8082
     image: gridreserve/booking-service:dev
     environment:
       <<: *java-env
@@ -145,6 +147,7 @@ services:
       context: ../backend
       args:
         MODULE: platform/api-gateway
+        PORT: 8080
     image: gridreserve/api-gateway:dev
     ports:
       - "127.0.0.1:8080:8080"
@@ -153,6 +156,20 @@ services:
       interval: 5s
       timeout: 3s
       retries: 30
+
+  # The built frontend behind Caddy, like on the deploy host (profile "full", M1.10): the whole app from images
+  # at http://localhost:8000, and what scripts/demo-tunnel.sh shares through a Cloudflare tunnel.
+  web:
+    profiles: [full]
+    build:
+      context: ../frontend
+    image: gridreserve/web:dev
+    ports:
+      - "127.0.0.1:8000:80"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   pgdata:

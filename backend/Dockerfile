@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1
-# One Dockerfile for every backend app. Pick the app with --build-arg MODULE=<path>, e.g.
-#   docker build --build-arg MODULE=services/booking-service -t gridreserve/booking-service backend/
-# Hardened for production in M1.10.
+# One Dockerfile for every backend app. Pick the app with --build-arg MODULE=<path> and its port with PORT, e.g.
+#   docker build --build-arg MODULE=services/booking-service --build-arg PORT=8082 -t gridreserve/booking-service backend/
+# Multi-platform (M1.10): the build stage always runs on the builder's own CPU ($BUILDPLATFORM), because a jar
+# is the same on every CPU; only the small runtime stage is built per platform (amd64 laptops, arm64 Oracle).
 
 # ---- build stage: compile only the chosen module and the modules it depends on ----
-FROM eclipse-temurin:21-jdk AS build
+FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jdk AS build
 WORKDIR /workspace
 COPY mvnw pom.xml ./
 COPY .mvn .mvn
@@ -25,5 +26,14 @@ RUN groupadd --system app && useradd --system --gid app --home-dir /app app
 WORKDIR /app
 COPY --from=build --chown=app:app /workspace/app.jar app.jar
 USER app
-# Heap and other JVM flags come from JAVA_TOOL_OPTIONS (Compose sets -Xmx256m, A-28).
+ARG PORT
+ENV HEALTH_PORT=${PORT}
+EXPOSE ${PORT}
+# Memory budget per service (A-28): heap 256 MB plus bounded non-heap areas, so ~5 JVMs fit next to PostgreSQL.
+# Serial GC: the smallest collector, fine for small heaps and few cores. Exit on OutOfMemoryError so the
+# container platform restarts a broken JVM instead of leaving it half alive. Compose may override this.
+ENV JAVA_TOOL_OPTIONS="-Xmx256m -Xss512k -XX:MaxMetaspaceSize=192m -XX:ReservedCodeCacheSize=64m -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError"
+# For runtimes without their own check (Compose defines the same one). Readiness: up and able to serve.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=60s --retries=5 \
+  CMD curl -fs "http://localhost:${HEALTH_PORT}/actuator/health/readiness" || exit 1
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
