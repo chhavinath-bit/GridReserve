@@ -5,6 +5,7 @@ import com.gridreserve.booking.support.Http.Response;
 import com.gridreserve.booking.support.MovableClock;
 import com.gridreserve.booking.support.ServiceIntegrationTest;
 import com.gridreserve.booking.support.TestJwtKeys;
+import com.gridreserve.booking.support.TestBookings;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -69,7 +70,7 @@ class BookingLifecycleIT {
     @AfterEach
     void cleanUp() {
         clock.reset();
-        jdbc.update("DELETE FROM booking WHERE member_id IN (?, ?, ?)", MEMBER_A, MEMBER_B, ADMIN);
+        TestBookings.delete(jdbc, "member_id IN (?, ?, ?)", MEMBER_A, MEMBER_B, ADMIN);
     }
 
     private long bookable(String name) {

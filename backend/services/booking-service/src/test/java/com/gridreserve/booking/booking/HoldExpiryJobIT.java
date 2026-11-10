@@ -5,6 +5,7 @@ import com.gridreserve.booking.booking.service.HoldExpiryMetrics;
 import com.gridreserve.booking.booking.service.HoldExpiryMetrics.Layer;
 import com.gridreserve.booking.member.service.MemberProvisioner;
 import com.gridreserve.booking.support.ServiceIntegrationTest;
+import com.gridreserve.booking.support.TestBookings;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -60,7 +61,7 @@ class HoldExpiryJobIT {
 
     @AfterEach
     void cleanUp() {
-        jdbc.update("DELETE FROM booking WHERE member_id = ?", MEMBER);
+        TestBookings.delete(jdbc, "member_id = ?", MEMBER);
     }
 
     /** One booking per hour from {@code base}, so none overlap (BR-10, BR-11 stay quiet). */

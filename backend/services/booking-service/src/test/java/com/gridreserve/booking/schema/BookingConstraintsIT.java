@@ -1,6 +1,7 @@
 package com.gridreserve.booking.schema;
 
 import com.gridreserve.booking.support.ServiceIntegrationTest;
+import com.gridreserve.booking.support.TestBookings;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -33,7 +34,7 @@ class BookingConstraintsIT {
 
     @AfterEach
     void cleanUp() {
-        jdbc.update("DELETE FROM booking");
+        TestBookings.delete(jdbc, "true");
         jdbc.update("DELETE FROM member");
     }
 

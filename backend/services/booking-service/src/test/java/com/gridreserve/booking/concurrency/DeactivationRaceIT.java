@@ -6,6 +6,7 @@ import com.gridreserve.booking.support.Http.Response;
 import com.gridreserve.booking.support.ServiceIntegrationTest;
 import com.gridreserve.booking.support.TestCatalog;
 import com.gridreserve.booking.support.TestJwtKeys;
+import com.gridreserve.booking.support.TestBookings;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -79,7 +80,7 @@ class DeactivationRaceIT {
 
     @BeforeEach
     void reopen() {
-        jdbc.update("DELETE FROM booking WHERE bookable_id = ?", courtId);
+        TestBookings.delete(jdbc, "bookable_id = ?", courtId);
         http.post("/api/v1/venues/" + venueId + "/activate", TestJwtKeys.adminToken(), null);
         http.post("/api/v1/bookables/" + courtId + "/activate", TestJwtKeys.adminToken(), null);
     }

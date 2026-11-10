@@ -7,6 +7,7 @@ import com.gridreserve.booking.support.Http;
 import com.gridreserve.booking.support.Http.Response;
 import com.gridreserve.booking.support.ServiceIntegrationTest;
 import com.gridreserve.booking.support.TestJwtKeys;
+import com.gridreserve.booking.support.TestBookings;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -104,7 +105,7 @@ class AdminBookingsIT {
 
     @AfterEach
     void cleanUp() {
-        jdbc.update("DELETE FROM booking WHERE member_id IN (?, ?)", ALICE, BOB);
+        TestBookings.delete(jdbc, "member_id IN (?, ?)", ALICE, BOB);
     }
 
     private long bookable(String name) {
