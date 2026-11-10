@@ -43,10 +43,13 @@ public class GlobalExceptionHandler {
         List<ErrorResponse.FieldError> fieldErrors = ex.getBindingResult().getFieldErrors().stream()
                 .map(error -> new ErrorResponse.FieldError(error.getField(), error.getDefaultMessage()))
                 .toList();
-        ErrorCode code = CommonErrorCode.VALIDATION_FAILED;
-        ErrorResponse body = new ErrorResponse(now(), code.status().value(), code.code(),
-                "Some fields are invalid.", request.getRequestURI(), requestId(request), fieldErrors);
-        return ResponseEntity.status(code.status()).body(body);
+        return respondWithFields(fieldErrors, request);
+    }
+
+    // More specific than DomainException, so Spring picks this one for service-side field checks.
+    @ExceptionHandler(FieldValidationException.class)
+    ResponseEntity<ErrorResponse> handleFieldValidation(FieldValidationException ex, HttpServletRequest request) {
+        return respondWithFields(ex.fieldErrors(), request);
     }
 
     // A query or path parameter that cannot be converted, e.g. ?date=tomorrow for a LocalDate.
@@ -85,10 +88,14 @@ public class GlobalExceptionHandler {
     }
 
     private ResponseEntity<ErrorResponse> respondWithField(String field, String message, HttpServletRequest request) {
+        return respondWithFields(List.of(new ErrorResponse.FieldError(field, message)), request);
+    }
+
+    private ResponseEntity<ErrorResponse> respondWithFields(List<ErrorResponse.FieldError> fieldErrors,
+                                                            HttpServletRequest request) {
         ErrorCode code = CommonErrorCode.VALIDATION_FAILED;
         ErrorResponse body = new ErrorResponse(now(), code.status().value(), code.code(),
-                "Some fields are invalid.", request.getRequestURI(), requestId(request),
-                List.of(new ErrorResponse.FieldError(field, message)));
+                "Some fields are invalid.", request.getRequestURI(), requestId(request), fieldErrors);
         return ResponseEntity.status(code.status()).body(body);
     }
 

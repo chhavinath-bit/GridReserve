@@ -19,6 +19,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.List;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -71,6 +72,18 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    @DisplayName("API-05: a check only the service can make answers like Bean Validation: 400 VALIDATION_FAILED with every field")
+    void serviceFieldChecksUseValidationFormat() throws Exception {
+        mvc.perform(get("/test/fields"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.message").value("Some fields are invalid."))
+                .andExpect(jsonPath("$.fieldErrors.length()").value(2))
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("timeZone"))
+                .andExpect(jsonPath("$.fieldErrors[1].field").value("openingHours[1]"));
+    }
+
+    @Test
     @DisplayName("API-06: a query parameter in the wrong format returns 400 VALIDATION_FAILED naming it")
     void wrongParameterFormat() throws Exception {
         mvc.perform(get("/test/date").param("date", "tomorrow"))
@@ -112,6 +125,12 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/domain")
         String domain() {
             throw new DomainException(CommonErrorCode.NOT_FOUND, "No such venue.");
+        }
+
+        @GetMapping("/test/fields")
+        void fields() {
+            throw new FieldValidationException(List.of(new ErrorResponse.FieldError("timeZone", "Is not a zone of this country."),
+                    new ErrorResponse.FieldError("openingHours[1]", "Opens after it closes.")));
         }
 
         @PostMapping("/test/validate")
