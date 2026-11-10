@@ -1,0 +1,171 @@
+# GridReserve on the deploy host (M1.10, D-15): the same services as compose.yaml, run from the images CI
+# publishes, with profile prod. The deploy workflow copies this file to the host as /opt/gridreserve/compose.yaml
+# next to its .env (template: infra/.env.prod.example; secrets live only on the host).
+#
+#   docker compose pull && docker compose up -d --wait          (what .github/workflows/deploy.yml runs)
+#
+# Only the web container (Caddy) is reachable from the internet, on 80 and 443 (PLAT-01). The gateway and
+# Eureka are published on the host's loopback only, for the smoke test and scripts/refresh-config.sh over SSH.
+name: gridreserve
+
+x-defaults: &defaults
+  restart: unless-stopped          # PLAT-07: a crashed or failed-fast container comes back with backoff
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }   # bounded logs: a small disk must never fill up
+
+x-java-service: &java-service
+  <<: *defaults
+  environment: &java-env
+    SPRING_PROFILES_ACTIVE: prod
+    CONFIG_SERVER_URL: http://config-server:8888
+    EUREKA_URL: http://discovery-server:8761/eureka/
+  depends_on: &platform
+    config-server:
+      condition: service_healthy
+    discovery-server:
+      condition: service_healthy
+
+services:
+  postgres:
+    <<: *defaults
+    image: postgres:16.15
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      IDENTITY_DB_USER: ${IDENTITY_DB_USER}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD}
+      BOOKING_DB_USER: ${BOOKING_DB_USER}
+      BOOKING_DB_PASSWORD: ${BOOKING_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  config-server:
+    <<: *defaults
+    image: ${IMAGE_PREFIX:-ghcr.io/chhavinath-bit/gridreserve-}config-server:${IMAGE_TAG:?set IMAGE_TAG}
+    environment:
+      # No profile: the Git backend, reading the public config repository (never secrets in it).
+      CONFIG_REPO_URI: ${CONFIG_REPO_URI:-https://github.com/chhavinath-bit/gridreserve-config}
+      CONFIG_REPO_LABEL: ${CONFIG_REPO_LABEL:-main}
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8888/actuator/health/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  discovery-server:
+    <<: *defaults
+    image: ${IMAGE_PREFIX:-ghcr.io/chhavinath-bit/gridreserve-}discovery-server:${IMAGE_TAG:?set IMAGE_TAG}
+    ports:
+      - "127.0.0.1:8761:8761"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8761/actuator/health/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  identity-service:
+    <<: *java-service
+    image: ${IMAGE_PREFIX:-ghcr.io/chhavinath-bit/gridreserve-}identity-service:${IMAGE_TAG:?set IMAGE_TAG}
+    environment:
+      <<: *java-env
+      DB_HOST: postgres
+      IDENTITY_DB_USER: ${IDENTITY_DB_USER}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY}
+      BOOKING_SERVICE_CLIENT_SECRET_SHA256: ${BOOKING_SERVICE_CLIENT_SECRET_SHA256}
+      # Refresh and logout accept only this Origin (FR-AUTH-12): the public https:// address.
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:?set FRONTEND_ORIGIN}
+    depends_on:
+      <<: *platform
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8081/actuator/health/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  booking-service:
+    <<: *java-service
+    image: ${IMAGE_PREFIX:-ghcr.io/chhavinath-bit/gridreserve-}booking-service:${IMAGE_TAG:?set IMAGE_TAG}
+    environment:
+      <<: *java-env
+      DB_HOST: postgres
+      BOOKING_DB_USER: ${BOOKING_DB_USER}
+      BOOKING_DB_PASSWORD: ${BOOKING_DB_PASSWORD}
+      BOOKING_SERVICE_CLIENT_SECRET: ${BOOKING_SERVICE_CLIENT_SECRET}
+    depends_on:
+      <<: *platform
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8082/actuator/health/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  api-gateway:
+    <<: *java-service
+    image: ${IMAGE_PREFIX:-ghcr.io/chhavinath-bit/gridreserve-}api-gateway:${IMAGE_TAG:?set IMAGE_TAG}
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health/readiness"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  web:
+    <<: *defaults
+    image: ${IMAGE_PREFIX:-ghcr.io/chhavinath-bit/gridreserve-}web:${IMAGE_TAG:?set IMAGE_TAG}
+    environment:
+      # A hostname here makes Caddy fetch and renew a Let's Encrypt certificate (e.g. 203-0-113-5.sslip.io).
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data            # certificates survive restarts (Let's Encrypt rate-limits re-issuing)
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+
+  backup:
+    <<: *defaults
+    image: ${IMAGE_PREFIX:-ghcr.io/chhavinath-bit/gridreserve-}backup:${IMAGE_TAG:?set IMAGE_TAG}
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_DATABASES: identity_db booking_db
+      BACKUP_SCHEDULE: ${BACKUP_SCHEDULE:-02:30}   # daily, UTC
+      BACKUP_KEEP_LOCAL_DAYS: ${BACKUP_KEEP_LOCAL_DAYS:-7}
+      BACKUP_KEEP_REMOTE_DAYS: ${BACKUP_KEEP_REMOTE_DAYS:-30}
+      # rclone reads its remotes from RCLONE_CONFIG_<NAME>_<OPTION> variables: an encrypting "crypt" remote
+      # named offsite in front of Google Drive. All values come from .env (see .env.prod.example).
+      BACKUP_REMOTE: ${BACKUP_REMOTE:-offsite:}
+      RCLONE_CONFIG_GDRIVE_TYPE: drive
+      RCLONE_CONFIG_GDRIVE_SCOPE: drive.file
+      RCLONE_CONFIG_GDRIVE_TOKEN: ${RCLONE_GDRIVE_TOKEN:-}
+      RCLONE_CONFIG_OFFSITE_TYPE: crypt
+      RCLONE_CONFIG_OFFSITE_REMOTE: gdrive:gridreserve-backups
+      RCLONE_CONFIG_OFFSITE_PASSWORD: ${RCLONE_CRYPT_PASSWORD:-}
+      RCLONE_CONFIG_OFFSITE_PASSWORD2: ${RCLONE_CRYPT_SALT:-}
+    volumes:
+      - backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  caddy-data:
+  backups:
