@@ -1,6 +1,7 @@
 # GridReserve — Requirements
 
-> Version 0.13 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Version 0.14 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Changes from v0.13 (M1.9, 2026-11-07, D-42): FR-ROLE-01 adds that user endpoints require role MEMBER or ADMIN (a service token, role SERVICE, is refused there) and actuator endpoints beyond health/info require ADMIN or SERVICE; NFR-TEST-03 names WireMock (D-28 approved).
 > Changes from v0.12 (M1.8, owner decision 2026-11-07, D-41): CONC-09 says hold creation locks the bookable `FOR UPDATE` (not `FOR SHARE`); CONC-09 is proven in M1.11 and CONC-08 in M1.12, where the deactivate endpoint and the idempotency key arrive.
 > Changes from v0.11 (M1.7, owner decisions 2026-11-07, D-40): BR-07 counts the horizon in **whole local days** like availability (a start on a local date before today + horizon), so the API and the picker always agree; FR-BK-07 adds `cancellableUntil`; BR-08 states that bookings on inactive bookables of the category count too and that a hold that has run out does not.
 > Changes from v0.10 (M1.5, 2026-11-07, D-11): FR-BK-03 and FR-BK-04 state what happens to a booking that is not in the expected state: confirming an expired hold answers `409 HOLD_EXPIRED` (also when it was already marked EXPIRED), any other state `409 INVALID_STATE`; a hold that has run out cannot be cancelled (it is recorded `EXPIRED`, `409 INVALID_STATE`); `cancelledBy` is `ADMIN` only when an admin cancels another member's booking.
@@ -129,7 +130,7 @@ This document turns the product spec into **specific, testable requirements**. E
 
 ### 3.2 Authorization rules
 
-- **FR-ROLE-01** Roles shall be enforced by Spring Security in **every service** at the endpoint level; the gateway shall also reject requests without a valid access token to protected routes. Ownership (is this my booking?) shall be checked in the owning service's service layer. Public at the gateway: `/api/v1/auth/**`, the gateway's health; every other path needs a valid token. The auth endpoints ignore any `Authorization` header (D-38).
+- **FR-ROLE-01** Roles shall be enforced by Spring Security in **every service** at the endpoint level; the gateway shall also reject requests without a valid access token to protected routes. Ownership (is this my booking?) shall be checked in the owning service's service layer. Public at the gateway: `/api/v1/auth/**`, the gateway's health; every other path needs a valid token. The auth endpoints ignore any `Authorization` header (D-38). User endpoints require role MEMBER or ADMIN; a service token (role SERVICE, D-19) is accepted only on `/internal/**` and actuator endpoints, which beyond health/info require ADMIN or SERVICE (v0.14).
 - **FR-ROLE-02** A request without a valid token to a protected endpoint shall return `401 UNAUTHENTICATED`.
 - **FR-ROLE-03** A MEMBER calling an ADMIN endpoint shall receive `403 FORBIDDEN`.
 - **FR-ROLE-04** A MEMBER reading, confirming or cancelling another member's booking shall receive `404 NOT_FOUND`. **[ASSUMPTION A-03]**
@@ -576,7 +577,7 @@ Not routed by the gateway: `/actuator/**` (except the gateway's own health), `/i
 ### Testability and quality
 - **NFR-TEST-01** Unit tests (JUnit 5, Mockito) cover every rule in sections 6–10 and the resilience fallbacks.
 - **NFR-TEST-02** Integration tests run against real PostgreSQL via Testcontainers (no H2) per service.
-- **NFR-TEST-03** Outbound Feign clients are tested against a stub HTTP server (WireMock once approved, ARCHITECTURE.md D-28), including timeouts, 5xx and open-circuit behavior.
+- **NFR-TEST-03** Outbound Feign clients are tested against a stub HTTP server (WireMock, ARCHITECTURE.md D-28, approved 2026-11-07), including timeouts, 5xx and open-circuit behavior.
 - **NFR-TEST-04** System tests run the full stack with Docker Compose: the main journey (Playwright), CONC-10, and resilience scenarios (FS-32..38).
 - **NFR-TEST-05** CI runs all module builds and tests and the frontend checks on every push and pull request; `main` must be green.
 - **NFR-TEST-06** Every phase ends with tests passing, CI green, deployed, README updated.

@@ -2,7 +2,7 @@
 
 One booking platform for many kinds of venues: library rooms and seats, sports courts, parking bays, clinic appointments and gym sessions. A member picks a category, a venue and a bookable, holds a time slot for five minutes and confirms it. Double-booking is impossible, even under heavy concurrent load and with several service instances running.
 
-> **Status: Phase 1, M1.8.** Config server, Eureka, gateway, identity and booking services run together. identity-service registers users (and logs them in at once), issues RS256 access tokens plus a refresh-token cookie (sliding 7 days, logout ends it) and answers `/api/v1/me`. The gateway refuses requests without a valid access token, and booking-service checks the token and the role again itself, without calling identity-service. booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. booking-service serves the catalog (categories, venues, bookables with their effective rules, countries and time zones) and slot availability for a date (M1.4). Members hold a slot for 5 minutes, confirm it and cancel it; admins can cancel any booking (M1.5). A React frontend runs the whole journey in the browser through the gateway (M1.6). Every booking rule (hours, grid, length, horizon, per-member limit, cancellation cutoff) is enforced and a background job expires unconfirmed holds (M1.7). Double-booking is proven impossible under parallel load, also through the gateway with two booking-service instances (M1.8). Resilience patterns and configuration refresh are next (M1.9). Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
+> **Status: Phase 1, M1.9.** Config server, Eureka, gateway, identity and booking services run together. identity-service registers users (and logs them in at once), issues RS256 access tokens plus a refresh-token cookie (sliding 7 days, logout ends it) and answers `/api/v1/me`. The gateway refuses requests without a valid access token, and booking-service checks the token and the role again itself, without calling identity-service. booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. booking-service serves the catalog (categories, venues, bookables with their effective rules, countries and time zones) and slot availability for a date (M1.4). Members hold a slot for 5 minutes, confirm it and cancel it; admins can cancel any booking (M1.5). A React frontend runs the whole journey in the browser through the gateway (M1.6). Every booking rule (hours, grid, length, horizon, per-member limit, cancellation cutoff) is enforced and a background job expires unconfirmed holds (M1.7). Double-booking is proven impossible under parallel load, also through the gateway with two booking-service instances (M1.8). Calls between services are protected (timeouts, retry, circuit breaker, bulkhead, fallbacks) and configuration changes reach every instance without a restart (M1.9). Container images and the first deployment are next (M1.10). Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## What this project demonstrates
 
@@ -182,6 +182,46 @@ cd ../backend && ./mvnw -B -pl system-tests -Psystem-tests verify   # waits unti
 CI runs the same on a throwaway stack (job "System tests").
 
 **What the tests found (M1.8).** With the bookable locked `FOR SHARE`, parallel holds on one slot sometimes deadlocked inside PostgreSQL's exclusion check; locking it `FOR UPDATE` fixed it (0 deadlocks in 300 runs). And the gateway had an unintended 25-call bulkhead from Spring Cloud CircuitBreaker's defaults, which turned a burst of 50 holds into 503s and opened the circuit breaker; it is now off (ARCHITECTURE D-41).
+
+### Resilience demo
+
+Booking keeps working when other parts fail (REQUIREMENTS §13). Try it on the running stack (two booking instances as above):
+
+```bash
+cd infra
+docker compose stop identity-service          # login and refresh now answer 503 SERVICE_UNAVAILABLE ...
+#   ... but a member who already has an access token can still browse, hold, confirm and cancel:
+#   tokens are checked locally with the public key, and booking keeps its own member rows (RES-07)
+docker compose up -d --wait identity-service
+
+docker compose stop discovery-server          # Eureka down: routes keep working from the cached registry (FS-38)
+docker compose up -d --wait discovery-server
+```
+
+What protects each call:
+
+| Call | Protection | When it fails |
+|---|---|---|
+| Client → gateway → service | Per route: circuit breaker, 5 s timeout; GETs retried (never POSTs) | `503 SERVICE_UNAVAILABLE`, or `504 UPSTREAM_TIMEOUT` when too slow, in the standard error format |
+| booking-service → identity-service (`/internal/users`) | Service token (role `SERVICE`), 1 s / 2 s timeouts, retry ×3 on 5xx and network errors (never 4xx), circuit breaker, bulkhead of 10 | Fallback: member IDs only, `memberDetailsAvailable: false` |
+| Rate-sensitive downstreams (Phase 5) | Rate limiter, 20 calls/s per instance | Fallback at once |
+
+Circuit-breaker states are in `/actuator/health` (component `circuitBreakers`, admins only) and in the metrics (`resilience4j.circuitbreaker.state`, `resilience4j.retry.calls`, `resilience4j.bulkhead.*`). `ResilienceSystemIT` runs these scenarios automatically, plus killing one booking instance during a burst (FS-34): `cd backend && ./mvnw -B -pl system-tests -Psystem-tests verify`.
+
+### Change config without restart
+
+The resilience settings (circuit-breaker thresholds, retries, bulkhead and rate-limiter limits) change on every running instance without a restart (PLAT-05):
+
+```bash
+# 1. Edit the config repo, e.g. gridreserve-config/booking-service.yml (dev reads your local clone)
+# 2. Apply it everywhere (finds every instance in Eureka, POST /actuator/refresh with an admin token):
+GRIDRESERVE_ADMIN_EMAIL=admin@gridreserve.test GRIDRESERVE_ADMIN_PASSWORD=demo-admin-pass \
+  scripts/refresh-config.sh booking-service
+# booking-service 172.18.0.8:8082 → 200, changed keys: ["resilience4j.circuitbreaker…failure-rate-threshold"]
+# booking-service 172.18.0.6:8082 → 200, …
+```
+
+Not refreshable (restart for those): datasources, ports, keys, Feign timeouts, which actuator endpoints are exposed, and the hold-expiry job's settings (read once at startup). Service-to-service calls need two values in `infra/.env`: `BOOKING_SERVICE_CLIENT_SECRET` and its SHA-256 `BOOKING_SERVICE_CLIENT_SECRET_SHA256` (`.env.example` shows how to generate them).
 
 ### Run the frontend
 

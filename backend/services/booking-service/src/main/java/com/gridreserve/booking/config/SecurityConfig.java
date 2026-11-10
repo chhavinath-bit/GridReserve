@@ -29,9 +29,12 @@ class SecurityConfig {
                         // Temporary M1.1 smoke test.
                         .requestMatchers("/api/v1/ping/**").permitAll()
                         .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
+                        // Other actuator endpoints (refresh, metrics): an admin or another service (D-19).
+                        .requestMatchers("/actuator/**").hasAnyRole("ADMIN", "SERVICE")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
-                        // Everything else, catalog browsing included, needs a signed-in user (PROJECT.md §6).
-                        .anyRequest().authenticated())
+                        // Everything else, catalog browsing included, needs a signed-in person (PROJECT.md §6); a
+                        // service token (role SERVICE) must not act as a member.
+                        .anyRequest().hasAnyRole("MEMBER", "ADMIN"))
                 .oauth2ResourceServer(server -> server
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtConverter))
                         .authenticationEntryPoint(errors)

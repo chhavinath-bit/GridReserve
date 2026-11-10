@@ -101,7 +101,7 @@ Do this at the start of every session, before proposing or changing anything:
 - **Database:** PostgreSQL 16, **one database per service** on one server; migrations with Flyway per service.
 - **Redis:** Phase 4 only. Never the source of truth.
 - **Events between services:** transactional outbox + HTTP push (Phase 5+). No broker.
-- **Tests:** JUnit 5, Mockito, Testcontainers (AssertJ comes with `spring-boot-starter-test`); a stub HTTP server for Feign client tests (WireMock, **pending approval D-28**).
+- **Tests:** JUnit 5, Mockito, Testcontainers (AssertJ comes with `spring-boot-starter-test`); a stub HTTP server for Feign client tests (WireMock `wiremock-standalone`, test scope, approved 2026-11-07, D-28).
 - **Delivery:** Docker + Docker Compose, GitHub Actions.
 - **Not allowed unless I ask:** Kafka, RabbitMQ or any message broker, Spring Cloud Bus, Kubernetes, rules engines, extra frameworks, Lombok, MapStruct, real payment SDKs, more services than listed in section 4. Any library not listed here needs my approval first, including the "pending approval" candidates in the docs (ArchUnit, springdoc, WireMock, distributed tracing, a load-test tool).
 
@@ -238,7 +238,7 @@ Do this at the start of every session, before proposing or changing anything:
 
 - **Run tests after every change** and before every commit; report actual output (section 2).
 - Backend unit tests (JUnit 5 + Mockito) for rules, services and fallbacks; integration tests (`*IT`) per service against **real PostgreSQL via Testcontainers**. **Never use H2** or another in-memory database.
-- Feign clients are tested against a stub HTTP server (WireMock once approved, D-28): timeout, 5xx, open circuit, bulkhead rejection, no retry on 4xx, fallback output.
+- Feign clients are tested against WireMock (D-28): timeout, 5xx, open circuit, bulkhead rejection, no retry on 4xx, fallback output.
 - System tests run the Compose stack: the main journey (Playwright), CONC-10, resilience scenarios (FS-32..38), config refresh.
 - Test names or `@DisplayName` cite the requirement ID they cover (e.g. `rejectsOverlappingHold_BR10`).
 - Time-based behavior uses a fixed or movable `Clock`; no `Thread.sleep` for timing. System tests wait on health checks, not sleeps.
@@ -278,7 +278,7 @@ Rows marked ✓ were run successfully in M1.1 (2026-11-05); the others are plann
 | Start the whole stack (dev) ✓ | `cd infra && docker compose up -d --build --wait` | Postgres (per-service DBs), config server (`native`, mounts `../../gridreserve-config`), discovery, gateway, services (+ Redis in P4); reads `infra/.env`. Routing can take ~15 s after all are healthy |
 | Start only infrastructure | `cd infra && docker compose up -d postgres config-server discovery-server` | Then run services from the IDE/Maven |
 | Two booking instances ✓ | `cd infra && docker compose up -d --build --scale booking-service=2 --wait` | Load-balancing and CONC-10 demos |
-| System tests (CONC-10) ✓ | `cd backend && ./mvnw -B -pl system-tests -Psystem-tests verify` | Needs the stack with two booking instances (row above); waits until the gateway routes; also a CI job |
+| System tests ✓ | `cd backend && ./mvnw -B -pl system-tests -Psystem-tests verify` | CONC-10 and the resilience scenarios (they stop and start containers); needs the stack with two booking instances (row above); add `-Dgridreserve.config.dir=../../../gridreserve-config` to include the refresh test, which edits the config repo and restores it; also a CI job |
 | Stop ✓ | `cd infra && docker compose down` | Add `-v` only with my approval (deletes data) |
 | Eureka dashboard ✓ | `http://localhost:8761` (JSON: `curl -H 'Accept: application/json' localhost:8761/eureka/apps`) | |
 | Smoke test ✓ | `curl -i localhost:8080/api/v1/ping` | Temporary M1.1 endpoint through the gateway |
@@ -287,7 +287,7 @@ Rows marked ✓ were run successfully in M1.1 (2026-11-05); the others are plann
 | Test one module ✓ | `cd backend && ./mvnw -pl services/booking-service -am test` | `-am` also builds `common-web` |
 | Single test ✓ | `cd backend && ./mvnw -pl services/booking-service -am test -Dtest=BookingServiceApplicationTest -Dsurefire.failIfNoSpecifiedTests=false` | |
 | Single integration test ✓ | `cd backend && ./mvnw -pl services/booking-service -am verify -Dit.test=BookingConstraintsIT -Dtest=none -Dsurefire.failIfNoSpecifiedTests=false -Dfailsafe.failIfNoSpecifiedTests=false` | `*IT` classes run in `verify` (Failsafe), not in `test`; Docker must be running |
-| Refresh config on all instances | `scripts/refresh-config.sh [service-id]` | Needs admin/service credential from env |
+| Refresh config on all instances ✓ | `GRIDRESERVE_ADMIN_EMAIL=… GRIDRESERVE_ADMIN_PASSWORD=… scripts/refresh-config.sh [service-id]` | Eureka lookup → `POST /actuator/refresh` per instance (admin token); in dev from inside the Compose network (`REFRESH_VIA=compose`, default) |
 | Install frontend deps ✓ | `cd frontend && npm ci` | Node ≥ 24 (`frontend/.nvmrc`) |
 | Run frontend ✓ | `cd frontend && npm run dev` | `http://localhost:5173`; Vite proxies `/api` to the gateway on `:8080`; gallery at `/dev/components` |
 | Frontend type check / lint / unit tests / build ✓ | `cd frontend && npm run typecheck` · `npm run lint` · `npm test` · `npm run build` | |
@@ -341,6 +341,7 @@ Rows marked ✓ were run successfully in M1.1 (2026-11-05); the others are plann
 - Keep the build host-agnostic (Dockerfiles + environment variables + config server); the deploy host is chosen before the first Phase 1 deployment.
 - (2026-11-06, M1.3) Tokens are signed and verified with Spring Security's OAuth2 resource server and Nimbus JOSE (`NimbusJwtEncoder` / `NimbusJwtDecoder`) instead of jjwt: Boot-managed versions, no second Jackson, built-in Bearer filters for servlet services and the reactive gateway (D-34). Service-to-service authentication: short-lived service JWTs signed by identity-service, built with the first internal call in M1.9 (D-19). M1.3 is delivered as three PRs: M1.3a identity core, M1.3b refresh tokens, M1.3c verification in gateway and booking.
 - (2026-11-06, M1.3b) Refresh tokens are **not rotated** (D-37): one opaque token per login, stored as SHA-256, sliding 7-day expiry, logout deletes the row, expired rows deleted at login (no cleanup job). Replaces rotation, token families and reuse detection.
+- (2026-11-07, M1.9) Service tokens (D-19 built): identity issues 5-minute JWTs with role `SERVICE` for client ID + secret (HTTP Basic, only the SHA-256 kept); `/internal/**` needs role SERVICE; user APIs need MEMBER or ADMIN; actuator beyond health/info needs ADMIN or SERVICE. `IdentityGateway` composes Retry → CircuitBreaker → Bulkhead in code (registries looked up per call); WireMock for client tests (D-28). Gateway timeouts answer `504 UPSTREAM_TIMEOUT`. Resilience settings are refreshable through `ResilienceRefresher`; health component `circuitBreakers` never fails. All in D-42.
 - (2026-11-07, M1.8) Hold creation locks the bookable `FOR UPDATE` (the shared lock deadlocked under parallel holds); no bulkhead on gateway routes; CONC-10 in the `backend/system-tests` module, run in CI on a throwaway Compose stack with two booking instances; deadlocks asserted with `gridreserve.db.retries` (D-41).
 - (2026-11-07, M1.7) Booking horizon in whole local days for both availability and holds; booking responses include `cancellableUntil`; the per-member limit counts by the category's bookable IDs from the catalog service (D-40). `HoldExpiryJob` every 30 s on the `gr-sched-*` pool (2 threads), one transaction per hold with `SKIP LOCKED`.
 - (2026-11-07, M1.6) Frontend packages (D-UI-3, M1.6 subset): `radix-ui`, `class-variance-authority`, `clsx`, `tailwind-merge`, `lucide-react`, `tw-animate-css`, `sonner`, `@fontsource-variable/inter`; lint with `eslint`, `typescript-eslint`, `eslint-plugin-react-hooks`; TypeScript 6.0 (typescript-eslint does not support 7 yet). All pinned exactly. `react-day-picker` and `@tanstack/react-table` stay pending. Frontend CI job on Node 24 (`frontend/.nvmrc`). Forms: **Formik** + **Yup** (owner request, 2026-11-07) for client-side validation that mirrors the backend rules; the server stays the guard.
@@ -359,4 +360,3 @@ Do not assume an answer for these. When a milestone reaches one, present options
 | UI supporting packages (D-UI-3) and axe accessibility checks (D-UI-4) | M1.6 / M1.13 | DESIGN_SYSTEM.md §10 |
 | Load-test tool (D-13b) | M1.14 | ARCHITECTURE.md §19 |
 | Remaining `D-xx` items (e.g. D-05, D-07, D-24 tracing, D-25 membership credits, D-26) | Phase listed in ARCHITECTURE.md §19 | ARCHITECTURE.md §19 |
-| WireMock for Feign client tests (D-28) | M1.9 (first Feign client) | ARCHITECTURE.md §19 |

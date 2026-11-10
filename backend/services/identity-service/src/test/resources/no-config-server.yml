@@ -1,0 +1,7 @@
+# Settings running services get from the Config Server; tests start without it (CONFIG_IMPORT points here).
+gridreserve:
+  service-clients:
+    clients:
+      booking-service:
+        # SHA-256 of "test-client-secret" (tests only; real hashes come from the environment).
+        secret-sha256: 8ac950188678f9bb3524b275130332b511bf5092394da6975b5fb9e84302f026

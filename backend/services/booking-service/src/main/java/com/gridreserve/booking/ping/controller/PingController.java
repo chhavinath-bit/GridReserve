@@ -1,7 +1,7 @@
 package com.gridreserve.booking.ping.controller;
 
 import com.gridreserve.booking.ping.dto.PingResponse;
-import com.gridreserve.booking.client.IdentityClient;
+import com.gridreserve.booking.client.IdentityGateway;
 import com.gridreserve.booking.client.dto.IdentityPing;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,11 +15,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class PingController {
 
     private final String instance;
-    private final IdentityClient identityClient;
+    private final IdentityGateway identity;
 
-    public PingController(@Value("${HOSTNAME:local}") String instance, IdentityClient identityClient) {
+    public PingController(@Value("${HOSTNAME:local}") String instance, IdentityGateway identity) {
         this.instance = instance;
-        this.identityClient = identityClient;
+        this.identity = identity;
     }
 
     @GetMapping("/api/v1/ping")
@@ -30,6 +30,6 @@ public class PingController {
     /** Spike S1/S2: booking calls identity through Eureka + Feign; returns the fallback if identity is down. */
     @GetMapping("/api/v1/ping/identity")
     public IdentityPing pingIdentity() {
-        return identityClient.ping();
+        return identity.ping();
     }
 }

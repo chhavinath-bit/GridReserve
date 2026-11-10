@@ -33,7 +33,7 @@
 | Cache / distributed rate limits | Redis 7 | Availability cache (booking service); gateway rate limiting | **P4 only** |
 | Events between services | Transactional outbox + HTTP push (no broker) | Reliable side effects across services | P5 |
 | Containers | Docker + Docker Compose | All services and infrastructure locally; images for any host | P1 |
-| Backend tests | JUnit 5, Mockito, Testcontainers, stub HTTP server for Feign clients (WireMock, pending D-28) | Unit, integration, concurrency, resilience tests | P1 |
+| Backend tests | JUnit 5, Mockito, Testcontainers, WireMock 3.13 (`wiremock-standalone`, test scope, D-28 approved 2026-11-07) for Feign clients | Unit, integration, concurrency, resilience tests | P1 |
 | CI | GitHub Actions | Build and test every module and the frontend | P1 |
 | Observability | Spring Boot Actuator + Micrometer | Health, metrics (incl. resilience metrics) | P1 |
 
@@ -211,12 +211,12 @@ Each section: **role**, **why**, **how it interacts**, **alternatives rejected**
 | Unit | JUnit 5, Mockito, AssertJ | Rules, resolver, fallbacks, token logic (fixed `Clock`) |
 | Slice | `@WebMvcTest` + Spring Security test | Validation, error format, 401/403 |
 | Integration (per service) | `@SpringBootTest` + Testcontainers PostgreSQL; config client and Eureka disabled (`test` profile) | Constraints, migrations, transactions |
-| Client / resilience | Feign client against a stub HTTP server (WireMock, pending D-28) | Timeouts, retries, circuit opening, bulkhead rejection, fallbacks |
+| Client / resilience | Feign client against WireMock (booking-service `IdentityGatewayIT`); gateway routes against a JDK `HttpServer` stub (`GatewayResilienceIT`) | Timeouts, retries, circuit opening, bulkhead rejection, fallbacks |
 | Concurrency | Testcontainers + `ExecutorService` + `CountDownLatch` | CONC-01..09 |
 | System | Docker Compose stack (+ Playwright) | CONC-10, FS-32..38, main journey |
 
 - **Why no H2:** the key guarantees live in PostgreSQL features H2 lacks.
-- **WireMock** is needed for Feign client tests and is pending approval (D-28).
+- **WireMock** (D-28, approved 2026-11-07): the standalone build bundles its own Jetty and Jackson, so it can't clash with Boot 4's versions; test scope only.
 
 ### 3.17 GitHub Actions
 

@@ -74,6 +74,12 @@
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
         </dependency>
+        <!-- The Bulkhead module of the same Resilience4j (version from the BOM): limits concurrent calls to
+             identity-service (RES-04). The starter above brings circuit breaker, retry and rate limiter. -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-bulkhead</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -94,6 +100,14 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Stub identity-service for the Feign client tests (D-28, owner approved 2026-11-07). The standalone
+             build bundles its own Jetty and Jackson, so it can't clash with Spring Boot's versions. -->
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock-standalone</artifactId>
+            <version>3.13.1</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

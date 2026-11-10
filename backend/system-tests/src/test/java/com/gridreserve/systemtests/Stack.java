@@ -94,6 +94,46 @@ final class Stack {
         throw new IllegalStateException("Stack not ready after 3 minutes: " + last);
     }
 
+    /**
+     * Waits until Eureka's UP booking-service instances are exactly the running containers (same IPs). After
+     * a container is killed and replaced, Eureka briefly still lists the dead one and not yet the new one.
+     */
+    static void awaitBookingRegistryInSync() throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofMinutes(3).toNanos();
+        while (System.nanoTime() < deadline) {
+            java.util.Set<String> running = new java.util.HashSet<>();
+            for (String id : compose("ps", "-q", "booking-service").lines().toList()) {
+                running.add(docker("inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", id));
+            }
+            java.util.Set<String> registered = new java.util.HashSet<>();
+            Response response = get(EUREKA + "/eureka/apps/BOOKING-SERVICE", null);
+            if (response.status() == 200) {
+                JsonNode instance = response.body().get("application").get("instance");
+                (instance.isArray() ? instance.valueStream().toList() : java.util.List.of(instance)).stream()
+                        .filter(each -> each.get("status").asString().equals("UP"))
+                        .forEach(each -> registered.add(each.get("ipAddr").asString()));
+            }
+            if (!running.isEmpty() && running.equals(registered)) {
+                return;
+            }
+            Thread.sleep(1_000);
+        }
+        throw new IllegalStateException("Eureka never matched the running booking-service containers");
+    }
+
+    private static String docker(String... args) {
+        List<String> full = new ArrayList<>(List.of("docker"));
+        full.addAll(List.of(args));
+        try {
+            Process process = new ProcessBuilder(full).redirectErrorStream(true).start();
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            process.waitFor(30, TimeUnit.SECONDS);
+            return output;
+        } catch (IOException | InterruptedException ex) {
+            throw new IllegalStateException("docker " + args[0] + " failed", ex);
+        }
+    }
+
     static long upInstances(String application) {
         Response response = get(EUREKA + "/eureka/apps/" + application, null);
         if (response.status() != 200) {
@@ -120,6 +160,34 @@ final class Stack {
         } catch (IOException | InterruptedException ex) {
             throw new IllegalStateException("Could not run docker compose in " + INFRA_DIR, ex);
         }
+    }
+
+    /** Runs {@code docker compose <args>} in infra/ (stop, start, kill, up …) and returns its output. */
+    static String compose(String... args) {
+        List<String> full = new ArrayList<>(List.of("docker", "compose"));
+        full.addAll(List.of(args));
+        try {
+            Process process = new ProcessBuilder(full).directory(INFRA_DIR).redirectErrorStream(true)
+                    .redirectInput(ProcessBuilder.Redirect.from(new File("/dev/null"))).start();
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            if (!process.waitFor(5, TimeUnit.MINUTES) || process.exitValue() != 0) {
+                throw new IllegalStateException("docker compose " + String.join(" ", args) + " failed: " + output);
+            }
+            return output;
+        } catch (IOException | InterruptedException ex) {
+            throw new IllegalStateException("Could not run docker compose in " + INFRA_DIR, ex);
+        }
+    }
+
+    /** Registers a fictional member and returns its access token (registering logs in, D-36). */
+    static String newMember(String label) {
+        String email = label + "-" + System.nanoTime() + "@example.test";
+        Response registered = post(GATEWAY + "/api/v1/auth/register", null, java.util.Map.of(
+                "email", email, "password", "system-test-pass", "displayName", "System test " + label));
+        if (registered.status() != 201) {
+            throw new IllegalStateException("Register failed: " + registered.status());
+        }
+        return registered.body().get("accessToken").asString();
     }
 
     /** One value from booking_db, read as the PostgreSQL superuser inside its container. */

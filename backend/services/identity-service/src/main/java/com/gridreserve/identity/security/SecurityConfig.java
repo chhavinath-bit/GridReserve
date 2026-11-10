@@ -1,6 +1,7 @@
 package com.gridreserve.identity.security;
 
 import com.gridreserve.common.web.security.JsonSecurityErrorHandler;
+import com.gridreserve.identity.internal.service.ServiceTokenIssuer;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -21,7 +22,7 @@ import org.springframework.security.web.SecurityFilterChain;
  * ({@code ClientCheck}, FR-AUTH-12).
  */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties({RefreshTokenProperties.class, FrontendProperties.class})
+@EnableConfigurationProperties({RefreshTokenProperties.class, FrontendProperties.class, ServiceClientProperties.class})
 class SecurityConfig {
 
     @Bean
@@ -38,9 +39,14 @@ class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/refresh", "/api/v1/auth/logout").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/auth/ping").permitAll()
                         .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
-                        // Not routed by the gateway; service credentials for /internal/** come with D-19 (M1.9).
-                        .requestMatchers("/internal/**").permitAll()
-                        .anyRequest().authenticated())
+                        // Other actuator endpoints (refresh, metrics): an admin or another service (D-19).
+                        .requestMatchers("/actuator/**").hasAnyRole("ADMIN", ServiceTokenIssuer.SERVICE_ROLE)
+                        // Not routed by the gateway. Getting a token is authenticated by the client secret in the
+                        // controller; everything else under /internal needs a service token (D-19).
+                        .requestMatchers(HttpMethod.POST, "/internal/service-tokens").permitAll()
+                        .requestMatchers("/internal/**").hasRole(ServiceTokenIssuer.SERVICE_ROLE)
+                        // User endpoints are for people: a service token must not act as a user.
+                        .anyRequest().hasAnyRole("MEMBER", "ADMIN"))
                 .oauth2ResourceServer(server -> server
                         .bearerTokenResolver(bearerTokenOutsideAuthPaths())
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtConverter))

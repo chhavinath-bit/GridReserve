@@ -67,8 +67,8 @@ jobs:
 
   system-tests:
     name: System tests (Compose, two booking instances)
-    # The whole stack in Docker, then CONC-10 through the gateway (M1.8). Runs after the unit and
-    # integration tests pass, on PRs and on main.
+    # The whole stack in Docker, then CONC-10 through the gateway (M1.8) and the resilience scenarios
+    # that stop or kill containers (M1.9). Runs after the unit and integration tests pass, on PRs and main.
     needs: [backend]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -113,9 +113,10 @@ jobs:
         working-directory: GridReserve/infra
         run: docker compose up -d --build --scale booking-service=2 --wait
 
+      # gridreserve.config.dir: the runner's throwaway config copy, which the refresh test (US-13) may edit.
       - name: Run the system tests
         working-directory: GridReserve/backend
-        run: ./mvnw -B -pl system-tests -Psystem-tests verify
+        run: ./mvnw -B -pl system-tests -Psystem-tests verify -Dgridreserve.config.dir="$GITHUB_WORKSPACE/gridreserve-config"
 
       - name: Show service logs on failure
         if: failure()
