@@ -667,7 +667,7 @@ What the new tests execute (behavior): service token for the right secret (role 
 
 ---
 
-## M1.10 Container images and first deployment — Built, deployment waits for the host (2026-11-10)
+## M1.10 Container images and first deployment — Ready to merge; live host pending (2026-11-11)
 
 Decision D-15 (owner, 2026-11-10, zero budget): Oracle Cloud Always Free VM + laptop Cloudflare-tunnel fallback; Caddy, GHCR, deploy workflow, nightly backups and rclone approved; backups to Google Drive; sslip.io name; quick tunnel. App PR #16, config PR #9 (merge first).
 
@@ -718,12 +718,13 @@ Decision D-15 (owner, 2026-11-10, zero budget): Oracle Cloud Always Free VM + la
 - Anything on the real host: Let's Encrypt for the sslip.io name, Oracle's firewalls, arm64 images running (built in CI; not run on arm64 yet), Google Drive upload, the deploy workflow end to end, reboot recovery.
 - The images job and deploy workflow have only been linted and run on the PR; pushing to GHCR happens on `main`.
 
+**Owner decisions (2026-11-11):** merge M1.10 now and deploy when Oracle has capacity (the deploy steps below become an open item, to be finished before M1.14); D-10 plain log lines in prod.
+
 ### Open issues for later milestones
-- D-10 (JSON logs in prod) is pending: plain logs for now (Docker's json-file driver already wraps each line; nothing aggregates logs). Owner decision needed.
 - The JVM flags saved about 16 %, less than the ~350 MB per JVM estimated; booking still uses about 550 MB. Enough for the Oracle VM; measure again in M1.14.
 
 ---
 
 ## Open issues
 
-- None.
+- **M1.10 live deployment** (owner decision 2026-11-11; finish before M1.14): create the Oracle VM when capacity appears, then `docs/deploy/oracle.md` steps 3–8: prod public key into the config repo, Google Drive token, GitHub variables and secrets, packages public, first release with the smoke test from CI, reboot and fail-fast checks on the host, a backup in Drive and `restore-drill.sh`, tag `first-deploy`, README live URL. Until then the live demo is `scripts/demo-tunnel.sh`.
