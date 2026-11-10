@@ -148,6 +148,11 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | Bulk `@Modifying` delete vs derived delete | A JPQL `delete from …` runs at once in one statement; a derived `deleteBy…` loads and queues each row, and Hibernate runs queued inserts **before** deletes at flush, so "delete Monday, insert Monday" would collide on the key. | `VenueOpeningHoursRepository.deleteAllFor` | M1.11 |
 | Factory methods and mutators on entities | No public setters: `Venue.create(...)`, `update(...)`, `changeActive(...)` keep the rules of a change (timestamps, version bump) in one place. | `Venue`, `Bookable` | M1.11 |
 | Commit timestamps (`track_commit_timestamp`, `pg_xact_commit_timestamp(xmin)`) | With the setting on, PostgreSQL remembers when each transaction committed; `xmin` is the transaction that wrote a row's current version. Together they show the real commit order of rows. | `DeactivationRaceIT`, `PostgresTestcontainer` | M1.11 |
+| `INSERT … ON CONFLICT DO NOTHING` | Inserts only if the key is free; a second inserter waits for the first to commit, then inserts nothing (0 rows) instead of failing. A race-free "claim this key". | `IdempotencyRecordRepository.insertIfAbsent` | M1.12 |
+| `jsonb` columns | PostgreSQL's binary JSON type; we store a response body there and read it back as text (`@JdbcTypeCode(SqlTypes.JSON)`, `CAST(:body AS jsonb)`). | `IdempotencyRecord` | M1.12 |
+| `@Lock(PESSIMISTIC_WRITE)` | A Spring Data query that adds `FOR UPDATE`: the row stays locked until the transaction ends. Cancel uses it so the status it records as "from" can't change underneath. | `BookingRepository.lockById` | M1.12 |
+| `Propagation.MANDATORY` | The method refuses to run without a caller's transaction instead of starting its own. Guarantees an audit row commits or rolls back with its change. | `AuditService.record` | M1.12 |
+| Foreign key without cascade | Deleting a booking that has audit rows fails; history can't disappear by accident (tests delete in order: `TestBookings`). | `V5__audit_and_idempotency.sql` | M1.12 |
 
 ## 6. Spring Cloud and the platform
 
@@ -195,6 +200,7 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | Roles per path family | `/internal/**` → SERVICE; user APIs → MEMBER or ADMIN; actuator beyond health/info → ADMIN or SERVICE. A valid token alone is not enough: it must be the right kind of caller. | `SecurityConfig` (identity, booking) | M1.9 |
 | Caching a token with `AtomicReference` | Read the cached token; if it's close to expiry, fetch a new one and store it. Two threads may both fetch once: harmless, and no lock is needed. | `ServiceTokens` | M1.9 |
 | Secrets created where they are used | The prod `.env` (database passwords, the signing key, the backup password) is generated on the host and never leaves it; only the public key is printed, for the config repo. A `Secure` cookie travels only over HTTPS, which is why prod needs a real certificate. | `scripts/prod/init-env.sh`, `infra/.env.prod.example` | M1.10 |
+| Idempotency keys | A client-chosen ID for one intent; the server remembers its answer, so repeating the request (lost response, Retry) can't do the work twice. Keyed per member, so one member can't see another's answers. | `IdempotencyService`, `lib/idempotency.ts` | M1.12 |
 
 ## 8. Testing
 
@@ -268,6 +274,9 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | SPI to avoid a module cycle | The catalog needs a number only the booking module can compute, but booking already depends on catalog. The catalog defines an interface (`ScheduledBookings`), the booking module implements it, and Spring injects it: no cycle. | `catalog/service/ScheduledBookings`, `booking/service/ScheduledBookingCounter` | M1.11 |
 | Soft close | Closing stops new bookings but never touches existing ones; nothing is deleted, so history and audit stay valid. | `AdminCatalogService.setBookableActive` | M1.11 |
 | Remote call after the transaction | Read the page in a short transaction, close it, then call identity once for the whole page; a slow identity never holds a database connection or locks. | `AdminBookingService` | M1.11 |
+| Three-step idempotency (claim → work + store → release or store refusal) | The claim is its own short transaction so a parallel duplicate sees "in progress" at once; the answer is stored in the work's transaction so they can't come apart; a crash leaves a lease that runs out, so the key isn't stuck. | `BookingService.hold`, `IdempotencyService` | M1.12 |
+| Retry only the part that can be retried | The deadlock retry repeats the hold's transaction; wrapping the claim too would make the retry meet its own "in progress" key. | `RetriedTransactions` | M1.12 |
+| Audit log in the same transaction | Writing history in the change's transaction makes "changed but not recorded" (or the reverse) impossible; an outbox (Phase 5) applies the same idea to messages. | `BookingTransactions`, `AuditService` | M1.12 |
 
 ## 10. Frontend (React, TypeScript, Vite)
 
@@ -301,3 +310,4 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | Yup schemas | Rules as data: `yup.string().trim().required('…').email('…').max(254)`; Formik runs the schema and shows the first message per field. `InferType` gives the TypeScript type of the values. | `features/auth/schemas.ts` | M1.6 |
 | Client validation vs server validation | The client checks give instant feedback; the server checks are the guard (anyone can send a request without our UI). Server field errors are put back into the form with `setErrors`. | `RegisterPage.tsx` | M1.6 |
 | `npm ci` and exact versions | `npm ci` installs exactly what `package-lock.json` says (CI and fresh clones); every package is pinned without `^`. | `frontend/package.json`, CI | M1.6 |
+| `crypto.randomUUID()` and `useRef` for the key | The browser makes the UUID; a ref keeps it between renders without causing one, so Retry sends the same key and a new selection gets a new one. | `SlotPickerPage`, `lib/idempotency.ts` | M1.12 |
