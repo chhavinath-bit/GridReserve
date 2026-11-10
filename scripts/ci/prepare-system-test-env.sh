@@ -8,7 +8,7 @@
 # 1. Writes infra/.env from .env.example with random database passwords and a random service-client
 #    secret for booking-service (with its SHA-256 for identity-service).
 # 2. Generates a new RSA key pair: the private key goes into infra/.env (JWT_PRIVATE_KEY), the public key
-#    replaces the dev public key in the runner's copy of gridreserve-config/application.yml.
+#    replaces the dev public key in the runner's copy of gridreserve-config/application-dev.yml.
 # Nothing is committed or pushed; the runner is discarded after the job. Values are never printed.
 set -euo pipefail
 
@@ -39,7 +39,7 @@ for line in open(example):
 open(target, "w").writelines(lines)
 PY
 
-python3 - "$config_dir/application.yml" "$work/public.pem" <<'PY'
+python3 - "$config_dir/application-dev.yml" "$work/public.pem" <<'PY'
 import re, sys
 path, public_pem = sys.argv[1], open(sys.argv[2]).read().strip().splitlines()
 text = open(path).read()
@@ -48,7 +48,7 @@ block = "\n".join(indent + line for line in public_pem)
 new, count = re.subn(r"(      dev-2026-11: \|\n)(        -----BEGIN PUBLIC KEY-----\n(?:        .*\n)*?        -----END PUBLIC KEY-----)",
                      lambda m: m.group(1) + block, text)
 if count != 1:
-    sys.exit("could not find the dev public key block in application.yml")
+    sys.exit("could not find the dev public key block in application-dev.yml")
 open(path, "w").write(new)
 PY
 

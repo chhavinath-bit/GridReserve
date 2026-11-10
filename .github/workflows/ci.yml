@@ -65,6 +65,56 @@ jobs:
       - name: Production build
         run: npm run build
 
+  images:
+    name: Image ${{ matrix.app }}
+    # Every image for both CPUs: amd64 (laptops, CI) and arm64 (the Oracle host, D-15). On PRs they are only
+    # built; on main they are pushed to GitHub's registry, tagged with the commit SHA, for deploy.yml to pull.
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { app: config-server,    context: backend,      args: "MODULE=platform/config-server\nPORT=8888" }
+          - { app: discovery-server, context: backend,      args: "MODULE=platform/discovery-server\nPORT=8761" }
+          - { app: identity-service, context: backend,      args: "MODULE=services/identity-service\nPORT=8081" }
+          - { app: booking-service,  context: backend,      args: "MODULE=services/booking-service\nPORT=8082" }
+          - { app: api-gateway,      context: backend,      args: "MODULE=platform/api-gateway\nPORT=8080" }
+          - { app: web,              context: frontend,     args: "" }
+          - { app: backup,           context: infra/backup, args: "" }
+    steps:
+      - uses: actions/checkout@v7
+
+      # QEMU runs the small arm64 runtime stages; the Maven and npm stages run natively ($BUILDPLATFORM).
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          build-args: ${{ matrix.args }}
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            ghcr.io/chhavinath-bit/gridreserve-${{ matrix.app }}:${{ github.sha }}
+            ghcr.io/chhavinath-bit/gridreserve-${{ matrix.app }}:main
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,scope=${{ matrix.app }},mode=max
+
   system-tests:
     name: System tests (Compose, two booking instances)
     # The whole stack in Docker, then CONC-10 through the gateway (M1.8) and the resilience scenarios
