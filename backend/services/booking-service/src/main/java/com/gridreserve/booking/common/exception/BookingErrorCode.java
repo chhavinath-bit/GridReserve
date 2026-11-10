@@ -13,6 +13,8 @@ public enum BookingErrorCode implements ErrorCode {
     INVALID_STATE(HttpStatus.CONFLICT),
     // An admin saved a venue or bookable someone else changed since it was read (FR-CAT-15).
     STALE_UPDATE(HttpStatus.CONFLICT),
+    // The first request with this Idempotency-Key is still being processed (IDEM-05).
+    IDEMPOTENCY_IN_PROGRESS(HttpStatus.CONFLICT),
 
     // 422: the request breaks a booking rule; sending it again unchanged will fail again.
     BOOKABLE_INACTIVE(HttpStatus.UNPROCESSABLE_CONTENT),
@@ -23,6 +25,8 @@ public enum BookingErrorCode implements ErrorCode {
     DURATION_INVALID(HttpStatus.UNPROCESSABLE_CONTENT),
     MEMBER_LIMIT_REACHED(HttpStatus.UNPROCESSABLE_CONTENT),
     CUTOFF_PASSED(HttpStatus.UNPROCESSABLE_CONTENT),
+    // The Idempotency-Key was already used for a different request (IDEM-04).
+    IDEMPOTENCY_KEY_REUSED(HttpStatus.UNPROCESSABLE_CONTENT),
     // Time-slot booking and availability only work for EXCLUSIVE bookables (BR-09); CAPACITY from Phase 2.
     WRONG_BOOKING_MODEL(HttpStatus.UNPROCESSABLE_CONTENT);
 

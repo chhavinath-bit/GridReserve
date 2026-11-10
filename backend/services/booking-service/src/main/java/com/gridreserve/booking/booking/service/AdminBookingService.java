@@ -1,5 +1,7 @@
 package com.gridreserve.booking.booking.service;
 
+import com.gridreserve.booking.audit.dto.AuditEntryResponse;
+import com.gridreserve.booking.audit.service.AuditService;
 import com.gridreserve.booking.booking.dto.AdminBookingPage;
 import com.gridreserve.booking.booking.dto.AdminBookingResponse;
 import com.gridreserve.booking.booking.entity.Booking;
@@ -14,7 +16,10 @@ import com.gridreserve.booking.client.dto.IdentityUser;
 import com.gridreserve.booking.client.dto.MemberDirectory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import com.gridreserve.common.web.error.CommonErrorCode;
+import com.gridreserve.common.web.error.DomainException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Collection;
@@ -40,13 +45,24 @@ public class AdminBookingService {
     private final CatalogService catalog;
     private final AdminCatalogService adminCatalog;
     private final IdentityGateway identity;
+    private final AuditService audit;
 
     public AdminBookingService(BookingRepository bookings, CatalogService catalog, AdminCatalogService adminCatalog,
-                               IdentityGateway identity) {
+                               IdentityGateway identity, AuditService audit) {
         this.bookings = bookings;
         this.catalog = catalog;
         this.adminCatalog = adminCatalog;
         this.identity = identity;
+        this.audit = audit;
+    }
+
+    /** A booking's audit trail (FR-AUD-03); 404 if there is no such booking. */
+    @Transactional(readOnly = true)
+    public List<AuditEntryResponse> history(long bookingId) {
+        if (!bookings.existsById(bookingId)) {
+            throw new DomainException(CommonErrorCode.NOT_FOUND, "No such booking.");
+        }
+        return audit.history(bookingId);
     }
 
     public AdminBookingPage list(Long venueId, Long bookableId, BookingStatus status, Instant from, Instant to,

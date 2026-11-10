@@ -1,5 +1,8 @@
 package com.gridreserve.booking.booking.service;
 
+import com.gridreserve.booking.audit.service.Actor;
+import com.gridreserve.booking.audit.service.AuditService;
+import com.gridreserve.booking.booking.entity.BookingStatus;
 import com.gridreserve.booking.booking.repository.BookingRepository;
 import com.gridreserve.booking.booking.service.HoldExpiryMetrics.Layer;
 import org.springframework.stereotype.Service;
@@ -21,11 +24,13 @@ public class HoldExpiryService {
 
     private final BookingRepository bookings;
     private final HoldExpiryMetrics metrics;
+    private final AuditService audit;
     private final Clock clock;
 
-    public HoldExpiryService(BookingRepository bookings, HoldExpiryMetrics metrics, Clock clock) {
+    public HoldExpiryService(BookingRepository bookings, HoldExpiryMetrics metrics, AuditService audit, Clock clock) {
         this.bookings = bookings;
         this.metrics = metrics;
+        this.audit = audit;
         this.clock = clock;
     }
 
@@ -44,6 +49,9 @@ public class HoldExpiryService {
         }
         boolean expired = bookings.expireHolds(List.of(bookingId), now) == 1;
         metrics.expired(Layer.JOB, expired ? 1 : 0);
+        if (expired) {
+            audit.record(bookingId, BookingStatus.HELD.name(), BookingStatus.EXPIRED.name(), Actor.SYSTEM, null, now);
+        }
         return expired;
     }
 }
