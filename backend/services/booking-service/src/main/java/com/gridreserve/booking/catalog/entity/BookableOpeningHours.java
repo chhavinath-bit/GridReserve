@@ -27,6 +27,12 @@ public class BookableOpeningHours {
     protected BookableOpeningHours() {
     }
 
+    public BookableOpeningHours(long bookableId, DayOfWeek day, int opensAtMinute, int closesAtMinute) {
+        this.id = new BookableOpeningHoursId(bookableId, (short) day.getValue());
+        this.opensAtMinute = opensAtMinute;
+        this.closesAtMinute = closesAtMinute;
+    }
+
     public Long getBookableId() {
         return id.bookableId();
     }

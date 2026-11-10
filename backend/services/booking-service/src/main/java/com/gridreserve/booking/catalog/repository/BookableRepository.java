@@ -47,4 +47,8 @@ public interface BookableRepository extends JpaRepository<Bookable, Long> {
     /** Every bookable of a category, inactive ones included: their bookings still count (BR-08). */
     @Query("select b.id from Bookable b where b.bookableType.category.id = :categoryId")
     List<Long> findIdsByCategory(@Param("categoryId") long categoryId);
+
+    /** Every bookable of a venue, inactive ones included, for filtering the admin booking list. */
+    @Query("select b.id from Bookable b where b.venue.id = :venueId")
+    List<Long> findIdsByVenue(@Param("venueId") long venueId);
 }

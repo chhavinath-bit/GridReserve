@@ -27,6 +27,12 @@ public class VenueOpeningHours {
     protected VenueOpeningHours() {
     }
 
+    public VenueOpeningHours(long venueId, DayOfWeek day, int opensAtMinute, int closesAtMinute) {
+        this.id = new VenueOpeningHoursId(venueId, (short) day.getValue());
+        this.opensAtMinute = opensAtMinute;
+        this.closesAtMinute = closesAtMinute;
+    }
+
     public Long getVenueId() {
         return id.venueId();
     }

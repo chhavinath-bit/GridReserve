@@ -5,12 +5,14 @@ import com.gridreserve.booking.catalog.dto.BookableSummaryResponse;
 import com.gridreserve.booking.catalog.dto.BookableTypeResponse;
 import com.gridreserve.booking.catalog.dto.CategoryResponse;
 import com.gridreserve.booking.catalog.dto.OpeningHoursResponse;
+import com.gridreserve.booking.catalog.dto.RuleOverridesResponse;
 import com.gridreserve.booking.catalog.dto.RulesResponse;
 import com.gridreserve.booking.catalog.dto.VenueResponse;
 import com.gridreserve.booking.catalog.dto.VenueSummaryResponse;
 import com.gridreserve.booking.catalog.entity.Bookable;
 import com.gridreserve.booking.catalog.entity.BookableType;
 import com.gridreserve.booking.catalog.entity.Category;
+import com.gridreserve.booking.catalog.entity.RuleOverrides;
 import com.gridreserve.booking.catalog.entity.Venue;
 import com.gridreserve.booking.catalog.service.EffectiveRules;
 import com.gridreserve.booking.catalog.service.OpeningInterval;
@@ -46,7 +48,7 @@ public final class CatalogMapper {
     public static VenueResponse toResponse(Venue venue, WeeklyHours hours) {
         return new VenueResponse(venue.getId(), venue.getCategory().getId(), venue.getName(),
                 venue.getAddressLine(), venue.getCountryCode(), venue.getTimeZone().getId(), venue.isActive(),
-                toResponse(hours));
+                venue.getVersion(), toResponse(hours));
     }
 
     public static BookableSummaryResponse toSummary(Bookable bookable) {
@@ -60,7 +62,13 @@ public final class CatalogMapper {
         Venue venue = bookable.getVenue();
         return new BookableResponse(bookable.getId(), venue.getId(), venue.getName(), venue.getTimeZone().getId(),
                 bookable.getName(), type.getCode(), type.getLabel(), type.getBookingModel(), bookable.isActive(),
-                toResponse(rules), toResponse(rules.hours()), rules.ownHours());
+                bookable.getVersion(), toResponse(rules), toResponse(bookable.overrides()), toResponse(rules.hours()),
+                rules.ownHours());
+    }
+
+    public static RuleOverridesResponse toResponse(RuleOverrides overrides) {
+        return new RuleOverridesResponse(overrides.slotMinutes(), overrides.minDurationMinutes(),
+                overrides.maxDurationMinutes(), overrides.bufferMinutes());
     }
 
     public static RulesResponse toResponse(EffectiveRules rules) {

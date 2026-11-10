@@ -667,7 +667,9 @@ What the new tests execute (behavior): service token for the right secret (role 
 
 ---
 
-## M1.10 Container images and first deployment — Ready to merge; live host pending (2026-11-11)
+## M1.10 Container images and first deployment — Done, live host pending (2026-11-11)
+
+Merged by the owner after review: config PR #9 (`20137a5`), then app PR #16 (`ad41afb`). CI on `main` green (run 42884295176): all seven images pushed to GHCR as `ghcr.io/chhavinath-bit/gridreserve-*:ad41afb…` and `:main`; Deploy started after it and was skipped, as designed, because `DEPLOY_HOST` isn't set yet. The live deployment is the open issue below.
 
 Decision D-15 (owner, 2026-11-10, zero budget): Oracle Cloud Always Free VM + laptop Cloudflare-tunnel fallback; Caddy, GHCR, deploy workflow, nightly backups and rclone approved; backups to Google Drive; sslip.io name; quick tunnel. App PR #16, config PR #9 (merge first).
 
@@ -725,6 +727,52 @@ Decision D-15 (owner, 2026-11-10, zero budget): Oracle Cloud Always Free VM + la
 
 ---
 
+## M1.11 Admin catalog management and oversight — Built, awaiting owner review (2026-11-11)
+
+One PR (owner); `version` in the PUT body (owner). Decision D-43. Backend only (admin screens: M1.13). No config-repo change, no migration.
+
+**Checkpoint before starting (main `ad41afb`, config `20137a5`):** `./mvnw -B verify` 376 tests green; frontend type check, lint, 38/38; system tests 27/27 (CONC-10 500/500, FS-34 20 of 20 reads 200).
+
+**Built:**
+- `common-web`: `FieldValidationException` → `400 VALIDATION_FAILED` with `fieldErrors`, like Bean Validation (handler test +1).
+- Catalog writes (`AdminCatalogController`, `AdminCatalogService`): `POST /venues`, `PUT /venues/{id}`, `POST /venues/{venueId}/bookables`, `PUT /bookables/{id}`, `POST …/activate|deactivate` for both. Venue category and bookable venue fixed; weekly hours replaced as a whole (bulk delete + insert); version check plus `@Version` → `409 STALE_UPDATE`; FR-CAT-09 on effective rules (`CatalogValidator`); zone of the country; type of the venue's category; CAPACITY → `422 WRONG_BOOKING_MODEL`.
+- Soft close: bookable `FOR UPDATE` (the hold's lock), venue `FOR UPDATE` (holds take `FOR SHARE`); answers `{id, active, version, activeFutureBookings}`, the count from the booking module through the catalog's `ScheduledBookings` SPI.
+- Responses: `version` on venue and bookable, `overrides` on bookable.
+- `GET /admin/bookings` (`AdminBookingService`): filters, paging, newest start first; one `IdentityGateway.members()` call per page outside any transaction; `memberDetailsAvailable`.
+- Security: POST/PUT under `/venues/**` and `/bookables/**` ADMIN only.
+- Tests: `CatalogValidatorTest`, `AdminCatalogIT`, `AdminBookingsIT` (WireMock identity), `DeactivationRaceIT` (CONC-09); `support/TestCatalog`, `Http.put`, test PostgreSQL with `track_commit_timestamp=on`.
+- Docs: D-43, REQUIREMENTS v0.16 (FR-CAT-07/08/09, FR-ADM-01, CONC-09), ARCHITECTURE module layout, CLAUDE.md §15.1, README admin section, review guide, learning rows.
+
+### Test results
+
+`cd backend && ./mvnw -B verify`: **BUILD SUCCESS, 467 tests**, 0 failures, 0 skipped.
+
+| Module | Surefire (`*Test`) | Failsafe (`*IT`) |
+|---|---|---|
+| common-web | 23 (+1) | — |
+| config-server / discovery-server | 1 / 1 | — |
+| api-gateway | 2 | 12 |
+| identity-service | 10 | 37 |
+| booking-service | 67 (new: `CatalogValidatorTest` 14) | 314 (new: `AdminCatalogIT` 31, `AdminBookingsIT` 5, `DeactivationRaceIT` 40) |
+
+What the new tests execute (behavior): create venue and bookable (201, Location, version 0, hours incl. 24:00, effective rules vs overrides, members see it); own hours replace the venue's and `null` restores them; field errors at once (zone of another country, closing before opening, a weekday twice; blank name, 3-letter country, opening at 24:00); type from another category; override that breaks the type's default; CAPACITY 422; members 403 on every write; unknown IDs 404; FS-13 (close with a confirmed booking and an open hold → 200 with `activeFutureBookings` 2, the hold can still be confirmed, the booking stays CONFIRMED, new hold 422, member 404 on bookable and availability, hidden in the list, admin still sees it, closing twice 200, reopen takes holds); venue close stops holds, reopen restores exactly the open bookable; stale version 409; two admins saving the same version at once → exactly one 200 and one 409 (20 repetitions); a rule change leaves an existing 2-hour hold unchanged and refuses a new one (`DURATION_INVALID`). Admin list: three bookings newest first with names from **one** identity call carrying both IDs; venue, bookable, status filters alone and combined (and a bookable of another venue → none); paging; size 101 → 400; identity 503 → 200 with IDs only and `memberDetailsAvailable: false`; member 403. CONC-09: 20 holds + 1 deactivation of the bookable or the venue, 20 repetitions each: every 201 committed before the deactivation (commit timestamps), each hold either 201 or 422, the held rows stay HELD, no lock failures. Bookable race: the deactivation landed between holds in 19–20 of 20 runs; venue race: 0 of 20 (19 runs all holds first, 1 run deactivation first), because every hold takes the venue `FOR SHARE` before queuing on the bookable.
+
+**Changed test (not weakened):** `BookingSecurityIT.adminOnAdminPathAllowed_FS16` expected 404 for an admin on `/api/v1/admin/bookings` (no endpoint then); it now expects 200.
+
+**Mutation checks (each restored from a backup copy):** reading the bookable before taking the locks in `CatalogService.lockForBooking` (the owner's uncommitted file, restored byte-identical) → `DeactivationRaceIT` 22 of 40 fail on the commit order; no explicit version check → only `staleVersion_FRCAT15` fails (`@Version` still catches simultaneous saves); the optimistic-lock failure not translated → `concurrentEdits_FRCAT15` 20 of 20 fail; without the ADMIN rules for POST/PUT → `adminOnly_FRROLE02` fails.
+
+**Live check through the gateway** (dev stack, real identity-service): venue 201 (id 6), court 201 with `rules.maxDurationMinutes` 180 and `overrides` only that; member POST 403; PUT with version 0 → 200, again → 409 `STALE_UPDATE`; deactivate → `{"active":false,"version":2,"activeFutureBookings":0}`, activate → version 3; admin list with real names (`memberDetailsAvailable: true`); identity stopped → still 200 with `memberDetailsAvailable: false` and null emails.
+
+### Not covered yet
+- Admin UI (M1.13); audit rows for admin actions (M1.12).
+
+### Open issues for later milestones
+- The venue variant of CONC-09 almost never interleaves (explained above); the guarantee is checked in both orders observed.
+- The live check left "Lakeside Courts" (venue 6) and "Court 1 (clay)" (bookable 31) in the local dev database.
+
+---
+
 ## Open issues
 
+- **My bookings pagination** (owner decision 2026-11-11; do it in M1.13): the page asks only for `GET /bookings/me?page=0&size=50` and splits Upcoming/Past in the browser, so with more than 50 bookings older ones (and, with many future bookings, the nearest upcoming ones) are missing without notice. Fix: each tab asks the API for its own list (Upcoming `from=now`, soonest first, which needs a small sort option on the endpoint; Past `to=now`, newest first; Cancelled & expired by `status`), with a **Load more** button (TanStack Query `useInfiniteQuery`, owner's choice).
 - **M1.10 live deployment** (owner decision 2026-11-11; finish before M1.14): create the Oracle VM when capacity appears, then `docs/deploy/oracle.md` steps 3–8: prod public key into the config repo, Google Drive token, GitHub variables and secrets, packages public, first release with the smoke test from CI, reboot and fail-fast checks on the host, a backup in Drive and `restore-drill.sh`, tag `first-deploy`, README live URL. Until then the live demo is `scripts/demo-tunnel.sh`.

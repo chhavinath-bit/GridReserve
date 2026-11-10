@@ -97,6 +97,9 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | `ResponseEntity.created(uri)` | A `201 Created` with a `Location` header pointing at the new item. | `BookingController.hold` | M1.5 |
 | `@RequestBody(required = false)` | The body may be missing (cancel without a reason); the parameter is then `null`. | `BookingController.cancel` | M1.5 |
 | `authentication.getName()` = token `sub` | For a JWT the principal name is the `sub` claim, here the identity user ID; it is the booking owner, never a request field (FR-ROLE-05). | `Viewer.memberId` | M1.5 |
+| `@PutMapping` and full replacement | PUT sends the whole editable state, not a patch; the server replaces the fields (and, here, the weekly hours) at once. Simpler to validate than partial updates. | `AdminCatalogController` | M1.11 |
+| Validating list elements: `List<@Valid @NotNull X>` | Annotations on the type argument check each element, and `@Valid` cascades into it; a field error names its index (`openingHours[1].opensAt`). | `CreateVenueRequest` | M1.11 |
+| HTTP method in security rules | `requestMatchers(HttpMethod.POST, "/api/v1/venues/**")` lets members GET a path while only admins POST or PUT to it. | booking `SecurityConfig` | M1.11 |
 
 ## 5. Data: PostgreSQL, Flyway, JPA
 
@@ -141,6 +144,10 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | Shared vs exclusive row lock for writers | `FOR SHARE` lets many transactions in at once; if they then insert conflicting rows into an exclusion constraint, two can each wait for the other's uncommitted row (deadlock). `FOR UPDATE` lets one in at a time, so conflicting inserts never check each other mid-flight. | `BookableRepository.lockForBooking`, ARCHITECTURE §8.3 | M1.8 |
 | Deadlock detection and `40P01` | PostgreSQL notices a wait cycle after `deadlock_timeout` (1 s) and kills one transaction with SQLSTATE `40P01`; `pg_stat_database.deadlocks` counts them but pooled connections report it late. | `BookingMetrics.lockFailure`, D-41 | M1.8 |
 | Reproducing a race in plain SQL | Many `psql` sessions that wait for one instant (`SELECT pg_sleep_until(…)`) and then run the same transaction show whether the database itself deadlocks, independent of the app. | PROGRESS M1.8 | M1.8 |
+| Optimistic locking with `@Version` | Hibernate adds `WHERE version = ?` to every UPDATE and bumps the number; if another transaction changed the row first, no row matches and Spring throws `ObjectOptimisticLockingFailureException`. Comparing the client's version first gives a clear 409 even when the edits weren't simultaneous. | `AdminCatalogService`, `Venue`/`Bookable` | M1.11 |
+| Bulk `@Modifying` delete vs derived delete | A JPQL `delete from …` runs at once in one statement; a derived `deleteBy…` loads and queues each row, and Hibernate runs queued inserts **before** deletes at flush, so "delete Monday, insert Monday" would collide on the key. | `VenueOpeningHoursRepository.deleteAllFor` | M1.11 |
+| Factory methods and mutators on entities | No public setters: `Venue.create(...)`, `update(...)`, `changeActive(...)` keep the rules of a change (timestamps, version bump) in one place. | `Venue`, `Bookable` | M1.11 |
+| Commit timestamps (`track_commit_timestamp`, `pg_xact_commit_timestamp(xmin)`) | With the setting on, PostgreSQL remembers when each transaction committed; `xmin` is the transaction that wrote a row's current version. Together they show the real commit order of rows. | `DeactivationRaceIT`, `PostgresTestcontainer` | M1.11 |
 
 ## 6. Spring Cloud and the platform
 
@@ -221,6 +228,8 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | Table-driven tests with `@CsvSource` | One row per case (type, start, end, expected code); a new rule or type is a new row. | `BookingRulesTest` | M1.7 |
 | Tokens issued at the moved clock | The service checks token expiry with its own clock; when a test moves that clock hours ahead, it signs tokens with `issuedAt` = the moved now. | `CancellationIT` | M1.7 |
 | Making a test fail on purpose first | A new assertion is checked against the code without the fix; if it still passes, the test proves nothing (here: macOS clocks have no nanoseconds, so the test moves the clock by 123 ns). | `BookingLifecycleIT.holdCreated_FRBK01` | M1.5 |
+| Test data that cleans up after itself | Tests that share a Spring context share one database; a test that creates venues removes them again (`TestCatalog.removeAll`), or other tests' counts change. | `support/TestCatalog` | M1.11 |
+| Proving a race test races | Count how often the interesting interleaving happened (here: holds on both sides of the deactivation) and print it; a race that never interleaves proves little. | `DeactivationRaceIT` | M1.11 |
 
 ## 9. Architecture ideas behind the code
 
@@ -256,6 +265,9 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | Checks first, database decides | Rules in Java give clear early answers, but two requests can pass them at the same moment; the exclusion constraints at INSERT are the guarantee. | `BookingRules`, `BookingTransactions.hold` | M1.5 |
 | 404 instead of 403 for other people's data | Answering "not found" hides that the booking exists at all (FR-ROLE-04). | `BookingTransactions.owned`, `BookingService.get` | M1.5 |
 | Lazy cleanup at the point of use | Run-out holds that block a new hold are expired inside that hold's transaction, so correctness never waits for the background job (FR-EXP-02/04). | `BookingRepository.lockStaleHolds` | M1.5 |
+| SPI to avoid a module cycle | The catalog needs a number only the booking module can compute, but booking already depends on catalog. The catalog defines an interface (`ScheduledBookings`), the booking module implements it, and Spring injects it: no cycle. | `catalog/service/ScheduledBookings`, `booking/service/ScheduledBookingCounter` | M1.11 |
+| Soft close | Closing stops new bookings but never touches existing ones; nothing is deleted, so history and audit stay valid. | `AdminCatalogService.setBookableActive` | M1.11 |
+| Remote call after the transaction | Read the page in a short transaction, close it, then call identity once for the whole page; a slow identity never holds a database connection or locks. | `AdminBookingService` | M1.11 |
 
 ## 10. Frontend (React, TypeScript, Vite)
 

@@ -11,6 +11,8 @@ public enum BookingErrorCode implements ErrorCode {
     MEMBER_OVERLAP(HttpStatus.CONFLICT),
     HOLD_EXPIRED(HttpStatus.CONFLICT),
     INVALID_STATE(HttpStatus.CONFLICT),
+    // An admin saved a venue or bookable someone else changed since it was read (FR-CAT-15).
+    STALE_UPDATE(HttpStatus.CONFLICT),
 
     // 422: the request breaks a booking rule; sending it again unchanged will fail again.
     BOOKABLE_INACTIVE(HttpStatus.UNPROCESSABLE_CONTENT),

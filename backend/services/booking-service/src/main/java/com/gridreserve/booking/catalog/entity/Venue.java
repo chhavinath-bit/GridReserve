@@ -62,6 +62,39 @@ public class Venue {
     protected Venue() {
     }
 
+    /** A new venue, open for bookings (FR-CAT-07). The category is fixed: bookable types belong to it. */
+    public static Venue create(Category category, String name, String addressLine, String countryCode,
+                               String timeZone, Instant now) {
+        Venue venue = new Venue();
+        venue.category = category;
+        venue.active = true;
+        venue.createdAt = now;
+        venue.update(name, addressLine, countryCode, timeZone, now);
+        return venue;
+    }
+
+    /**
+     * Replaces the editable fields. Always marks the row changed, so its {@code @Version} goes up even when
+     * only the opening hours (another table) changed, and a second admin's stale edit is refused (FR-CAT-15).
+     */
+    public void update(String name, String addressLine, String countryCode, String timeZone, Instant now) {
+        this.name = name;
+        this.addressLine = addressLine;
+        this.countryCode = countryCode;
+        this.timeZone = timeZone;
+        this.updatedAt = now;
+    }
+
+    /** Opens or closes the venue for new bookings (soft close, FR-CAT-13); unchanged when already so. */
+    public boolean changeActive(boolean active, Instant now) {
+        if (this.active == active) {
+            return false;
+        }
+        this.active = active;
+        this.updatedAt = now;
+        return true;
+    }
+
     public Long getId() {
         return id;
     }

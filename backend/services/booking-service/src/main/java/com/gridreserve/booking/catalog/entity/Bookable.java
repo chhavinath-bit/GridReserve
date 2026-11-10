@@ -64,6 +64,46 @@ public class Bookable {
     protected Bookable() {
     }
 
+    /** A new bookable at a venue, open for bookings (FR-CAT-08). The venue is fixed. */
+    public static Bookable create(Venue venue, BookableType type, String name, RuleOverrides overrides,
+                                  Instant now) {
+        Bookable bookable = new Bookable();
+        bookable.venue = venue;
+        bookable.active = true;
+        bookable.createdAt = now;
+        bookable.update(type, name, overrides, now);
+        return bookable;
+    }
+
+    /**
+     * Replaces the editable fields. New rules apply to new bookings only; existing bookings keep their stored
+     * times (FR-CAT-12). Always marks the row changed, so {@code @Version} goes up (FR-CAT-15).
+     */
+    public void update(BookableType type, String name, RuleOverrides overrides, Instant now) {
+        this.bookableType = type;
+        this.name = name;
+        this.slotMinutes = overrides.slotMinutes();
+        this.minDurationMinutes = overrides.minDurationMinutes();
+        this.maxDurationMinutes = overrides.maxDurationMinutes();
+        this.bufferMinutes = overrides.bufferMinutes();
+        this.updatedAt = now;
+    }
+
+    /** Opens or closes the bookable for new bookings (soft close, FR-CAT-10/11); unchanged when already so. */
+    public boolean changeActive(boolean active, Instant now) {
+        if (this.active == active) {
+            return false;
+        }
+        this.active = active;
+        this.updatedAt = now;
+        return true;
+    }
+
+    /** The bookable's own rule values, null where it inherits from its type. */
+    public RuleOverrides overrides() {
+        return new RuleOverrides(slotMinutes, minDurationMinutes, maxDurationMinutes, bufferMinutes);
+    }
+
     public Long getId() {
         return id;
     }

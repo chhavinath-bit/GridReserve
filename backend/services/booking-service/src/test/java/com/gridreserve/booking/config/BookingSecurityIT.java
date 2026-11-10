@@ -112,11 +112,11 @@ class BookingSecurityIT {
     }
 
     @Test
-    @DisplayName("FS-16: an ADMIN on the same path passes security (404: no admin endpoint yet)")
+    @DisplayName("FS-16: an ADMIN on the same path passes security and reaches the admin list (200, M1.11)")
     void adminOnAdminPathAllowed_FS16() throws Exception {
         HttpResponse<String> response = get("/api/v1/admin/bookings", TestJwtKeys.adminToken());
 
-        assertThat(response.statusCode()).isEqualTo(404);
+        assertThat(response.statusCode()).isEqualTo(200);
     }
 
     @Test
