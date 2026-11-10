@@ -22,8 +22,9 @@ export const catalogApi = {
 }
 
 export const bookingApi = {
-  hold: (bookableId: number, start: string, end: string) =>
-    api<Booking>('/bookings', { method: 'POST', body: { bookableId, start, end } }),
+  /** idempotencyKey: the same for a retry of the same intent (IDEM-01), see lib/idempotency.ts. */
+  hold: (bookableId: number, start: string, end: string, idempotencyKey: string) =>
+    api<Booking>('/bookings', { method: 'POST', body: { bookableId, start, end }, headers: { 'Idempotency-Key': idempotencyKey } }),
   confirm: (bookingId: number) => api<Booking>(`/bookings/${bookingId}/confirm`, { method: 'POST' }),
   cancel: (bookingId: number, reason?: string) =>
     api<Booking>(`/bookings/${bookingId}/cancel`, { method: 'POST', body: reason ? { reason } : undefined }),

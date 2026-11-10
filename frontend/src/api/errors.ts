@@ -24,14 +24,19 @@ const MESSAGES: Record<string, string> = {
   DURATION_INVALID: 'That length isn’t allowed here.',
   MEMBER_LIMIT_REACHED: 'You’ve reached the limit of active bookings here.',
   CUTOFF_PASSED: 'It’s too late to cancel this booking.',
+  IDEMPOTENCY_IN_PROGRESS: 'Your booking is still being processed. Please retry in a moment.',
+  IDEMPOTENCY_KEY_REUSED: 'Something went wrong with this request. Please pick the slot again.',
   INTERNAL_ERROR: 'Something went wrong on our side. Please try again.',
   SERVICE_UNAVAILABLE: 'This is temporarily unavailable. Please retry in a moment.',
   UPSTREAM_TIMEOUT: 'This is temporarily unavailable. Please retry in a moment.',
   NETWORK_ERROR: 'We can’t reach GridReserve right now. Check your connection and retry.',
 }
 
-/** Codes where the user should simply retry later, and keep what they selected (FR-UI-10). */
-export const TEMPORARY_CODES = new Set(['SERVICE_UNAVAILABLE', 'UPSTREAM_TIMEOUT', 'NETWORK_ERROR'])
+/**
+ * Codes where the user should simply retry later, and keep what they selected (FR-UI-10). A hold retried
+ * after one of these reuses its Idempotency-Key, so it can't book twice (IDEM-05: the first may still run).
+ */
+export const TEMPORARY_CODES = new Set(['SERVICE_UNAVAILABLE', 'UPSTREAM_TIMEOUT', 'NETWORK_ERROR', 'IDEMPOTENCY_IN_PROGRESS'])
 
 /** Codes that mean "someone else got there first": show a notice and refresh availability (FR-UI-05). */
 export const CONFLICT_CODES = new Set(['SLOT_TAKEN', 'MEMBER_OVERLAP'])
