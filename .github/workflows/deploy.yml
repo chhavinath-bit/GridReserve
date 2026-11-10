@@ -1,0 +1,88 @@
+name: Deploy
+
+# Continuous deployment to the Oracle Always Free host (M1.10, D-15): after CI passes on main, release that
+# commit's images (pushed by CI) on the host over SSH, then smoke-test the public address from here.
+# Rollback: "Run workflow" with an older commit SHA; its images are still in GitHub's registry.
+#
+# Repository settings (Settings → Secrets and variables → Actions), described in docs/deploy/oracle.md:
+#   variables: DEPLOY_HOST (public IP), DEPLOY_USER (SSH user), DEPLOY_SITE (e.g. 203-0-113-5.sslip.io)
+#   secrets:   DEPLOY_SSH_KEY (private key of a deploy-only key pair), DEPLOY_KNOWN_HOSTS (the host's key line),
+#              SMOKE_PASSWORD (password of the smoke-test account)
+# Until DEPLOY_HOST is set, the job is skipped, so CI on main stays green without a host.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Full commit SHA to deploy (images must exist). Empty = the latest commit on main.
+        required: false
+
+permissions:
+  contents: read
+
+# One deploy at a time; a second one waits instead of cancelling a release halfway.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Release on the host and smoke-test
+    if: >-
+      vars.DEPLOY_HOST != '' && (github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    steps:
+      # The tag goes through an environment variable, never pasted into the script, so input can't inject commands.
+      - name: Pick the commit to release
+        id: release
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          MAIN_SHA: ${{ github.sha }}
+        run: |
+          tag="${INPUT_TAG:-${RUN_SHA:-$MAIN_SHA}}"
+          [[ "$tag" =~ ^[0-9a-f]{40}$ ]] || { echo "not a full commit SHA: $tag"; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      # The files of that same commit, so a rollback also gets its matching compose file.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          # A pinned host key: the job refuses to talk to anything pretending to be the host.
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Copy the release files
+        env:
+          TARGET: ${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}
+        run: |
+          ssh_opts=(-i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          ssh "${ssh_opts[@]}" "$TARGET" 'mkdir -p /opt/gridreserve/postgres'
+          scp "${ssh_opts[@]}" infra/compose.prod.yaml "$TARGET:/opt/gridreserve/compose.yaml"
+          scp "${ssh_opts[@]}" infra/postgres/init-databases.sh "$TARGET:/opt/gridreserve/postgres/init-databases.sh"
+          scp "${ssh_opts[@]}" scripts/prod/release.sh scripts/refresh-config.sh "$TARGET:/opt/gridreserve/"
+
+      - name: Release
+        env:
+          TARGET: ${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=yes "$TARGET" "/opt/gridreserve/release.sh $TAG"
+
+      # From outside the host: the app works, and nothing but 80/443 answers.
+      - name: Smoke test
+        env:
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+        run: python3 scripts/smoke-test.py "https://${{ vars.DEPLOY_SITE }}" --host "${{ vars.DEPLOY_HOST }}"
