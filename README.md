@@ -2,7 +2,7 @@
 
 One booking platform for many kinds of venues: library rooms and seats, sports courts, parking bays, clinic appointments and gym sessions. A member picks a category, a venue and a bookable, holds a time slot for five minutes and confirms it. Double-booking is impossible, even under heavy concurrent load and with several service instances running.
 
-> **Status: Phase 1, M1.10.** Config server, Eureka, gateway, identity and booking services run together. identity-service registers users (and logs them in at once), issues RS256 access tokens plus a refresh-token cookie (sliding 7 days, logout ends it) and answers `/api/v1/me`. The gateway refuses requests without a valid access token, and booking-service checks the token and the role again itself, without calling identity-service. booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. booking-service serves the catalog (categories, venues, bookables with their effective rules, countries and time zones) and slot availability for a date (M1.4). Members hold a slot for 5 minutes, confirm it and cancel it; admins can cancel any booking (M1.5). A React frontend runs the whole journey in the browser through the gateway (M1.6). Every booking rule (hours, grid, length, horizon, per-member limit, cancellation cutoff) is enforced and a background job expires unconfirmed holds (M1.7). Double-booking is proven impossible under parallel load, also through the gateway with two booking-service instances (M1.8). Calls between services are protected (timeouts, retry, circuit breaker, bulkhead, fallbacks) and configuration changes reach every instance without a restart (M1.9). Every part runs from container images built for amd64 and arm64; the deployment to a free Oracle Cloud VM, with nightly encrypted backups, is prepared and waits for the host (M1.10). Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
+> **Status: Phase 1, M1.11.** Config server, Eureka, gateway, identity and booking services run together. identity-service registers users (and logs them in at once), issues RS256 access tokens plus a refresh-token cookie (sliding 7 days, logout ends it) and answers `/api/v1/me`. The gateway refuses requests without a valid access token, and booking-service checks the token and the role again itself, without calling identity-service. booking-service owns `booking_db` (Flyway schema, demo catalog) and the database itself rejects double-booking and overlapping bookings per member. booking-service serves the catalog (categories, venues, bookables with their effective rules, countries and time zones) and slot availability for a date (M1.4). Members hold a slot for 5 minutes, confirm it and cancel it; admins can cancel any booking (M1.5). A React frontend runs the whole journey in the browser through the gateway (M1.6). Every booking rule (hours, grid, length, horizon, per-member limit, cancellation cutoff) is enforced and a background job expires unconfirmed holds (M1.7). Double-booking is proven impossible under parallel load, also through the gateway with two booking-service instances (M1.8). Calls between services are protected (timeouts, retry, circuit breaker, bulkhead, fallbacks) and configuration changes reach every instance without a restart (M1.9). Every part runs from container images built for amd64 and arm64; the deployment to a free Oracle Cloud VM, with nightly encrypted backups, is prepared and waits for the host (M1.10). Admins create and edit venues and bookables, close or reopen them without touching existing bookings, and see every booking with member names (M1.11). Progress and verified test results are logged in [docs/PROGRESS.md](docs/PROGRESS.md).
 
 ## What this project demonstrates
 
@@ -143,6 +143,34 @@ curl -s -X POST localhost:8080/api/v1/bookings/1/cancel -H "$H" -H "$J" -d '{"re
 ```
 
 The same slot for another member answers `409 SLOT_TAKEN`; the same member at the same time on another bookable answers `409 MEMBER_OVERLAP`. Both come from PostgreSQL exclusion constraints, not from a Java check, so they hold even when two requests arrive together. Admins can cancel any booking (`cancelledBy: ADMIN`) but book only for themselves.
+
+### Admin: manage the catalog and see every booking
+
+Log in as the demo admin (`ADMIN_TOKEN`, same login call as above with `admin@gridreserve.test`). Members get `403` for all of this.
+
+```bash
+A="Authorization: Bearer $ADMIN_TOKEN"; J="Content-Type: application/json"
+
+# A venue in Sports (category 2), open 06:00-23:00 on weekdays; the zone must belong to the country → 201
+curl -si localhost:8080/api/v1/venues -H "$A" -H "$J" -d '{"categoryId":2,"name":"Lakeside Courts",
+  "addressLine":"9 Lake Road","countryCode":"IN","timeZone":"Asia/Kolkata","openingHours":[
+  {"weekday":"MONDAY","opensAt":"06:00","closesAt":"23:00"},{"weekday":"FRIDAY","opensAt":"06:00","closesAt":"24:00"}]}'
+
+# A court there (type 4 = Court), allowing 3-hour bookings instead of the type's 2 → 201, with "rules" and "overrides"
+curl -si localhost:8080/api/v1/venues/6/bookables -H "$A" -H "$J" -d '{"bookableTypeId":4,"name":"Court 1","maxDurationMinutes":180}'
+
+# Edit: send the version you read; if someone saved in between → 409 STALE_UPDATE
+curl -s -X PUT localhost:8080/api/v1/bookables/31 -H "$A" -H "$J" -d '{"version":0,"bookableTypeId":4,"name":"Court 1 (clay)"}'
+
+# Soft close: new holds get 422 BOOKABLE_INACTIVE, existing bookings stay; the answer counts what is still scheduled
+curl -s -X POST localhost:8080/api/v1/bookables/31/deactivate -H "$A"   # {"id":31,"active":false,"version":2,"activeFutureBookings":0}
+curl -s -X POST localhost:8080/api/v1/bookables/31/activate -H "$A"
+
+# Every booking, newest start first, with member names from identity-service; filters venueId, bookableId, status, from, to
+curl -s "localhost:8080/api/v1/admin/bookings?venueId=2&status=CONFIRMED" -H "$A"
+```
+
+Invalid input answers `400 VALIDATION_FAILED` with every problem at once (a zone of another country, a weekday twice, a duration that isn't a whole number of slots). If identity-service is down, the booking list still loads, with member IDs only and `"memberDetailsAvailable": false`. Venues and bookables are never deleted: closing a venue stops bookings on all its bookables, and reopening it brings back exactly the ones that were open.
 
 ### Booking rules and defaults
 
