@@ -870,6 +870,28 @@ What the e2e tests execute (behavior): log in, Sports → Sunrise Turf → Court
 
 ---
 
+## M1.13 follow-ups: login board A, location filter — Built, awaiting owner review (2026-11-11)
+
+After M1.13 merged (`f18cc90`) and went live, owner review of the live site asked for two changes. Decision D-46. Migration V6; no config-repo change.
+
+**Built:**
+- Login (PR #21): board **A · Log in** instead of the A3 board: the 3 × 6 slot grid under the headline (A's pattern, decorative, `aria-hidden`), "Welcome back. Pick up where you left off." at every width; from 1536 px the two halves split evenly (on a ~2500 px screen the form was squeezed into a strip).
+- Location (owner chose "country + city, new field"): `V6__venue_city.sql` (`city` NOT NULL, CHECK not blank, index on country + lower(city), existing venues from the end of their address: Pune, Bengaluru, Chennai, Hyderabad, London); `Venue.city`; `city` required in create/update (`@NotBlank @Size(max = 100)`); `GET /venues?country=&city=`; `venueCity` and `venueCountryCode` in booking and bookable responses. Frontend: a searchable **Location** filter on Browse (cities that have venues, "Hyderabad, India", in the URL as `place=IN|Hyderabad`), city and country in bold with a pin on venue cards, the venue page, the booking page and its summary, the hold panel, My bookings and the cancel dialog; City in the admin venue form and list.
+- Docs: D-46, REQUIREMENTS v0.19 (FR-CAT-16, FR-UI-14, FR-BK-07), README filter example, CLAUDE.md §15.1.
+
+### Test results
+
+`cd backend && ./mvnw -B clean verify`: **BUILD SUCCESS, 511 tests**, 0 failures (booking-service 70 + 355; new `CatalogIT.seedCities_FRCAT16`, `venuesByPlace_FRCAT16`; `AdminCatalogIT` checks city is saved and a blank city is a field error; `BookingLifecycleIT` checks `venueCity`/`venueCountryCode`). Run with the owner's uncommitted formatting-only edits in the tree (imports and a comment in `CatalogService`, `PageResponse`).
+
+Frontend: type check and lint clean; **64/64** (new `lib/place.test.ts` 3). Playwright **27/27** against the dev stack after V6 (the admin form test now expects 6 fields, City included). Live check: `GET /venues?country=in&city=hyderabad` → CityCare Clinic; the dev database's own venue "Lakeside Courts" ("9 Lake Road", no comma) got `Unknown`.
+
+**Changed tests (not weakened):** `MigrationIT` expects V1–V6; `BookingConstraintsIT`'s direct venue insert names a city (else NOT NULL would fire before the zone check it tests); `BookingRulesTest` builds `BookableInfo` with the new fields; `TestCatalog.venueBody` sends a city.
+
+### Open issues for later milestones
+- Admins should give venues with city `Unknown` their real city (only venues created before V6 without a comma in the address).
+
+---
+
 ## Open issues
 
 - **M1.10 live deployment** (owner decision 2026-11-11; finish before M1.14). **Done 2026-11-11:** Oracle VM (arm64, Ubuntu 24.04 minimal) set up, `.env` from `init-env.sh`, prod public key in config PR #10 (merged), Google Drive token, GitHub deploy variables and secrets, packages public; M1.13's merge (`f18cc90`) deployed by Deploy run 42973850098, attempt 3 green: the whole smoke test from outside (front page, health, login, refresh and the Origin check, hold → confirm → cancel, private paths 404, platform ports closed). Live at https://130-210-14-203.sslip.io. On the way: attempt 1 timed out on SSH (Oracle's security list allowed port 22 only from the owner's IP; now 0.0.0.0/0, key-only login), attempt 2 got 503 at sign-in 4 s after the containers were healthy (the gateway hadn't learned identity's address from Eureka yet); the smoke test now waits up to 120 s for routes (`until_routed`, branch `m1.10-smoke-route-wait`). **Still open:** confirm the two backup encryption values (shown in chat once) were replaced in `.env` before the first backup, else replace them and delete that backup; reboot and fail-fast checks on the host, the first backup visible in Drive and `restore-drill.sh`, tag `first-deploy`.

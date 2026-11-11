@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { MapPin } from 'lucide-react'
 import { Link, useParams } from 'react-router'
 import { catalogApi } from '@/api/endpoints'
 import { queryKeys } from '@/api/queryKeys'
@@ -9,6 +10,7 @@ import { PageHeader } from '@/components/patterns/PageHeader'
 import { EmptyState, ErrorState, LoadingState } from '@/components/patterns/States'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { placeLabel } from '@/lib/place'
 import { describeCutoff, describeDuration, hoursToday, plural, sameEveryDay, weekdayName, weeklyHours } from '@/lib/rules'
 
 /** A venue's bookables, grouped by their type's label ("Court", "Seat"); never a hard-coded word (FR-UI-02). */
@@ -24,7 +26,6 @@ export function VenuePage() {
   if (venue.isPending) return <LoadingState />
   if (venue.isError) return <ErrorState error={venue.error} onRetry={() => void venue.refetch()} />
   const daily = sameEveryDay(venue.data.openingHours)
-  const country = countryNames.of(venue.data.countryCode) ?? venue.data.countryCode
 
   return (
     <>
@@ -39,7 +40,11 @@ export function VenuePage() {
           title={venue.data.name}
           description={
             <>
-              {venue.data.addressLine} · {country} · times in {venue.data.timeZone}
+              <span className="inline-flex items-center gap-1 font-semibold text-foreground">
+                <MapPin className="size-3.5 text-primary-soft-foreground" aria-hidden />
+                {placeLabel(venue.data.city, venue.data.countryCode)}
+              </span>
+              {venue.data.addressLine ? ` · ${venue.data.addressLine}` : ''} · times in {venue.data.timeZone}
               {daily ? <span className="lg:hidden"> · {daily}</span> : null}
             </>
           }
@@ -48,7 +53,11 @@ export function VenuePage() {
       <h1 className="sr-only md:hidden">{venue.data.name}</h1>
       <div className="mb-4 flex flex-col gap-3 md:hidden">
         <p className="text-sm text-muted-foreground">
-          {venue.data.addressLine} · times in {venue.data.timeZone}
+          <span className="inline-flex items-center gap-1 font-semibold text-foreground">
+                <MapPin className="size-3.5 text-primary-soft-foreground" aria-hidden />
+                {placeLabel(venue.data.city, venue.data.countryCode)}
+              </span>
+          {venue.data.addressLine ? ` · ${venue.data.addressLine}` : ''} · times in {venue.data.timeZone}
         </p>
         <p className="flex justify-between rounded-md border bg-card px-3 py-2.5 text-sm">
           <span className="text-muted-foreground">Open today</span>
@@ -74,8 +83,6 @@ export function VenuePage() {
     </>
   )
 }
-
-const countryNames = new Intl.DisplayNames(['en'], { type: 'region' })
 
 /** "Court A" → "A", "Group Room 1" → "1", "Court 1 (clay)" → "1": the part that tells siblings apart. */
 export function initialOf(name: string): string {

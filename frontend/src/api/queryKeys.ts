@@ -3,7 +3,7 @@
 export const queryKeys = {
   me: ['me'] as const,
   categories: ['categories'] as const,
-  venues: (categoryId?: number) => ['venues', categoryId ?? 'all'] as const,
+  venues: (categoryId?: number, place?: string) => ['venues', categoryId ?? 'all', place ?? 'anywhere'] as const,
   venuesAll: ['venues'] as const,
   venue: (venueId: number) => ['venue', venueId] as const,
   bookables: (venueId: number) => ['bookables', venueId] as const,

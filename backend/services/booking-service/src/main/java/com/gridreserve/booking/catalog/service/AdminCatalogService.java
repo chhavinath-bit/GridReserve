@@ -88,8 +88,8 @@ public class AdminCatalogService {
         errors.addAll(CatalogValidator.hours("openingHours", request.openingHours()));
         failIfAny(errors);
 
-        Venue venue = venues.saveAndFlush(Venue.create(category, request.name(), request.addressLine(), country,
-                request.timeZone(), now()));
+        Venue venue = venues.saveAndFlush(Venue.create(category, request.name(), request.addressLine(),
+                request.city().strip(), country, request.timeZone(), now()));
         replaceVenueHours(venue.getId(), request.openingHours());
         return catalog.venue(venue.getId(), true);
     }
@@ -103,7 +103,8 @@ public class AdminCatalogService {
         failIfAny(errors);
         checkVersion(venue.getVersion(), request.version());
 
-        venue.update(request.name(), request.addressLine(), country, request.timeZone(), now());
+        venue.update(request.name(), request.addressLine(), request.city().strip(), country, request.timeZone(),
+                now());
         flushOrStale(venues::flush);
         replaceVenueHours(id, request.openingHours());
         return catalog.venue(id, true);

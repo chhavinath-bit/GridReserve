@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Catalog reads for any signed-in user (FR-CAT-06, FR-CAT-14). {@code includeInactive=true} counts
@@ -42,11 +43,14 @@ public class CatalogController {
 
     @GetMapping("/venues")
     public PageResponse<VenueSummaryResponse> venues(@RequestParam(required = false) Long categoryId,
+                                                     @RequestParam(required = false) String country,
+                                                     @RequestParam(required = false) String city,
                                                      @RequestParam(defaultValue = "false") boolean includeInactive,
                                                      @RequestParam(defaultValue = "0") int page,
                                                      @RequestParam(defaultValue = PageParams.DEFAULT_SIZE) int size,
                                                      Authentication caller) {
-        return catalog.venues(categoryId, includeInactive && Viewer.isAdmin(caller),
+        return catalog.venues(categoryId, blankToNull(country, true), blankToNull(city, false),
+                includeInactive && Viewer.isAdmin(caller),
                 PageParams.of(page, size, Sort.by("name", "id")));
     }
 
@@ -78,5 +82,14 @@ public class CatalogController {
     @GetMapping("/countries/{code}/time-zones")
     public CountryTimeZonesResponse timeZones(@PathVariable String code) {
         return catalog.timeZones(code);
+    }
+
+    // An empty filter (?city=) means "any", like a missing one; countries are stored upper case ("in" finds IN).
+    private static String blankToNull(String value, boolean upperCase) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String trimmed = value.strip();
+        return upperCase ? trimmed.toUpperCase(Locale.ROOT) : trimmed;
     }
 }

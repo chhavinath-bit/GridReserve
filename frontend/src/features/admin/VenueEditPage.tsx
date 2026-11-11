@@ -26,6 +26,7 @@ interface VenueValues {
   categoryId: string
   name: string
   addressLine: string
+  city: string
   countryCode: string
   timeZone: string
   hours: DayHours[]
@@ -35,6 +36,7 @@ const FIELDS = [
   { name: 'categoryId', label: 'Category' },
   { name: 'name', label: 'Name' },
   { name: 'addressLine', label: 'Address' },
+  { name: 'city', label: 'City' },
   { name: 'countryCode', label: 'Country' },
   { name: 'timeZone', label: 'Time zone' },
   { name: 'hours', label: 'Opening hours' },
@@ -45,6 +47,7 @@ const schema = Yup.object({
   categoryId: Yup.string().required('Choose a category.'),
   name: Yup.string().trim().required('Enter a name.').max(100, 'Use at most 100 characters.'),
   addressLine: Yup.string().max(200, 'Use at most 200 characters.'),
+  city: Yup.string().trim().required('Enter the city, so members see where it is.').max(100, 'Use at most 100 characters.'),
   countryCode: Yup.string().required('Choose a country.'),
   timeZone: Yup.string().required('Choose a time zone.'),
   hours: Yup.mixed<DayHours[]>().test('hours', (days, context) => {
@@ -78,6 +81,7 @@ function VenueEditor({ categories, venue, onReload }: { categories: Category[]; 
     categoryId: venue ? String(venue.categoryId) : '',
     name: venue?.name ?? '',
     addressLine: venue?.addressLine ?? '',
+    city: venue?.city ?? '',
     countryCode: venue?.countryCode ?? '',
     timeZone: venue?.timeZone ?? '',
     hours: toDays(venue?.openingHours ?? []),
@@ -94,6 +98,7 @@ function VenueEditor({ categories, venue, onReload }: { categories: Category[]; 
     const input: VenueInput = {
       name: values.name.trim(),
       addressLine: values.addressLine.trim() || null,
+      city: values.city.trim(),
       countryCode: values.countryCode,
       timeZone: values.timeZone,
       openingHours: fromDays(values.hours),
@@ -147,9 +152,8 @@ function VenueEditor({ categories, venue, onReload }: { categories: Category[]; 
                     disabled={venue !== null}
                     options={categories.map((candidate) => ({ value: String(candidate.id), label: candidate.name }))}
                   />
-                  <div className="sm:col-span-2">
-                    <FormField name="addressLine" label="Address" autoComplete="off" />
-                  </div>
+                  <FormField name="addressLine" label="Address" autoComplete="off" hint="Street and number." />
+                  <FormField name="city" label="City" autoComplete="off" hint="Members filter and see venues by city." />
                 </section>
                 <section aria-labelledby="location-title" className="flex flex-col gap-4 rounded-lg border bg-card p-5">
                   <h2 id="location-title" className="font-semibold">

@@ -1,48 +1,83 @@
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, MapPin } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router'
-import { catalogApi } from '@/api/endpoints'
+import { catalogApi, type Place } from '@/api/endpoints'
 import { queryKeys } from '@/api/queryKeys'
 import type { Category, VenueSummary } from '@/api/types'
 import { ChipGroup } from '@/components/patterns/ChipGroup'
 import { PageHeader } from '@/components/patterns/PageHeader'
 import { EmptyState, ErrorState, LoadingState } from '@/components/patterns/States'
 import { Badge } from '@/components/ui/badge'
+import { Combobox } from '@/components/ui/combobox'
+import { parsePlace, placeLabel, placesOf } from '@/lib/place'
 
 /**
- * Category → venues (FR-UI-01/02). The category chips act as the dropdown: one press filters the
- * list. The chosen category is in the URL, so back/forward and reload keep it; no category = all.
+ * Category → venues (FR-UI-01/02), narrowed by place (FR-CAT-16). The category chips act as the dropdown:
+ * one press filters the list; Location is a searchable list of the cities that have venues. Both live in
+ * the URL (?category=2&place=IN|Hyderabad), so back/forward and reload keep them; none = everything.
  */
 export function BrowsePage() {
   const [params, setParams] = useSearchParams()
   const categories = useQuery({ queryKey: queryKeys.categories, queryFn: catalogApi.categories, staleTime: 10 * 60_000 })
+  // Every venue once, for the Location options (all venues fit in one page of 100).
+  const everyVenue = useQuery({ queryKey: queryKeys.venues(), queryFn: () => catalogApi.venues() })
   const categoryId = Number(params.get('category')) || undefined
+  const placeParam = params.get('place')
+  const place = parsePlace(placeParam)
+
+  const setFilter = (key: 'category' | 'place', value: string | undefined) => {
+    const next = new URLSearchParams(params)
+    if (value) next.set(key, value)
+    else next.delete(key)
+    setParams(next)
+  }
 
   return (
     <>
-      <PageHeader title="Find a place to book" description="Pick a category, then a venue. Times are shown in each venue's own time zone." />
+      <PageHeader title="Find a place to book" description="Pick a category and a location, then a venue. Times are shown in each venue's own time zone." />
       {categories.isPending ? <LoadingState rows={1} /> : null}
       {categories.isError ? <ErrorState error={categories.error} onRetry={() => void categories.refetch()} /> : null}
       {categories.data ? (
         <div className="flex flex-col gap-6">
-          <ChipGroup
-            label="Category"
-            chips={[{ value: undefined, label: 'All' }, ...categories.data.map((category) => ({ value: category.id, label: category.name }))]}
-            value={categoryId}
-            onChange={(id) => setParams(id ? { category: String(id) } : {})}
-          />
-          <VenueList categories={categories.data} categoryId={categoryId} />
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <ChipGroup
+              label="Category"
+              chips={[{ value: undefined, label: 'All' }, ...categories.data.map((category) => ({ value: category.id, label: category.name }))]}
+              value={categoryId}
+              onChange={(id) => setFilter('category', id ? String(id) : undefined)}
+            />
+            <div className="flex items-center gap-2 lg:w-72">
+              <MapPin className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <Combobox
+                  aria-label="Location"
+                  searchPlaceholder="Search cities"
+                  value={place ? placeParam! : ANYWHERE}
+                  onValueChange={(value) => setFilter('place', value === ANYWHERE ? undefined : value)}
+                  options={[{ value: ANYWHERE, label: 'Anywhere' }, ...placesOf(everyVenue.data?.items ?? [])]}
+                />
+              </div>
+            </div>
+          </div>
+          <VenueList categories={categories.data} categoryId={categoryId} place={place} placeKey={placeParam ?? undefined} />
         </div>
       ) : null}
     </>
   )
 }
 
-function VenueList({ categories, categoryId }: { categories: Category[]; categoryId: number | undefined }) {
-  const venues = useQuery({ queryKey: queryKeys.venues(categoryId), queryFn: () => catalogApi.venues(categoryId) })
+const ANYWHERE = 'anywhere'
+
+function VenueList({ categories, categoryId, place, placeKey }: { categories: Category[]; categoryId: number | undefined; place: Place | undefined; placeKey: string | undefined }) {
+  const venues = useQuery({
+    queryKey: queryKeys.venues(categoryId, place ? placeKey : undefined),
+    queryFn: () => catalogApi.venues(categoryId, false, place),
+  })
   if (venues.isPending) return <LoadingState />
   if (venues.isError) return <ErrorState error={venues.error} onRetry={() => void venues.refetch()} />
-  if (venues.data.items.length === 0) return <EmptyState title="No venues in this category yet" />
+  if (venues.data.items.length === 0) {
+    return <EmptyState title={place ? `No venues here in ${placeLabel(place.city, place.countryCode)}` : 'No venues in this category yet'} />
+  }
   const categoryName = new Map(categories.map((category) => [category.id, category.name]))
   return (
     <ul className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -72,10 +107,12 @@ function VenueCard({ venue, categoryName }: { venue: VenueSummary; categoryName:
       </span>
       <span className="flex flex-col gap-1">
         <span className="text-lg font-semibold">{venue.name}</span>
-        <span className="flex items-center gap-1 text-sm text-muted-foreground">
-          <MapPin className="size-3.5 shrink-0" aria-hidden />
-          {venue.addressLine}
+        {/* Where it is comes first and bold, so nobody books in the wrong city by mistake. */}
+        <span className="flex items-center gap-1 text-sm font-semibold">
+          <MapPin className="size-3.5 shrink-0 text-primary-soft-foreground" aria-hidden />
+          {placeLabel(venue.city, venue.countryCode)}
         </span>
+        {venue.addressLine ? <span className="pl-[18px] text-sm text-muted-foreground">{venue.addressLine}</span> : null}
       </span>
       <span className="mt-auto flex items-center justify-end gap-1 border-t pt-3 text-sm font-semibold text-primary-soft-foreground">
         View

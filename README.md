@@ -116,6 +116,7 @@ All catalog calls need a signed-in user (any role). Lists of venues and bookable
 H="Authorization: Bearer $TOKEN"
 curl -s localhost:8080/api/v1/categories -H "$H"                          # 5 categories with their bookable types
 curl -s "localhost:8080/api/v1/venues?categoryId=2" -H "$H"               # venues of one category, as a page
+curl -s "localhost:8080/api/v1/venues?country=IN&city=hyderabad" -H "$H"  # venues in one city (any case)
 curl -s localhost:8080/api/v1/venues/2/bookables -H "$H"                  # Court A, Court B (label "Court")
 curl -s localhost:8080/api/v1/bookables/5 -H "$H"                         # effective rules, zone, opening hours
 curl -s "localhost:8080/api/v1/bookables/5/availability?date=$(date -v+1d +%F)" -H "$H"   # slots: FREE / TAKEN / PAST

@@ -84,8 +84,10 @@ public class CatalogService {
                 .toList();
     }
 
-    public PageResponse<VenueSummaryResponse> venues(Long categoryId, boolean includeInactive, Pageable pageable) {
-        return PageResponse.of(venues.search(categoryId, includeInactive, pageable), CatalogMapper::toSummary);
+    public PageResponse<VenueSummaryResponse> venues(Long categoryId, String countryCode, String city,
+                                                     boolean includeInactive, Pageable pageable) {
+        return PageResponse.of(venues.search(categoryId, countryCode, city, includeInactive, pageable),
+                CatalogMapper::toSummary);
     }
 
     public VenueResponse venue(long id, boolean includeInactive) {
@@ -180,7 +182,8 @@ public class CatalogService {
 
     private static BookableInfo info(Bookable bookable) {
         return new BookableInfo(bookable.getId(), bookable.getName(), bookable.getBookableType().getLabel(),
-                bookable.getVenue().getName(), bookable.getVenue().getTimeZone(),
+                bookable.getVenue().getName(), bookable.getVenue().getCity(), bookable.getVenue().getCountryCode(),
+                bookable.getVenue().getTimeZone(),
                 bookable.getBookableType().getCategory().getCancellationCutoffMinutes());
     }
 

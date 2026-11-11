@@ -15,6 +15,7 @@ import { Alert } from '@/components/ui/alert'
 import { ConfirmDialog } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { canCancel, effectiveStatus } from '@/lib/bookingStatus'
+import { placeLabel } from '@/lib/place'
 import { formatDay, formatTime, formatTimeRange } from '@/lib/time'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
@@ -230,11 +231,16 @@ function BookingCard({ booking, now }: { booking: Booking; now: number }) {
           <h3 className="font-semibold">{booking.bookableName}</h3>
           {held ? <HoldTimer deadline={deadline} onExpire={settle} variant="badge" /> : <StatusBadge status={status} />}
         </div>
-        <p className="-mt-1 text-[13px] text-muted-foreground md:hidden">{booking.venueName}</p>
+        <p className="-mt-1 text-[13px] text-muted-foreground md:hidden">
+          {booking.venueName}, <span className="font-semibold text-foreground">{placeLabel(booking.venueCity, booking.venueCountryCode)}</span>
+        </p>
         <p className="text-sm text-muted-foreground">
           <span className="font-semibold text-foreground md:hidden">{formatDay(booking.start, zone)} · </span>
           <span className="tabular font-semibold text-foreground md:font-normal md:text-muted-foreground">{times}</span>
-          <span className="hidden md:inline"> · {booking.venueName}</span>
+          <span className="hidden md:inline">
+            {' '}
+            · {booking.venueName}, <span className="font-semibold text-foreground">{placeLabel(booking.venueCity, booking.venueCountryCode)}</span>
+          </span>
           <span className="text-subtle-foreground"> ({zone})</span>
         </p>
         {note ? (
@@ -276,7 +282,7 @@ function BookingCard({ booking, now }: { booking: Booking; now: number }) {
         onConfirm={() => cancel.mutate()}
       >
         <p>
-          {booking.bookableName} at {booking.venueName}, {formatDay(booking.start, zone)} · {times}.
+          {booking.bookableName} at {booking.venueName}, {placeLabel(booking.venueCity, booking.venueCountryCode)}: {formatDay(booking.start, zone)} · {times}.
         </p>
         <p>The slot becomes free for others straight away.</p>
       </ConfirmDialog>

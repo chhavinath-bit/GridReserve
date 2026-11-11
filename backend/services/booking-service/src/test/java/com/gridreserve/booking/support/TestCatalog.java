@@ -49,6 +49,7 @@ public final class TestCatalog {
         body.put("categoryId", categoryId);
         body.put("name", PREFIX + name);
         body.put("addressLine", "1 Test Road");
+        body.put("city", "Testville");
         body.put("countryCode", "IN");
         body.put("timeZone", "Asia/Kolkata");
         body.put("openingHours", everyDay("00:00", "24:00"));

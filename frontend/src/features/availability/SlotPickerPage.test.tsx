@@ -19,7 +19,7 @@ const slot = (hourUtc: number) => ({
 
 const bookable: Bookable = {
   id: 7, venueId: 3, name: 'Visitor Bay 1', typeCode: 'BAY', label: 'Bay', bookingModel: 'EXCLUSIVE', active: true,
-  venueName: 'Palm Apartments', venueTimeZone: ZONE, version: 0,
+  venueName: 'Palm Apartments', venueCity: 'Chennai', venueCountryCode: 'IN', venueTimeZone: ZONE, version: 0,
   overrides: { slotMinutes: null, minDurationMinutes: null, maxDurationMinutes: null, bufferMinutes: null },
   openingHours: [], ownOpeningHours: false,
   rules: { slotMinutes: 60, minDurationMinutes: 60, maxDurationMinutes: 720, bufferMinutes: 0, cancellationCutoffMinutes: 120, maxActiveBookingsPerMember: 3, bookingHorizonDays: 7 },
@@ -29,7 +29,7 @@ const availability: Availability = {
   maxDurationMinutes: 720, bufferMinutes: 0, closed: false, slots: [slot(10), slot(11), slot(12), slot(13)],
 }
 const booking = (status: Booking['status'], at = slot(10)): Booking => ({
-  id: 99, bookableId: 7, bookableName: 'Visitor Bay 1', bookableLabel: 'Bay', venueName: 'Palm Apartments', venueTimeZone: ZONE,
+  id: 99, bookableId: 7, bookableName: 'Visitor Bay 1', bookableLabel: 'Bay', venueName: 'Palm Apartments', venueCity: 'Chennai', venueCountryCode: 'IN', venueTimeZone: ZONE,
   start: at.start, end: at.end, status, expiresAt: status === 'HELD' ? '2099-01-05T00:05:00Z' : null,
   createdAt: '2099-01-05T00:00:00Z', cancelledAt: null, cancelledBy: null,
   cancellableUntil: status === 'HELD' ? '2099-01-05T00:05:00Z' : '2099-01-05T08:30:00Z',

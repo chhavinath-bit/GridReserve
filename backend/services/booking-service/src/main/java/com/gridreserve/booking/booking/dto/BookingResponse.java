@@ -17,6 +17,8 @@ public record BookingResponse(
         String bookableName,
         String bookableLabel,
         String venueName,
+        String venueCity,
+        String venueCountryCode,
         String venueTimeZone,
         Instant start,
         Instant end,

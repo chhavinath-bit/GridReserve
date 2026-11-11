@@ -38,6 +38,9 @@ public class Venue {
     @Column(name = "address_line", length = 200)
     private String addressLine;
 
+    @Column(name = "city", nullable = false, length = 100)
+    private String city;
+
     @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "country_code", nullable = false, length = 2)
     private String countryCode;
@@ -63,13 +66,13 @@ public class Venue {
     }
 
     /** A new venue, open for bookings (FR-CAT-07). The category is fixed: bookable types belong to it. */
-    public static Venue create(Category category, String name, String addressLine, String countryCode,
+    public static Venue create(Category category, String name, String addressLine, String city, String countryCode,
                                String timeZone, Instant now) {
         Venue venue = new Venue();
         venue.category = category;
         venue.active = true;
         venue.createdAt = now;
-        venue.update(name, addressLine, countryCode, timeZone, now);
+        venue.update(name, addressLine, city, countryCode, timeZone, now);
         return venue;
     }
 
@@ -77,9 +80,11 @@ public class Venue {
      * Replaces the editable fields. Always marks the row changed, so its {@code @Version} goes up even when
      * only the opening hours (another table) changed, and a second admin's stale edit is refused (FR-CAT-15).
      */
-    public void update(String name, String addressLine, String countryCode, String timeZone, Instant now) {
+    public void update(String name, String addressLine, String city, String countryCode, String timeZone,
+                       Instant now) {
         this.name = name;
         this.addressLine = addressLine;
+        this.city = city;
         this.countryCode = countryCode;
         this.timeZone = timeZone;
         this.updatedAt = now;
@@ -105,6 +110,10 @@ public class Venue {
 
     public String getName() {
         return name;
+    }
+
+    public String getCity() {
+        return city;
     }
 
     public String getAddressLine() {

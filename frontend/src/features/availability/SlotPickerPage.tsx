@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CloudOff } from 'lucide-react'
+import { CloudOff, MapPin } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { holdDeadline } from '@/features/bookings/hold'
 import { holdIntent, keyFor, type IntentKey } from '@/lib/idempotency'
 import { HoldPanel, type HoldPhase } from '@/features/bookings/HoldPanel'
+import { placeLabel } from '@/lib/place'
 import { formatMinutes, ruleChips } from '@/lib/rules'
 import { formatDay, formatLongDay, formatTime, formatTimeRange, todayIn } from '@/lib/time'
 import { cn } from '@/lib/utils'
@@ -172,7 +173,7 @@ function SlotPicker({ bookable }: { bookable: Bookable }) {
 
   usePhoneHeader({
     title: bookable.name,
-    subtitle: `${bookable.venueName} · ${zone}`,
+    subtitle: `${bookable.venueName}, ${bookable.venueCity} · ${zone}`,
     backTo: `/venues/${bookable.venueId}`,
     backLabel: `Back to ${bookable.venueName}`,
   })
@@ -191,7 +192,12 @@ function SlotPicker({ bookable }: { bookable: Bookable }) {
           <div>
             <h1 className="text-[26px] font-bold tracking-tight lg:text-[28px]">{bookable.name}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {bookable.label} at {bookable.venueName} · times in {zone}
+              {bookable.label} at {bookable.venueName} ·{' '}
+              <span className="inline-flex items-center gap-1 font-semibold text-foreground">
+                <MapPin className="size-3.5 text-primary-soft-foreground" aria-hidden />
+                {placeLabel(bookable.venueCity, bookable.venueCountryCode)}
+              </span>{' '}
+              · times in {zone}
             </p>
           </div>
           <ul aria-label="Rules" className="flex flex-wrap gap-2">
@@ -330,6 +336,9 @@ function BookingSummary(props: {
                 <p className="text-lg font-bold tabular md:text-xl lg:text-2xl">{formatTimeRange(pick.start, pick.end, zone)}</p>
                 <p className="hidden text-sm text-muted-foreground lg:block">
                   {formatMinutes(minutes)} · {bookable.name}
+                </p>
+                <p className="hidden text-sm text-muted-foreground lg:block">
+                  {bookable.venueName}, {placeLabel(bookable.venueCity, bookable.venueCountryCode)}
                 </p>
               </>
             ) : (

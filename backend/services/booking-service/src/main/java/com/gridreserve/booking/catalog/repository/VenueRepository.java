@@ -11,13 +11,19 @@ import java.util.Optional;
 
 public interface VenueRepository extends JpaRepository<Venue, Long> {
 
-    /** Venues of one category (or all when {@code categoryId} is null); inactive ones only when asked. */
+    /**
+     * Venues of one category, country and city (each filter optional: null = any); inactive ones only when asked.
+     * The city matches case-insensitively ("hyderabad" finds "Hyderabad").
+     */
     @Query("""
             select v from Venue v
             where (:categoryId is null or v.category.id = :categoryId)
+              and (cast(:countryCode as string) is null or v.countryCode = :countryCode)
+              and (cast(:city as string) is null or lower(v.city) = lower(cast(:city as string)))
               and (:includeInactive = true or v.active = true)
             """)
-    Page<Venue> search(@Param("categoryId") Long categoryId, @Param("includeInactive") boolean includeInactive,
+    Page<Venue> search(@Param("categoryId") Long categoryId, @Param("countryCode") String countryCode,
+                       @Param("city") String city, @Param("includeInactive") boolean includeInactive,
                        Pageable pageable);
 
     /**
