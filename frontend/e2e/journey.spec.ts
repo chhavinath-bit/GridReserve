@@ -36,7 +36,7 @@ test('a member books a court, sees it after a reload, and cancels it (US-02, FR-
   await settled(page)
   await expect(card).toBeVisible()
 
-  await card.getByRole('button', { name: 'Cancel booking' }).click()
+  await card.getByRole('button', { name: 'Cancel' }).click()
   await page.getByRole('alertdialog').getByRole('button', { name: 'Yes, cancel' }).click()
   await expect(page.getByText('Booking cancelled')).toBeVisible()
   // It leaves Upcoming; "Cancelled & expired" lists by start time, so it may sit on a later page there.

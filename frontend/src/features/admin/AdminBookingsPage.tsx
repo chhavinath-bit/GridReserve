@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CloudOff, History } from 'lucide-react'
+import { CloudOff } from 'lucide-react'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { toast } from 'sonner'
@@ -18,7 +18,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableCell, TableHead } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
-import { addDays, formatRange } from '@/lib/time'
+import { addDays, formatDay, formatRange, formatTimeRange } from '@/lib/time'
 import { AuditTimeline } from './AuditTimeline'
 
 const ANY = 'any'
@@ -63,15 +63,14 @@ export function AdminBookingsPage() {
   return (
     <>
       <PageHeader title="All bookings" description="Newest start first. Times are in each venue’s zone." />
-      <div className="mb-5 grid gap-4 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="filter-venue">Venue</Label>
+      <div className="mb-4 grid gap-2.5 sm:grid-cols-2 lg:flex lg:flex-wrap">
+        <div className="lg:w-52">
           <Select value={params.get('venue') ?? ANY} onValueChange={(value) => setParam('venue', value === ANY ? null : value)}>
-            <SelectTrigger id="filter-venue">
+            <SelectTrigger aria-label="Venue">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ANY}>Any venue</SelectItem>
+              <SelectItem value={ANY}>All venues</SelectItem>
               {venues.data?.items.map((venue) => (
                 <SelectItem key={venue.id} value={String(venue.id)}>
                   {venue.name}
@@ -80,10 +79,9 @@ export function AdminBookingsPage() {
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="filter-status">Status</Label>
+        <div className="lg:w-44">
           <Select value={filter.status ?? ANY} onValueChange={(value) => setParam('status', value === ANY ? null : value)}>
-            <SelectTrigger id="filter-status">
+            <SelectTrigger aria-label="Status">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -96,14 +94,14 @@ export function AdminBookingsPage() {
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="filter-from">Starts from (UTC)</Label>
-          <Input id="filter-from" type="date" value={params.get('from') ?? ''} onChange={(event) => setParam('from', event.target.value || null)} />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="filter-to">Starts until (UTC)</Label>
-          <Input id="filter-to" type="date" value={params.get('to') ?? ''} onChange={(event) => setParam('to', event.target.value || null)} />
-        </div>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span className="w-12 shrink-0 lg:w-auto">From</span>
+          <Input type="date" aria-label="Starts from (UTC)" value={params.get('from') ?? ''} onChange={(event) => setParam('from', event.target.value || null)} />
+        </label>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span className="w-12 shrink-0 lg:w-auto">Until</span>
+          <Input type="date" aria-label="Starts until (UTC)" value={params.get('to') ?? ''} onChange={(event) => setParam('to', event.target.value || null)} />
+        </label>
       </div>
 
       {bookings.isPending ? <LoadingState /> : null}
@@ -120,7 +118,7 @@ export function AdminBookingsPage() {
           {bookings.data.items.length === 0 ? (
             <EmptyState title="No bookings match these filters" />
           ) : (
-            <BookingRows items={bookings.data.items} onHistory={setHistoryOf} onCancel={setCancelling} />
+            <BookingRows items={bookings.data.items} onOpen={setHistoryOf} />
           )}
           {bookings.data.totalPages > 1 ? (
             <nav aria-label="Pages" className="flex items-center justify-between gap-2">
@@ -143,7 +141,14 @@ export function AdminBookingsPage() {
         </div>
       ) : null}
 
-      <HistorySheet row={historyOf} onClose={() => setHistoryOf(null)} />
+      <BookingDrawer
+        row={historyOf}
+        onClose={() => setHistoryOf(null)}
+        onCancel={(row) => {
+          setHistoryOf(null)
+          setCancelling(row)
+        }}
+      />
       <CancelDialog
         row={cancelling}
         onClose={() => setCancelling(null)}
@@ -167,19 +172,19 @@ function cancellable(row: AdminBooking): boolean {
   return (status === 'HELD' || status === 'CONFIRMED') && Date.parse(end) > Date.now()
 }
 
-function BookingRows({ items, onHistory, onCancel }: { items: AdminBooking[]; onHistory: (row: AdminBooking) => void; onCancel: (row: AdminBooking) => void }) {
-  const actions = (row: AdminBooking) => (
-    <div className="flex flex-wrap justify-end gap-2">
-      <Button variant="ghost" size="sm" onClick={() => onHistory(row)} aria-label={`History of booking ${row.booking.id}`}>
-        <History aria-hidden />
-        History
-      </Button>
-      {cancellable(row) ? (
-        <Button variant="outline" size="sm" onClick={() => onCancel(row)} aria-label={`Cancel booking ${row.booking.id}`}>
-          Cancel
-        </Button>
-      ) : null}
-    </div>
+/** Click a row (or its bookable's name, for keyboards) to see its history and actions (design A). */
+function BookingRows({ items, onOpen }: { items: AdminBooking[]; onOpen: (row: AdminBooking) => void }) {
+  const opener = (row: AdminBooking) => (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation()
+        onOpen(row)
+      }}
+      className="rounded-sm text-left font-semibold underline-offset-4 hover:underline"
+    >
+      {row.booking.bookableName}
+    </button>
   )
   return (
     <>
@@ -191,32 +196,28 @@ function BookingRows({ items, onHistory, onCancel }: { items: AdminBooking[]; on
               <TableHead>Bookable</TableHead>
               <TableHead>Member</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>
-                <span className="sr-only">Actions</span>
-              </TableHead>
             </tr>
           </thead>
           <tbody>
             {items.map((row) => {
               const who = member(row)
               return (
-                <tr key={row.booking.id}>
+                <tr key={row.booking.id} onClick={() => onOpen(row)} className="cursor-pointer transition-colors hover:bg-muted/60">
                   <TableCell className="tabular">
                     {formatRange(row.booking.start, row.booking.end, row.booking.venueTimeZone)}
                     <span className="block text-xs text-subtle-foreground">{row.booking.venueTimeZone}</span>
                   </TableCell>
                   <TableCell>
-                    <span className="block font-medium">{row.booking.bookableName}</span>
-                    <span className="block text-muted-foreground">{row.booking.venueName}</span>
+                    {opener(row)}
+                    <span className="block text-[13px] text-muted-foreground">{row.booking.venueName}</span>
                   </TableCell>
                   <TableCell>
                     <span className="block">{who.name}</span>
-                    {who.detail ? <span className="block text-muted-foreground">{who.detail}</span> : null}
+                    {who.detail ? <span className="block text-[13px] text-muted-foreground">{who.detail}</span> : null}
                   </TableCell>
                   <TableCell>
                     <StatusBadge status={row.booking.status} />
                   </TableCell>
-                  <TableCell>{actions(row)}</TableCell>
                 </tr>
               )
             })}
@@ -227,17 +228,16 @@ function BookingRows({ items, onHistory, onCancel }: { items: AdminBooking[]; on
         {items.map((row) => {
           const who = member(row)
           return (
-            <li key={row.booking.id} className="flex flex-col gap-2 rounded-lg border bg-card p-4">
+            <li key={row.booking.id} onClick={() => onOpen(row)} className="flex cursor-pointer flex-col gap-1.5 rounded-lg border bg-card p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="font-semibold">{row.booking.bookableName}</p>
-                  <p className="text-sm text-muted-foreground">{row.booking.venueName}</p>
+                  {opener(row)}
+                  <p className="text-[13px] text-muted-foreground">{row.booking.venueName}</p>
                 </div>
                 <StatusBadge status={row.booking.status} />
               </div>
-              <p className="text-sm tabular">{formatRange(row.booking.start, row.booking.end, row.booking.venueTimeZone)}</p>
-              <p className="text-sm text-muted-foreground">{who.detail ? `${who.name} · ${who.detail}` : who.name}</p>
-              {actions(row)}
+              <p className="text-sm font-semibold tabular">{formatRange(row.booking.start, row.booking.end, row.booking.venueTimeZone)}</p>
+              <p className="text-[13px] text-muted-foreground">{who.detail ? `${who.name} · ${who.detail}` : who.name}</p>
             </li>
           )
         })}
@@ -246,26 +246,42 @@ function BookingRows({ items, onHistory, onCancel }: { items: AdminBooking[]; on
   )
 }
 
-function HistorySheet({ row, onClose }: { row: AdminBooking | null; onClose: () => void }) {
+function BookingDrawer({ row, onClose, onCancel }: { row: AdminBooking | null; onClose: () => void; onCancel: (row: AdminBooking) => void }) {
   const audit = useQuery({
     queryKey: queryKeys.audit(row?.booking.id ?? 0),
     queryFn: () => adminApi.audit(row!.booking.id),
     enabled: row !== null,
   })
+  const zone = row?.booking.venueTimeZone ?? 'UTC'
   return (
     <Dialog open={row !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent side="right">
-        <DialogTitle>Booking history</DialogTitle>
+      <DialogContent side="right" className="gap-5">
         {row ? (
           <>
-            <DialogDescription>
-              {row.booking.bookableName} at {row.booking.venueName}, {formatRange(row.booking.start, row.booking.end, row.booking.venueTimeZone)}
-            </DialogDescription>
+            <div className="flex flex-col gap-1 pr-8">
+              <DialogTitle>
+                {row.booking.bookableName} · {formatDay(row.booking.start, zone)}
+              </DialogTitle>
+              <DialogDescription>
+                {formatTimeRange(row.booking.start, row.booking.end, zone)} · {member(row).name} · {row.booking.venueName}
+              </DialogDescription>
+              <div className="mt-1">
+                <StatusBadge status={row.booking.status} />
+              </div>
+            </div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-subtle-foreground">History</h3>
             {audit.isPending ? <LoadingState rows={3} label="Loading history" /> : null}
             {audit.isError ? <ErrorState error={audit.error} onRetry={() => void audit.refetch()} /> : null}
-            {audit.data ? <AuditTimeline entries={audit.data} zone={row.booking.venueTimeZone} /> : null}
+            {audit.data ? <AuditTimeline entries={audit.data} zone={zone} /> : null}
+            {cancellable(row) ? (
+              <Button variant="destructive-outline" className="mt-auto" onClick={() => onCancel(row)}>
+                Cancel this booking…
+              </Button>
+            ) : null}
           </>
-        ) : null}
+        ) : (
+          <DialogTitle className="sr-only">Booking</DialogTitle>
+        )}
       </DialogContent>
     </Dialog>
   )

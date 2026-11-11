@@ -9,9 +9,10 @@ test('an admin sees every venue and a booking’s history (FR-ADM-01, FR-AUD-03)
 
   await page.getByRole('navigation', { name: 'Admin' }).getByRole('link', { name: 'All bookings' }).click()
   await settled(page)
-  await page.getByRole('button', { name: /^History of booking/ }).first().click()
-  const sheet = page.getByRole('dialog', { name: 'Booking history' })
-  await expect(sheet).toBeVisible()
+  // A row opens a drawer with the booking's history.
+  await page.getByRole('table').getByRole('row').nth(1).getByRole('button').click()
+  const sheet = page.getByRole('dialog')
+  await expect(sheet.getByText('History', { exact: true })).toBeVisible()
   await expect(sheet.getByRole('listitem').first()).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(sheet).toBeHidden()

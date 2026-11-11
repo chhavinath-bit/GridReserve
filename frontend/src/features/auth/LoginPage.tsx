@@ -41,12 +41,12 @@ export function LoginPage() {
                 <FormErrors fields={FIELDS} formError={formError as string | null} />
                 <FormField name="email" label="Email" type="email" autoComplete="email" />
                 <FormField name="password" label="Password" type="password" autoComplete="current-password" />
-                <Button type="submit" loading={isSubmitting}>
+                <Button type="submit" size="lg" loading={isSubmitting}>
                   Log in
                 </Button>
                 <p className="text-center text-sm text-muted-foreground">
                   New here?{' '}
-                  <Link className="text-primary underline-offset-4 hover:underline" to={`/register?returnTo=${encodeURIComponent(returnTo)}`}>
+                  <Link className="font-semibold text-primary underline-offset-4 hover:underline" to={`/register?returnTo=${encodeURIComponent(returnTo)}`}>
                     Create an account
                   </Link>
                 </p>

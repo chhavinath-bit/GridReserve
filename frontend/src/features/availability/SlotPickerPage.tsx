@@ -11,17 +11,16 @@ import type { Availability, Bookable, Booking } from '@/api/types'
 import { ConflictNotice } from '@/components/patterns/ConflictNotice'
 import { DateStrip } from '@/components/patterns/DateStrip'
 import { Breadcrumb } from '@/components/patterns/Breadcrumb'
-import { PageHeader } from '@/components/patterns/PageHeader'
+import { usePhoneHeader } from '@/components/patterns/AppShell'
 import { SlotGrid } from '@/components/patterns/SlotGrid'
 import { EmptyState, ErrorState, LoadingState } from '@/components/patterns/States'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { holdDeadline } from '@/features/bookings/hold'
 import { holdIntent, keyFor, type IntentKey } from '@/lib/idempotency'
 import { HoldPanel, type HoldPhase } from '@/features/bookings/HoldPanel'
-import { describeCutoff, describeDuration } from '@/lib/rules'
-import { formatRange, todayIn } from '@/lib/time'
+import { formatMinutes, ruleChips } from '@/lib/rules'
+import { formatDay, formatLongDay, formatTime, formatTimeRange, todayIn } from '@/lib/time'
 import { cn } from '@/lib/utils'
 import { nextSelection } from './selection'
 
@@ -171,18 +170,44 @@ function SlotPicker({ bookable }: { bookable: Bookable }) {
       ? slots.flatMap((slot, index) => (overlaps(slot.start, slot.end, hold.booking.start, hold.booking.end) ? [index] : []))
       : []
 
+  usePhoneHeader({
+    title: bookable.name,
+    subtitle: `${bookable.venueName} · ${zone}`,
+    backTo: `/venues/${bookable.venueId}`,
+    backLabel: `Back to ${bookable.venueName}`,
+  })
+  const chips = ruleChips(bookable.rules)
+
   return (
     <>
-      <Breadcrumb
-        items={[
-          { label: bookable.venueName, to: `/venues/${bookable.venueId}` },
-          { label: bookable.name },
-        ]}
-      />
-      <PageHeader title={bookable.name} description={`${bookable.label} at ${bookable.venueName} · times in ${zone}`} />
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="flex min-w-0 flex-col gap-4">
+      <div className="hidden md:block">
+        <Breadcrumb
+          items={[
+            { label: bookable.venueName, to: `/venues/${bookable.venueId}` },
+            { label: bookable.name },
+          ]}
+        />
+        <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h1 className="text-[26px] font-bold tracking-tight lg:text-[28px]">{bookable.name}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {bookable.label} at {bookable.venueName} · times in {zone}
+            </p>
+          </div>
+          <ul aria-label="Rules" className="flex flex-wrap gap-2">
+            {chips.map((chip) => (
+              <li key={chip} className="rounded-full border bg-card px-2.5 py-1 text-[13px] text-muted-foreground">
+                {chip}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+      <h1 className="sr-only md:hidden">{bookable.name}</h1>
+      <div className="grid gap-4 md:gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-6">
+        <section aria-label="Pick a time" className="flex min-w-0 flex-col gap-4 md:rounded-lg md:border md:bg-card md:p-5 lg:p-6">
           <DateStrip today={today} days={bookable.rules.bookingHorizonDays} value={date} onChange={chooseDate} />
+          <h2 className="font-semibold md:hidden">{formatLongDay(date)}</h2>
           {conflict ? <ConflictNotice message={conflict} /> : null}
           {hint ? (
             <Alert variant="info" role="status">
@@ -199,8 +224,9 @@ function SlotPicker({ bookable }: { bookable: Bookable }) {
             heldByMe={heldByMe}
             onSelect={onSelect}
           />
-        </div>
-        <aside aria-label="Your booking" className={cn('lg:sticky lg:top-24 lg:self-start', hold ? 'order-first lg:order-none' : undefined)}>
+          <p className="text-xs text-muted-foreground md:hidden">{chips.join(' · ')}</p>
+        </section>
+        <aside aria-label="Your booking" className={cn('lg:sticky lg:top-24 lg:self-start', hold ? 'order-first md:order-none' : undefined)}>
           {hold ? (
             <HoldPanel
               booking={hold.booking}
@@ -221,7 +247,7 @@ function SlotPicker({ bookable }: { bookable: Bookable }) {
           ) : (
             <BookingSummary
               bookable={bookable}
-              range={first && last ? formatRange(first.start, last.end, zone) : null}
+              pick={first && last ? { start: first.start, end: last.end } : null}
               holding={createHold.isPending}
               error={holdError}
               onHold={() => first && last && createHold.mutate({ start: first.start, end: last.end })}
@@ -272,53 +298,67 @@ function SlotsView(props: {
 }
 
 /**
- * What is picked, the rules, and "Hold slot". From 1024 px a card beside the grid; below that a bar
- * fixed to the bottom of the screen (above the phone tab bar), so the action is always in reach.
+ * What is picked and "Hold slot" (design A). Phones: a bar fixed above the tab bar. Tablets: a row
+ * under the slots. From 1024 px: a card beside them with the time, the cancel deadline and the hold length.
  */
 function BookingSummary(props: {
   bookable: Bookable
-  range: string | null
+  pick: { start: string; end: string } | null
   holding: boolean
   error: ApiError | null
   onHold: () => void
 }) {
-  const { rules } = props.bookable
+  const { bookable, pick } = props
+  const zone = bookable.venueTimeZone
   const temporary = props.error && TEMPORARY_CODES.has(props.error.code)
-  const duration = describeDuration(rules)
-  const canExtend = rules.minDurationMinutes !== rules.maxDurationMinutes
+  const minutes = pick ? (Date.parse(pick.end) - Date.parse(pick.start)) / 60_000 : 0
+  const cancelBy = pick ? new Date(Date.parse(pick.start) - bookable.rules.cancellationCutoffMinutes * 60_000).toISOString() : null
   return (
     <>
-      {/* Keeps the last row of slots clear of the fixed bar on small screens. */}
-      <div aria-hidden className="h-24 lg:hidden" />
-      <Card className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-20 rounded-none border-x-0 border-b-0 shadow-lg md:bottom-0 lg:static lg:rounded-lg lg:border lg:shadow-none">
-        <CardHeader className="hidden lg:flex">
-          <CardTitle>Your booking</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 p-4 lg:gap-4 lg:pt-2">
-          <div className="flex items-center gap-3 lg:flex-col lg:items-stretch">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold tabular lg:text-base" aria-live="polite">
-                {props.range ?? 'Pick a start time.'}
-              </p>
-              <p className="text-xs text-muted-foreground lg:hidden">Held for 5 minutes while you confirm</p>
-            </div>
-            <ul className="hidden flex-col gap-1.5 text-sm text-muted-foreground lg:flex">
-              {duration ? <li>{duration}{canExtend ? '; pick a later slot to extend' : ''}</li> : null}
-              <li>Held for 5 minutes while you confirm</li>
-              <li>{describeCutoff(rules.cancellationCutoffMinutes)}</li>
-            </ul>
-            <Button onClick={props.onHold} disabled={!props.range} loading={props.holding} size="touch" className="shrink-0">
-              {props.error && temporary ? 'Retry' : 'Hold slot'}
-            </Button>
+      {/* Keeps the last row of slots clear of the fixed bar on phones. */}
+      <div aria-hidden className="h-24 md:hidden" />
+      <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-20 border-t bg-background px-4 py-3 shadow-lg md:static md:rounded-lg md:border md:bg-card md:p-5 md:shadow-none lg:p-6">
+        <h2 className="mb-4 hidden font-semibold lg:block">Your booking</h2>
+        <div className="flex items-center gap-3 md:gap-5 lg:flex-col lg:items-stretch lg:gap-4">
+          <div className="min-w-0 flex-1 md:rounded-md md:bg-primary-soft md:px-4 md:py-3 lg:p-4" aria-live="polite">
+            {pick ? (
+              <>
+                <p className="text-xs text-muted-foreground md:text-[13px] md:font-semibold md:text-primary-soft-foreground">
+                  {formatDay(pick.start, zone)}
+                  <span className="lg:hidden"> · {formatMinutes(minutes)}</span>
+                </p>
+                <p className="text-lg font-bold tabular md:text-xl lg:text-2xl">{formatTimeRange(pick.start, pick.end, zone)}</p>
+                <p className="hidden text-sm text-muted-foreground lg:block">
+                  {formatMinutes(minutes)} · {bookable.name}
+                </p>
+              </>
+            ) : (
+              <p className="text-sm font-semibold md:text-base">Pick a start time.</p>
+            )}
           </div>
-          {props.error ? (
-            <Alert variant={temporary ? 'warning' : 'destructive'} role="alert">
-              {temporary ? <CloudOff aria-hidden /> : null}
-              <p>{props.error.message}</p>
-            </Alert>
-          ) : null}
-        </CardContent>
-      </Card>
+          {pick && cancelBy ? (
+            <dl className="hidden grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm lg:grid">
+              <dt className="text-muted-foreground">Cancel by</dt>
+              <dd className="tabular">
+                {formatDay(cancelBy, zone)}, {formatTime(cancelBy, zone)}
+              </dd>
+              <dt className="text-muted-foreground">Hold</dt>
+              <dd>5 minutes to confirm</dd>
+            </dl>
+          ) : (
+            <p className="hidden text-sm text-muted-foreground lg:block">A slot is held for 5 minutes while you confirm.</p>
+          )}
+          <Button onClick={props.onHold} disabled={!pick} loading={props.holding} size="lg" className="shrink-0 lg:h-12">
+            {props.error && temporary ? 'Retry' : 'Hold slot'}
+          </Button>
+        </div>
+        {props.error ? (
+          <Alert variant={temporary ? 'warning' : 'destructive'} role="alert" className="mt-3">
+            {temporary ? <CloudOff aria-hidden /> : null}
+            <p>{props.error.message}</p>
+          </Alert>
+        ) : null}
+      </div>
     </>
   )
 }

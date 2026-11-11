@@ -51,12 +51,12 @@ export function RegisterPage() {
                 <FormField name="displayName" label="Name" autoComplete="name" />
                 <FormField name="email" label="Email" type="email" autoComplete="email" />
                 <FormField name="password" label="Password" type="password" autoComplete="new-password" hint="8 to 72 characters." />
-                <Button type="submit" loading={isSubmitting}>
+                <Button type="submit" size="lg" loading={isSubmitting}>
                   Create account
                 </Button>
                 <p className="text-center text-sm text-muted-foreground">
                   Already have an account?{' '}
-                  <Link className="text-primary underline-offset-4 hover:underline" to={`/login?returnTo=${encodeURIComponent(returnTo)}`}>
+                  <Link className="font-semibold text-primary underline-offset-4 hover:underline" to={`/login?returnTo=${encodeURIComponent(returnTo)}`}>
                     Log in
                   </Link>
                 </p>

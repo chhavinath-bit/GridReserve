@@ -16,14 +16,18 @@ export function SelectField(props: {
   placeholder?: string
   hint?: ReactNode
   disabled?: boolean
+  /** The label stays for screen readers only, e.g. in the rules table where the row says what it is. */
+  hideLabel?: boolean
   onChange?: (value: string) => void
 }) {
   const [field, meta, helpers] = useField<string>(props.name)
   const error = meta.touched ? meta.error : undefined
   const describedBy = error ? `${props.name}-error` : props.hint ? `${props.name}-hint` : undefined
   return (
-    <div className="flex flex-col gap-2">
-      <Label htmlFor={props.name}>{props.label}</Label>
+    <div className={props.hideLabel ? 'flex flex-col gap-1' : 'flex flex-col gap-2'}>
+      <Label htmlFor={props.name} className={props.hideLabel ? 'sr-only' : undefined}>
+        {props.label}
+      </Label>
       <Select
         value={field.value || undefined}
         disabled={props.disabled}

@@ -2,14 +2,7 @@ import type { ReactNode } from 'react'
 import { Logo } from '@/components/patterns/Logo'
 import { ThemeToggle } from '@/components/patterns/ThemeToggle'
 
-const PREVIEW = ['FREE', 'TAKEN', 'SELECTED', 'FREE', 'FREE', 'TAKEN', 'FREE', 'PAST'] as const
-const PREVIEW_LOOK: Record<(typeof PREVIEW)[number], string> = {
-  FREE: 'border-border bg-card',
-  TAKEN: 'hatch border-transparent bg-slot-taken',
-  SELECTED: 'border-primary bg-primary',
-  PAST: 'border-transparent bg-card opacity-50',
-}
-
+const TAGLINE = 'Rooms, courts, bays and appointments, booked in seconds.'
 const CATEGORIES = 'Study · Sports · Parking · Clinic · Gym'
 
 export interface AuthLayoutProps {
@@ -19,40 +12,39 @@ export interface AuthLayoutProps {
 }
 
 /**
- * Login / Register layout (DESIGN_SYSTEM §5). Phones: the plain form on the page. Tablets: a card
- * centred on the canvas. From 1024 px: a calm product panel on the left and the form on the right.
+ * Login / Register layout (design A, DESIGN_SYSTEM §5). Phones: the plain form. Tablets: the tagline
+ * above a card on the tinted page. From 1024 px: a tinted product panel on the left, the form on white.
  */
 export function AuthLayout({ title, description, children }: AuthLayoutProps) {
   return (
-    <div className="grid min-h-dvh bg-background md:bg-canvas lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
-      <section aria-label="About GridReserve" className="hidden flex-col justify-between border-r bg-background p-12 lg:flex">
+    <div className="flex min-h-dvh bg-background md:bg-primary-soft lg:bg-background">
+      <section aria-label="About GridReserve" className="hidden flex-1 flex-col justify-between bg-primary-soft p-16 lg:flex">
         <Logo className="text-lg" />
-        <div className="flex max-w-md flex-col gap-6">
-          <h2 className="text-3xl font-semibold tracking-tight">Rooms, courts, bays and appointments, booked in seconds.</h2>
-          <div aria-hidden className="grid w-64 grid-cols-4 gap-2">
-            {PREVIEW.map((state, index) => (
-              <div key={index} className={`h-8 rounded-sm border ${PREVIEW_LOOK[state]}`} />
-            ))}
-          </div>
-          <p className="text-muted-foreground">
+        <div className="flex flex-col gap-4">
+          <h2 className="max-w-[460px] text-[40px] font-bold leading-[1.15] tracking-tight">{TAGLINE}</h2>
+          <p className="max-w-[440px] text-[17px] leading-relaxed text-muted-foreground">
             One place for every venue. A slot is yours for 5 minutes while you confirm, and nobody can book it twice.
           </p>
         </div>
-        <p className="text-sm text-subtle-foreground">{CATEGORIES}</p>
+        <p className="text-sm text-muted-foreground">{CATEGORIES}</p>
       </section>
-      <div className="flex flex-col px-4 py-4 sm:px-6 md:items-center md:justify-center md:py-12">
-        <div className="flex w-full items-center justify-between md:max-w-md lg:justify-end">
-          <Logo className="lg:hidden" />
+      <div className="relative flex flex-1 flex-col px-4 py-4 sm:px-6 md:items-center md:justify-center md:gap-8 md:py-12 lg:w-[520px] lg:flex-none">
+        <div className="flex items-center justify-between md:absolute md:right-6 md:top-6">
+          <Logo className="md:hidden" />
           <ThemeToggle />
         </div>
-        <div className="mt-10 flex w-full flex-col gap-6 md:mt-6 md:max-w-md md:rounded-xl md:border md:bg-card md:p-8 md:shadow-sm">
+        <div className="hidden text-center md:block lg:hidden">
+          <Logo className="text-lg" />
+          <p className="mx-auto mt-3 max-w-[480px] text-[26px] font-bold leading-tight tracking-tight">{TAGLINE}</p>
+        </div>
+        <div className="mt-10 flex w-full flex-col gap-5 md:mt-0 md:max-w-[440px] md:rounded-2xl md:border md:bg-card md:p-8 lg:max-w-[380px] lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0">
           <div className="flex flex-col gap-1">
-            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-            <p className="text-sm text-muted-foreground">{description}</p>
+            <h1 className="text-2xl font-bold tracking-tight lg:text-[26px]">{title}</h1>
+            <p className="text-sm text-muted-foreground md:hidden">{description}</p>
           </div>
           {children}
         </div>
-        <p className="mt-auto pt-10 text-center text-sm text-subtle-foreground md:hidden">{CATEGORIES}</p>
+        <p className="mt-auto pt-10 text-center text-sm text-muted-foreground md:hidden">{CATEGORIES}</p>
       </div>
     </div>
   )

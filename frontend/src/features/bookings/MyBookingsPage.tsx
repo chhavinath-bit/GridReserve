@@ -7,16 +7,17 @@ import { ApiError } from '@/api/client'
 import { bookingApi, type MyBookingsFilter } from '@/api/endpoints'
 import { queryKeys } from '@/api/queryKeys'
 import type { Booking } from '@/api/types'
+import { usePhoneHeader } from '@/components/patterns/AppShell'
 import { HoldTimer } from '@/components/patterns/HoldTimer'
-import { PageHeader } from '@/components/patterns/PageHeader'
 import { EmptyState, ErrorState, LoadingState } from '@/components/patterns/States'
 import { StatusBadge } from '@/components/patterns/StatusBadge'
 import { Alert } from '@/components/ui/alert'
 import { ConfirmDialog } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { canCancel, effectiveStatus } from '@/lib/bookingStatus'
-import { formatDay, formatRange, formatTime } from '@/lib/time'
+import { formatDay, formatTime, formatTimeRange } from '@/lib/time'
 import { useNow } from '@/lib/useNow'
+import { cn } from '@/lib/utils'
 
 type Tab = 'upcoming' | 'past' | 'closed'
 
@@ -49,21 +50,45 @@ export function tabOf(booking: Booking, now: number): Tab {
   return new Date(booking.end).getTime() > now ? 'upcoming' : 'past'
 }
 
+const TAB_SHORT: Record<Tab, string> = { upcoming: 'Upcoming', past: 'Past', closed: 'Closed' }
+
+/** One tab's paged list. The page reads the upcoming one too, for the count on its tab (same query, fetched once). */
+function useTabBookings(tab: Tab, openedAt: string) {
+  const filter = filterFor(tab, openedAt)
+  return useInfiniteQuery({
+    queryKey: queryKeys.myBookingsTab(tab),
+    queryFn: ({ pageParam }) => bookingApi.mine(filter, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (last) => (last.page + 1 < last.totalPages ? last.page + 1 : undefined),
+  })
+}
+
 export function MyBookingsPage() {
   const [tab, setTab] = useState<Tab>('upcoming')
   const [openedAt] = useState(() => new Date().toISOString())
+  const upcoming = useTabBookings('upcoming', openedAt)
+  const upcomingCount = upcoming.data?.pages[0]?.totalItems
+  usePhoneHeader({ title: 'My bookings' })
+
   return (
-    <>
-      <PageHeader title="My bookings" description="Times are shown in each venue's time zone." />
+    <div className="mx-auto max-w-[880px]">
+      <h1 className="mb-5 hidden text-[26px] font-bold tracking-tight md:block lg:text-[28px]">My bookings</h1>
+      <h1 className="sr-only md:hidden">My bookings</h1>
       <Tabs.Root value={tab} onValueChange={(value) => setTab(value as Tab)}>
-        <Tabs.List aria-label="Bookings" className="-mx-4 mb-5 flex gap-1 overflow-x-auto border-b px-4 sm:mx-0 sm:px-0">
+        {/* Phones: a segmented control with short words. From 768 px: underlined tabs (design A). */}
+        <Tabs.List
+          aria-label="Bookings"
+          className="mb-4 grid grid-cols-3 rounded-md bg-muted p-1 md:mb-5 md:flex md:gap-6 md:rounded-none md:border-b md:bg-transparent md:p-0"
+        >
           {TABS.map(({ id, label }) => (
             <Tabs.Trigger
               key={id}
               value={id}
-              className="-mb-px shrink-0 border-b-2 border-transparent px-3 py-2.5 text-sm font-medium text-muted-foreground outline-none transition-colors duration-[120ms] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=active]:border-primary data-[state=active]:text-foreground"
+              className="h-9 rounded-sm text-[13px] font-semibold text-muted-foreground outline-none transition-colors duration-[120ms] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm md:-mb-px md:h-11 md:rounded-none md:border-b-2 md:border-transparent md:text-sm md:data-[state=active]:border-primary md:data-[state=active]:bg-transparent md:data-[state=active]:shadow-none"
             >
-              {label}
+              <span className="md:hidden">{TAB_SHORT[id]}</span>
+              <span className="hidden md:inline">{label}</span>
+              {id === 'upcoming' && upcomingCount ? <span className="hidden md:inline"> · {upcomingCount}</span> : null}
             </Tabs.Trigger>
           ))}
         </Tabs.List>
@@ -73,20 +98,14 @@ export function MyBookingsPage() {
           </Tabs.Content>
         ))}
       </Tabs.Root>
-    </>
+    </div>
   )
 }
 
 function BookingList({ tab, openedAt }: { tab: Tab; openedAt: string }) {
   // Re-evaluated every few seconds, so a hold that runs out shows as expired by itself.
   const now = useNow(5_000)
-  const filter = filterFor(tab, openedAt)
-  const bookings = useInfiniteQuery({
-    queryKey: queryKeys.myBookingsTab(tab),
-    queryFn: ({ pageParam }) => bookingApi.mine(filter, pageParam),
-    initialPageParam: 0,
-    getNextPageParam: (last) => (last.page + 1 < last.totalPages ? last.page + 1 : undefined),
-  })
+  const bookings = useTabBookings(tab, openedAt)
 
   if (bookings.isPending) return <LoadingState />
   // A failed "Load more" keeps the pages already shown; only a failed first page replaces the list.
@@ -117,31 +136,31 @@ function BookingList({ tab, openedAt }: { tab: Tab; openedAt: string }) {
         ))}
       </ul>
       <div className="flex flex-col items-center gap-2 py-2">
-        <p className="text-sm text-subtle-foreground" aria-live="polite">
-          Showing {all.length} of {total}
-        </p>
         {bookings.hasNextPage ? (
-          <Button variant="outline" size="touch" onClick={() => void bookings.fetchNextPage()} loading={bookings.isFetchingNextPage}>
+          <Button variant="outline" onClick={() => void bookings.fetchNextPage()} loading={bookings.isFetchingNextPage}>
             Load more
           </Button>
         ) : null}
+        <p className="text-xs text-subtle-foreground" aria-live="polite">
+          Showing {all.length} of {total}
+        </p>
         {bookings.isFetchNextPageError ? <ErrorState error={bookings.error} onRetry={() => void bookings.fetchNextPage()} /> : null}
       </div>
     </div>
   )
 }
 
-/** The day as a tile: "TUE / 4 / NOV" in the venue's zone. */
-function DateTile({ booking }: { booking: Booking }) {
+/** The day as a column: "THU / 12 / NOV" in the venue's zone (tablet and up). */
+function DateColumn({ booking }: { booking: Booking }) {
   const parts = new Intl.DateTimeFormat('en-GB', { timeZone: booking.venueTimeZone, weekday: 'short', day: 'numeric', month: 'short' }).formatToParts(
     new Date(booking.start),
   )
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((candidate) => candidate.type === type)?.value ?? ''
   return (
-    <div aria-hidden className="flex w-14 shrink-0 flex-col items-center rounded-md bg-primary-soft py-2 text-primary-soft-foreground">
-      <span className="text-[11px] font-semibold uppercase">{part('weekday')}</span>
-      <span className="text-xl font-bold leading-tight tabular">{part('day')}</span>
-      <span className="text-[11px] uppercase">{part('month')}</span>
+    <div aria-hidden className="hidden w-16 shrink-0 text-center md:block">
+      <p className="text-xs font-semibold uppercase text-subtle-foreground">{part('weekday')}</p>
+      <p className="text-2xl font-bold leading-tight tabular">{part('day')}</p>
+      <p className="text-xs text-subtle-foreground">{part('month')}</p>
     </div>
   )
 }
@@ -183,58 +202,67 @@ function BookingCard({ booking, now }: { booking: Booking; now: number }) {
     onError,
   })
 
-  const active = status === 'HELD' || (status === 'CONFIRMED' && new Date(booking.end).getTime() > now)
+  const zone = booking.venueTimeZone
+  const held = status === 'HELD'
+  const active = held || (status === 'CONFIRMED' && new Date(booking.end).getTime() > now)
   // After the cutoff the button stays visible but disabled, with the reason next to it (DESIGN_SYSTEM §4.2).
   const cancelClosed = active && !canCancel(booking, now)
-  const closedNote = `cancel-closed-${booking.id}`
-  const when = formatRange(booking.start, booking.end, booking.venueTimeZone)
-  const held = status === 'HELD'
+  const noteId = `booking-note-${booking.id}`
+  const times = formatTimeRange(booking.start, booking.end, zone)
+  const note = held
+    ? `Confirm before the hold runs out, or the ${booking.bookableLabel.toLowerCase()} is released.`
+    : cancelClosed && booking.cancellableUntil
+      ? `Cancellations closed ${formatDay(booking.cancellableUntil, zone)}, ${formatTime(booking.cancellableUntil, zone)}. Contact the venue to change this booking.`
+      : active && booking.cancellableUntil
+        ? `Free cancellation until ${formatDay(booking.cancellableUntil, zone)}, ${formatTime(booking.cancellableUntil, zone)}`
+        : null
 
   return (
-    <article className="flex flex-col gap-4 rounded-lg border bg-card p-4 sm:flex-row sm:items-center sm:p-5">
-      <div className="flex min-w-0 flex-1 gap-4">
-        <DateTile booking={booking} />
-        <div className="flex min-w-0 flex-col gap-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-semibold">{booking.bookableName}</h3>
-            <StatusBadge status={status} />
-          </div>
-          <span className="text-sm text-muted-foreground">
-            {booking.venueName} · {booking.bookableLabel}
-          </span>
-          <span className="text-sm tabular">
-            {when} <span className="text-subtle-foreground">({booking.venueTimeZone})</span>
-          </span>
-          {held ? <HoldTimer deadline={deadline} onExpire={settle} /> : null}
-          {cancelClosed && booking.cancellableUntil ? (
-            <span id={closedNote} className="text-sm text-subtle-foreground">
-              Cancellations closed {formatDay(booking.cancellableUntil, booking.venueTimeZone)},{' '}
-              {formatTime(booking.cancellableUntil, booking.venueTimeZone)}. Contact the venue to change this booking.
-            </span>
-          ) : null}
-          {error ? (
-            <Alert variant="destructive" role="alert" className="mt-1">
-              {error}
-            </Alert>
-          ) : null}
+    <article
+      className={cn(
+        'flex flex-col gap-3 rounded-lg border bg-card p-4 md:flex-row md:items-center md:gap-5 md:px-5 md:py-4',
+        held && 'border-warning',
+      )}
+    >
+      <DateColumn booking={booking} />
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <h3 className="font-semibold">{booking.bookableName}</h3>
+          {held ? <HoldTimer deadline={deadline} onExpire={settle} variant="badge" /> : <StatusBadge status={status} />}
         </div>
+        <p className="-mt-1 text-[13px] text-muted-foreground md:hidden">{booking.venueName}</p>
+        <p className="text-sm text-muted-foreground">
+          <span className="font-semibold text-foreground md:hidden">{formatDay(booking.start, zone)} · </span>
+          <span className="tabular font-semibold text-foreground md:font-normal md:text-muted-foreground">{times}</span>
+          <span className="hidden md:inline"> · {booking.venueName}</span>
+          <span className="text-subtle-foreground"> ({zone})</span>
+        </p>
+        {note ? (
+          <p id={noteId} className={cn('text-[13px]', held ? 'text-warning-soft-foreground' : 'text-subtle-foreground')}>
+            {note}
+          </p>
+        ) : null}
+        {error ? (
+          <Alert variant="destructive" role="alert" className="mt-1">
+            {error}
+          </Alert>
+        ) : null}
       </div>
       {active ? (
-        <div className="flex flex-wrap gap-2 sm:flex-col sm:items-stretch">
-          {held ? (
-            <Button size="touch" onClick={() => confirm.mutate()} loading={confirm.isPending}>
-              Confirm booking
-            </Button>
-          ) : null}
+        <div className="flex gap-2 [&>*]:flex-1 md:[&>*]:flex-none">
           <Button
-            size="touch"
             variant="outline"
             disabled={cancelClosed}
-            aria-describedby={cancelClosed ? closedNote : undefined}
+            aria-describedby={cancelClosed ? noteId : undefined}
             onClick={() => setAskingCancel(true)}
           >
-            {held ? 'Release' : 'Cancel booking'}
+            {held ? 'Release' : 'Cancel'}
           </Button>
+          {held ? (
+            <Button onClick={() => confirm.mutate()} loading={confirm.isPending}>
+              Confirm
+            </Button>
+          ) : null}
         </div>
       ) : null}
       <ConfirmDialog
@@ -248,7 +276,7 @@ function BookingCard({ booking, now }: { booking: Booking; now: number }) {
         onConfirm={() => cancel.mutate()}
       >
         <p>
-          {booking.bookableName} at {booking.venueName}, {when}.
+          {booking.bookableName} at {booking.venueName}, {formatDay(booking.start, zone)} · {times}.
         </p>
         <p>The slot becomes free for others straight away.</p>
       </ConfirmDialog>

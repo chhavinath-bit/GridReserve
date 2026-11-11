@@ -15,7 +15,7 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/patterns/Stat
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { OpenBadge } from './AdminVenuesPage'
-import { CloseReopen } from './CloseReopen'
+import { StatusPanel } from './CloseReopen'
 import { CountryZoneFields } from './CountryZoneFields'
 import { SelectField } from './fields'
 import { fromDays, hoursProblem, toDays, type DayHours } from './hours'
@@ -113,16 +113,18 @@ function VenueEditor({ categories, venue, onReload }: { categories: Category[]; 
 
   const category = categories.find((candidate) => String(candidate.id) === initial.categoryId)
   return (
-    <>
+    <div className="mx-auto max-w-[1080px]">
       <Breadcrumb items={[{ label: 'Venues', to: '/admin/venues' }, { label: venue?.name ?? 'New venue' }]} />
-      <PageHeader title={venue?.name ?? 'New venue'} description={venue ? `${category?.name ?? ''} · ${venue.timeZone}` : 'Its category can’t be changed later.'}>
-      </PageHeader>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <PageHeader
+        title={venue ? `Edit ${venue.name}` : 'New venue'}
+        description={venue ? `${category?.name ?? ''} · ${venue.timeZone}` : 'Its category can’t be changed later.'}
+      />
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
         <Formik<VenueValues> initialValues={initial} validationSchema={schema} onSubmit={onSubmit}>
           {({ isSubmitting, status }) => {
             const formStatus = status as FormStatus | null
             return (
-              <Form noValidate className="flex flex-col gap-5 rounded-lg border bg-card p-5 sm:p-6">
+              <Form noValidate className="flex flex-col gap-4">
                 {formStatus?.code === 'STALE_UPDATE' ? (
                   <Alert variant="warning" role="alert">
                     <div className="flex flex-1 flex-col gap-2">
@@ -137,21 +139,32 @@ function VenueEditor({ categories, venue, onReload }: { categories: Category[]; 
                 ) : (
                   <FormErrors fields={FIELDS} formError={formStatus?.message ?? null} />
                 )}
-                <SelectField
-                  name="categoryId"
-                  label="Category"
-                  disabled={venue !== null}
-                  options={categories.map((candidate) => ({ value: String(candidate.id), label: candidate.name }))}
-                />
-                <FormField name="name" label="Name" autoComplete="off" />
-                <FormField name="addressLine" label="Address" autoComplete="off" />
-                <CountryZoneFields />
-                <WeeklyHoursEditor name="hours" legend="Opening hours (in the venue’s time zone; unticked days are closed)" />
+                <section className="grid gap-4 rounded-lg border bg-card p-5 sm:grid-cols-2">
+                  <FormField name="name" label="Name" autoComplete="off" />
+                  <SelectField
+                    name="categoryId"
+                    label="Category"
+                    disabled={venue !== null}
+                    options={categories.map((candidate) => ({ value: String(candidate.id), label: candidate.name }))}
+                  />
+                  <div className="sm:col-span-2">
+                    <FormField name="addressLine" label="Address" autoComplete="off" />
+                  </div>
+                </section>
+                <section aria-labelledby="location-title" className="flex flex-col gap-4 rounded-lg border bg-card p-5">
+                  <h2 id="location-title" className="font-semibold">
+                    Location and time zone
+                  </h2>
+                  <CountryZoneFields />
+                </section>
+                <section className="rounded-lg border bg-card p-5">
+                  <WeeklyHoursEditor name="hours" legend="Opening hours (in the venue’s time zone; unticked days are closed)" />
+                </section>
                 <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                  <Button asChild variant="ghost" size="touch">
+                  <Button asChild variant="outline">
                     <Link to="/admin/venues">Cancel</Link>
                   </Button>
-                  <Button type="submit" size="touch" loading={isSubmitting}>
+                  <Button type="submit" loading={isSubmitting}>
                     {venue ? 'Save changes' : 'Create venue'}
                   </Button>
                 </div>
@@ -160,9 +173,8 @@ function VenueEditor({ categories, venue, onReload }: { categories: Category[]; 
           }}
         </Formik>
         {venue ? (
-          <div className="flex flex-col gap-6">
-            <CloseReopen
-              what="venue"
+          <div className="flex flex-col gap-4">
+            <StatusPanel
               name={venue.name}
               active={venue.active}
               onChange={(active) => adminApi.setVenueActive(venue.id, active)}
@@ -175,7 +187,7 @@ function VenueEditor({ categories, venue, onReload }: { categories: Category[]; 
           </div>
         ) : null}
       </div>
-    </>
+    </div>
   )
 }
 

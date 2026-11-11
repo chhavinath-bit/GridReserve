@@ -58,8 +58,8 @@ for (const scheme of ['light', 'dark'] as const) {
   }
 }
 
-// The breadcrumb on the booking page links back to the venue.
+// The booking page links back to its venue (breadcrumb from 768 px, back button on phones).
 async function venueIdOf(page: Page): Promise<string> {
-  const href = await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link').first().getAttribute('href')
+  const href = await page.locator('a[href^="/venues/"]').first().getAttribute('href')
   return href!.split('/').pop()!
 }

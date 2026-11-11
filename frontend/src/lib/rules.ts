@@ -45,3 +45,35 @@ export function weeklyHours(hours: OpeningHours[]): { weekday: OpeningHours['wee
     return { weekday, text: day ? `${shortTime(day.opensAt)} – ${shortTime(day.closesAt)}` : 'Closed' }
   })
 }
+
+/** The rules as short pills for the booking page header: "60-min slots", "1 h to 2 h", "Cancel up to 2 h before". */
+export function ruleChips(rules: {
+  slotMinutes: number | null
+  minDurationMinutes: number | null
+  maxDurationMinutes: number | null
+  cancellationCutoffMinutes: number
+}): string[] {
+  const chips: string[] = []
+  if (rules.slotMinutes != null) chips.push(`${rules.slotMinutes}-min slots`)
+  const { minDurationMinutes: min, maxDurationMinutes: max } = rules
+  if (min != null && max != null) chips.push(min === max ? formatMinutes(min) : `${formatMinutes(min)} to ${formatMinutes(max)}`)
+  chips.push(rules.cancellationCutoffMinutes === 0 ? 'Cancel any time before' : `Cancel up to ${formatMinutes(rules.cancellationCutoffMinutes)} before`)
+  return chips
+}
+
+/** Today's hours at the venue ("06:00 – 23:00" or "Closed"), today being the venue's local weekday. */
+export function hoursToday(hours: OpeningHours[], zone: string, now: Date = new Date()): string {
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'long' }).format(now).toUpperCase()
+  return weeklyHours(hours).find((day) => day.weekday === weekday)?.text ?? 'Closed'
+}
+
+/** "open daily 06:00–23:00" when every day has the same hours, else null (then the week is listed). */
+export function sameEveryDay(hours: OpeningHours[]): string | null {
+  const week = weeklyHours(hours)
+  return week.every((day) => day.text === week[0]!.text) && week[0]!.text !== 'Closed' ? `open daily ${week[0]!.text.replace(' – ', '–')}` : null
+}
+
+/** "Courts", "Seats", "Classes": a group heading from a bookable type's label. */
+export function plural(label: string): string {
+  return /(s|x|ch|sh)$/i.test(label) ? `${label}es` : `${label}s`
+}

@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 // Variants and sizes from DESIGN_SYSTEM §4.1. New looks are new variants here, never className
 // patches in feature code (§8).
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-sm text-sm font-medium transition-colors duration-[120ms] disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-semibold transition-colors duration-[120ms] disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0',
   {
     variants: {
       variant: {
@@ -16,6 +16,8 @@ const buttonVariants = cva(
         outline: 'border border-input bg-card hover:bg-primary-soft hover:text-primary-soft-foreground',
         ghost: 'hover:bg-primary-soft hover:text-primary-soft-foreground',
         destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive-hover',
+        // A first step towards something destructive ("Close Court A…"); the dialog after it uses `destructive`.
+        'destructive-outline': 'border border-destructive/50 bg-card text-destructive hover:bg-destructive-soft',
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {

@@ -5,19 +5,19 @@ import type { Slot } from '@/api/types'
 import { formatTime } from '@/lib/time'
 import { cn } from '@/lib/utils'
 
-// Slot looks from DESIGN_SYSTEM §3.3; every state has a cue besides color (check icon, hatch, label).
+// Slot looks from design A (DESIGN_SYSTEM §3.3); every state has a cue besides color (check icon, dashed border and strike-through, label).
 export type CellState = 'FREE' | 'SELECTED' | 'HELD_BY_ME' | 'TAKEN' | 'PAST'
 
 const cellVariants = cva(
-  'relative flex h-10 items-center justify-center gap-1 rounded-sm border text-sm tabular transition-colors duration-[120ms]',
+  'relative flex h-12 items-center justify-center gap-1 rounded-md border text-sm font-semibold tabular transition-colors duration-[120ms] sm:h-13 sm:text-base lg:h-14',
   {
     variants: {
       state: {
-        FREE: 'border-border bg-card text-foreground hover:bg-primary-soft hover:text-primary-soft-foreground',
+        FREE: 'border-input bg-card text-foreground hover:border-primary hover:bg-primary-soft hover:text-primary-soft-foreground',
         SELECTED: 'border-primary bg-primary text-primary-foreground',
         HELD_BY_ME: 'cursor-default border-warning bg-warning-soft text-warning-soft-foreground',
-        TAKEN: 'hatch cursor-not-allowed border-transparent bg-slot-taken text-slot-taken-foreground',
-        PAST: 'cursor-not-allowed border-transparent bg-card text-subtle-foreground opacity-50',
+        TAKEN: 'cursor-not-allowed border-dashed border-subtle-foreground/60 bg-muted font-medium text-subtle-foreground',
+        PAST: 'cursor-not-allowed border-transparent bg-transparent font-medium text-subtle-foreground opacity-60',
       },
     },
   },
@@ -64,12 +64,20 @@ export function SlotGrid({ slots, zone, selected, heldByMe = [], onSelect }: Slo
     cells.current[next]?.focus()
   }
 
+  const grid = useRef<HTMLDivElement>(null)
+
+  // 3 columns on phones, 4 from 640 px: up and down move by whatever the grid shows right now.
+  const columns = () => {
+    const template = grid.current ? getComputedStyle(grid.current).gridTemplateColumns : ''
+    return template && template !== 'none' ? template.split(' ').length : COLUMNS
+  }
+
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const moves: Record<string, number> = {
       ArrowRight: index + 1,
       ArrowLeft: index - 1,
-      ArrowDown: index + COLUMNS,
-      ArrowUp: index - COLUMNS,
+      ArrowDown: index + columns(),
+      ArrowUp: index - columns(),
       Home: 0,
       End: slots.length - 1,
     }
@@ -81,7 +89,7 @@ export function SlotGrid({ slots, zone, selected, heldByMe = [], onSelect }: Slo
   }
 
   return (
-    <div role="group" aria-label={`Time slots, times in ${zone}`} className="grid grid-cols-4 gap-2">
+    <div role="group" aria-label={`Time slots, times in ${zone}`} ref={grid} className="grid grid-cols-3 gap-2 sm:grid-cols-4">
       {slots.map((slot, index) => {
         const state = stateOf(index)
         const selectable = state === 'FREE' || state === 'SELECTED'
@@ -107,7 +115,7 @@ export function SlotGrid({ slots, zone, selected, heldByMe = [], onSelect }: Slo
           >
             {state === 'SELECTED' ? <Check className="size-3.5" aria-hidden /> : null}
             {state === 'HELD_BY_ME' ? <Timer className="size-3.5" aria-hidden /> : null}
-            <span className={cn(state === 'PAST' && 'line-through')}>{time}</span>
+            <span className={cn(state === 'TAKEN' && 'line-through')}>{time}</span>
           </button>
         )
       })}

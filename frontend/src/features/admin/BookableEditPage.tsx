@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Form, Formik, type FormikHelpers } from 'formik'
+import { Form, Formik, useField, type FormikHelpers } from 'formik'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import * as Yup from 'yup'
@@ -13,8 +13,9 @@ import { PageHeader } from '@/components/patterns/PageHeader'
 import { ErrorState, LoadingState } from '@/components/patterns/States'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { formatMinutes } from '@/lib/rules'
-import { CloseReopen } from './CloseReopen'
+import { Input } from '@/components/ui/input'
+import { formatMinutes, sameEveryDay } from '@/lib/rules'
+import { StatusPanel } from './CloseReopen'
 import { SelectField } from './fields'
 import { fromDays, hoursProblem, toDays, type DayHours } from './hours'
 import { applyServerError, type FormStatus } from './serverErrors'
@@ -146,9 +147,10 @@ function BookableEditor({ venue, category, bookable, onReload }: { venue: Venue;
     }
   }
 
-  const title = bookable?.name ?? `New bookable at ${venue.name}`
+  const title = bookable ? `Edit ${bookable.name}` : `New bookable at ${venue.name}`
+  const venueDaily = sameEveryDay(venue.openingHours)
   return (
-    <>
+    <div className="mx-auto max-w-[1080px]">
       <Breadcrumb
         items={[
           { label: 'Venues', to: '/admin/venues' },
@@ -156,15 +158,14 @@ function BookableEditor({ venue, category, bookable, onReload }: { venue: Venue;
           { label: bookable?.name ?? 'New bookable' },
         ]}
       />
-      <PageHeader title={title} description={`${category.name} · times in ${venue.timeZone}`}>
-      </PageHeader>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <PageHeader title={title} description={`${category.name} · times in ${venue.timeZone}`} />
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
         <Formik<BookableValues> initialValues={initial} validationSchema={schema} onSubmit={onSubmit}>
           {({ isSubmitting, status, values, setFieldValue }) => {
             const formStatus = status as FormStatus | null
             const type = category.bookableTypes.find((candidate) => String(candidate.id) === values.bookableTypeId)
             return (
-              <Form noValidate className="flex flex-col gap-5 rounded-lg border bg-card p-5 sm:p-6">
+              <Form noValidate className="flex flex-col gap-4">
                 {formStatus?.code === 'STALE_UPDATE' ? (
                   <Alert variant="warning" role="alert">
                     <div className="flex flex-1 flex-col gap-2">
@@ -179,32 +180,46 @@ function BookableEditor({ venue, category, bookable, onReload }: { venue: Venue;
                 ) : (
                   <FormErrors fields={FIELDS} formError={formStatus?.message ?? null} />
                 )}
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <SelectField name="bookableTypeId" label="Type" options={types.map((candidate) => ({ value: String(candidate.id), label: candidate.label }))} />
+                <section className="grid gap-4 rounded-lg border bg-card p-5 sm:grid-cols-2">
                   <FormField name="name" label="Name" autoComplete="off" />
-                </div>
-                <fieldset className="flex flex-col gap-4">
-                  <legend className="mb-1 text-sm font-medium">Rules</legend>
-                  <p className="-mt-2 text-sm text-muted-foreground">Leave a field empty to use the {type?.label.toLowerCase() ?? 'type'}’s default.</p>
-                  <RuleFields type={type} />
-                </fieldset>
-                <div className="flex flex-col gap-3">
-                  <label className="flex items-center gap-2 text-sm font-medium">
-                    <input
-                      type="checkbox"
-                      className="size-4 accent-primary"
-                      checked={values.ownHours}
-                      onChange={(event) => void setFieldValue('ownHours', event.target.checked)}
-                    />
-                    Own opening hours (otherwise the venue’s)
-                  </label>
+                  <SelectField
+                    name="bookableTypeId"
+                    label="Type"
+                    options={types.map((candidate) => ({ value: String(candidate.id), label: `${candidate.label} (${category.name})` }))}
+                  />
+                </section>
+                <section aria-labelledby="rules-title" className="rounded-lg border bg-card p-5">
+                  <h2 id="rules-title" className="font-semibold">
+                    Booking rules
+                  </h2>
+                  <p className="mb-4 mt-1 text-[13px] text-muted-foreground">
+                    Leave a field empty to use the {type?.label ?? 'type'} default. Changes apply to new bookings only.
+                  </p>
+                  <RuleTable type={type} values={values} />
+                </section>
+                <section aria-labelledby="hours-title" className="flex flex-col gap-4 rounded-lg border bg-card p-5">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-6">
+                    <h2 id="hours-title" className="font-semibold md:w-36">
+                      Opening hours
+                    </h2>
+                    <div role="radiogroup" aria-labelledby="hours-title" className="flex flex-col gap-2 text-sm sm:flex-row sm:gap-6">
+                      <label className="flex items-center gap-2">
+                        <input type="radio" className="size-4 accent-primary" checked={!values.ownHours} onChange={() => void setFieldValue('ownHours', false)} />
+                        Use the venue’s{venueDaily ? ` (${venueDaily.replace('open ', '')})` : ''}
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input type="radio" className="size-4 accent-primary" checked={values.ownHours} onChange={() => void setFieldValue('ownHours', true)} />
+                        Own hours
+                      </label>
+                    </div>
+                  </div>
                   {values.ownHours ? <WeeklyHoursEditor name="hours" legend="Opening hours for this bookable" /> : null}
-                </div>
+                </section>
                 <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                  <Button asChild variant="ghost" size="touch">
+                  <Button asChild variant="outline">
                     <Link to={`/admin/venues/${venue.id}`}>Cancel</Link>
                   </Button>
-                  <Button type="submit" size="touch" loading={isSubmitting}>
+                  <Button type="submit" loading={isSubmitting}>
                     {bookable ? 'Save changes' : 'Create bookable'}
                   </Button>
                 </div>
@@ -213,8 +228,7 @@ function BookableEditor({ venue, category, bookable, onReload }: { venue: Venue;
           }}
         </Formik>
         {bookable ? (
-          <CloseReopen
-            what={bookable.label.toLowerCase()}
+          <StatusPanel
             name={bookable.name}
             active={bookable.active}
             onChange={(active) => adminApi.setBookableActive(bookable.id, active)}
@@ -225,27 +239,84 @@ function BookableEditor({ venue, category, bookable, onReload }: { venue: Venue;
           />
         ) : null}
       </div>
-    </>
+    </div>
   )
 }
 
-function RuleFields({ type }: { type: BookableType | undefined }) {
-  const fallback = (value: number | null | undefined) => (value == null ? 'Default' : `Default ${formatMinutes(value)}`)
+const RULES = [
+  { name: 'slotMinutes', label: 'Slot length' },
+  { name: 'minDurationMinutes', label: 'Shortest booking' },
+  { name: 'maxDurationMinutes', label: 'Longest booking' },
+  { name: 'bufferMinutes', label: 'Buffer after' },
+] as const
+
+/** Rule | Override | Applies: what the admin typed next to what will really be used (FR-CAT-04). */
+function RuleTable({ type, values }: { type: BookableType | undefined; values: BookableValues }) {
+  const defaults: Record<(typeof RULES)[number]['name'], number | null | undefined> = {
+    slotMinutes: type?.slotMinutes,
+    minDurationMinutes: type?.minDurationMinutes,
+    maxDurationMinutes: type?.maxDurationMinutes,
+    bufferMinutes: type?.bufferMinutes,
+  }
+  const applies = (name: (typeof RULES)[number]['name']) => {
+    const own = values[name]
+    if (own !== '' && own !== DEFAULT && /^\d+$/.test(own)) return { text: formatMinutes(Number(own)), own: true }
+    const fallback = defaults[name]
+    return { text: fallback == null ? '—' : `${formatMinutes(fallback)} (default)`, own: false }
+  }
   return (
-    <div className="grid gap-5 sm:grid-cols-2">
-      <SelectField
-        name="slotMinutes"
-        label="Slot length"
-        options={[
-          { value: DEFAULT, label: type?.slotMinutes ? `Default (${type.slotMinutes} min)` : 'Default' },
-          { value: '15', label: '15 min' },
-          { value: '30', label: '30 min' },
-          { value: '60', label: '60 min' },
-        ]}
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-start gap-x-4 gap-y-3 text-sm md:grid-cols-[1.3fr_1fr_1fr] md:items-center">
+      <span className="hidden text-xs font-semibold uppercase tracking-wide text-subtle-foreground md:block">Rule</span>
+      <span className="hidden text-xs font-semibold uppercase tracking-wide text-subtle-foreground md:block">Override</span>
+      <span className="hidden text-xs font-semibold uppercase tracking-wide text-subtle-foreground md:block">Applies</span>
+      {RULES.map(({ name, label }) => {
+        const value = applies(name)
+        return (
+          <div key={name} className="contents">
+            <span className="col-span-2 font-medium md:col-span-1">{label}</span>
+            {name === 'slotMinutes' ? (
+              <SelectField
+                name={name}
+                label={`${label} override`}
+                hideLabel
+                options={[
+                  { value: DEFAULT, label: 'Default' },
+                  { value: '15', label: '15 min' },
+                  { value: '30', label: '30 min' },
+                  { value: '60', label: '60 min' },
+                ]}
+              />
+            ) : (
+              <RuleInput name={name} label={`${label} override`} placeholder={defaults[name] == null ? '' : String(defaults[name])} />
+            )}
+            <span className={value.own ? 'self-center font-semibold' : 'self-center text-muted-foreground'}>{value.text}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/** A minutes field without a visible label (the row names it), wired to Formik like FormField. */
+function RuleInput({ name, label, placeholder }: { name: string; label: string; placeholder: string }) {
+  const [field, meta] = useField<string>(name)
+  const error = meta.touched ? meta.error : undefined
+  return (
+    <div className="flex flex-col gap-1">
+      <Input
+        id={name}
+        {...field}
+        aria-label={label}
+        inputMode="numeric"
+        placeholder={placeholder}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? `${name}-error` : undefined}
       />
-      <FormField name="bufferMinutes" label="Buffer (minutes)" inputMode="numeric" placeholder={fallback(type?.bufferMinutes)} hint="Kept free after each booking." />
-      <FormField name="minDurationMinutes" label="Shortest booking (minutes)" inputMode="numeric" placeholder={fallback(type?.minDurationMinutes)} />
-      <FormField name="maxDurationMinutes" label="Longest booking (minutes)" inputMode="numeric" placeholder={fallback(type?.maxDurationMinutes)} />
+      {error ? (
+        <p id={`${name}-error`} className="text-xs text-destructive">
+          {error}
+        </p>
+      ) : null}
     </div>
   )
 }

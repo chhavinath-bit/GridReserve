@@ -1,6 +1,6 @@
-import { CalendarDays, LogOut, Search, Settings2, type LucideIcon } from 'lucide-react'
-import type { ReactNode } from 'react'
-import { NavLink } from 'react-router'
+import { CalendarDays, ChevronLeft, LogOut, Search, Settings2, type LucideIcon } from 'lucide-react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { Link, NavLink } from 'react-router'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,6 +41,27 @@ function navItems(isAdmin: boolean): NavItem[] {
   return items
 }
 
+/** What a page shows in the phone top bar instead of the logo (design A): its title, and a way back. */
+export interface PhoneHeader {
+  title: string
+  subtitle?: string
+  backTo?: string
+  backLabel?: string
+}
+
+const PhoneHeaderContext = createContext<(header: PhoneHeader | null) => void>(() => undefined)
+
+/** Sets the phone top bar while the calling page is shown; tablets and desktops keep the full bar. */
+export function usePhoneHeader(header: PhoneHeader | null) {
+  const set = useContext(PhoneHeaderContext)
+  // Compared by value, so a page passing a new object each render doesn't loop.
+  const key = header ? JSON.stringify(header) : ''
+  useEffect(() => {
+    set(key ? (JSON.parse(key) as PhoneHeader) : null)
+    return () => set(null)
+  }, [set, key])
+}
+
 export function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
   return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : '')).toUpperCase() || '?'
@@ -52,13 +73,16 @@ export function initials(name: string): string {
  */
 export function AppShell({ user, onLogout, children }: AppShellProps) {
   const items = navItems(user?.isAdmin ?? false)
+  const [phoneHeader, setPhoneHeader] = useState<PhoneHeader | null>(null)
   return (
+    <PhoneHeaderContext.Provider value={setPhoneHeader}>
     <div className="min-h-dvh bg-canvas">
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-sm focus:bg-card focus:p-2">
         Skip to content
       </a>
       <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="mx-auto flex h-14 max-w-[1200px] items-center gap-6 px-4 sm:px-6 md:h-16 lg:px-10">
+        {phoneHeader ? <PhoneBar header={phoneHeader} /> : null}
+        <div className={cn('mx-auto flex h-14 max-w-[1200px] items-center gap-6 px-4 sm:px-6 md:h-16 lg:px-10', phoneHeader && 'hidden md:flex')}>
           <NavLink to="/" aria-label="GridReserve home" className="rounded-sm">
             <Logo />
           </NavLink>
@@ -70,8 +94,8 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
                 end={end}
                 className={({ isActive }) =>
                   cn(
-                    'rounded-sm px-3 py-2 text-sm font-medium transition-colors duration-[120ms]',
-                    isActive ? 'bg-primary-soft text-primary-soft-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                    'rounded-md px-3 py-2 text-sm transition-colors duration-[120ms]',
+                    isActive ? 'bg-primary-soft font-semibold text-primary-soft-foreground' : 'font-medium text-muted-foreground hover:bg-muted hover:text-foreground',
                   )
                 }
               >
@@ -112,6 +136,25 @@ export function AppShell({ user, onLogout, children }: AppShellProps) {
           ))}
         </ul>
       </nav>
+    </div>
+    </PhoneHeaderContext.Provider>
+  )
+}
+
+function PhoneBar({ header }: { header: PhoneHeader }) {
+  return (
+    <div className="flex h-14 items-center gap-1 px-2 md:hidden">
+      {header.backTo ? (
+        <Link to={header.backTo} aria-label={header.backLabel ?? 'Back'} className="flex size-11 shrink-0 items-center justify-center rounded-md">
+          <ChevronLeft className="size-5" aria-hidden />
+        </Link>
+      ) : (
+        <span className="w-3" />
+      )}
+      <div className="min-w-0">
+        <p className="truncate font-semibold">{header.title}</p>
+        {header.subtitle ? <p className="truncate text-xs text-muted-foreground">{header.subtitle}</p> : null}
+      </div>
     </div>
   )
 }
