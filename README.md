@@ -67,11 +67,10 @@ curl -i localhost:8080/api/v1/ping
 
 ### Demo accounts and logging in
 
-Demo-only accounts, seeded by `identity-service` (fictional; never use these passwords anywhere else):
+Demo-only member accounts, seeded by `identity-service` (fictional; never use these passwords anywhere else). An admin account is seeded too; its password isn't published, and on the live site it is disabled (admins there are the owner's own accounts):
 
 | Email | Password | Role |
 |---|---|---|
-| `admin@gridreserve.test` | `demo-admin-pass` | ADMIN |
 | `alice@gridreserve.test` | `demo-alice-pass` | MEMBER |
 | `bob@gridreserve.test` | `demo-bob-pass` | MEMBER |
 
@@ -147,7 +146,7 @@ The same slot for another member answers `409 SLOT_TAKEN`; the same member at th
 
 ### Admin: manage the catalog and see every booking
 
-Log in as the demo admin (`ADMIN_TOKEN`, same login call as above with `admin@gridreserve.test`). Members get `403` for all of this.
+Log in as an admin (`ADMIN_TOKEN`, same login call as above with an admin's email and password). Members get `403` for all of this.
 
 ```bash
 A="Authorization: Bearer $ADMIN_TOKEN"; J="Content-Type: application/json"
@@ -258,7 +257,7 @@ The resilience settings (circuit-breaker thresholds, retries, bulkhead and rate-
 ```bash
 # 1. Edit the config repo, e.g. gridreserve-config/booking-service.yml (dev reads your local clone)
 # 2. Apply it everywhere (finds every instance in Eureka, POST /actuator/refresh with an admin token):
-GRIDRESERVE_ADMIN_EMAIL=admin@gridreserve.test GRIDRESERVE_ADMIN_PASSWORD=demo-admin-pass \
+GRIDRESERVE_ADMIN_EMAIL=<admin email> GRIDRESERVE_ADMIN_PASSWORD=<admin password> \
   scripts/refresh-config.sh booking-service
 # booking-service 172.18.0.8:8082 → 200, changed keys: ["resilience4j.circuitbreaker…failure-rate-threshold"]
 # booking-service 172.18.0.6:8082 → 200, …
