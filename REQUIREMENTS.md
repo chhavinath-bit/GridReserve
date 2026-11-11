@@ -1,6 +1,7 @@
 # GridReserve — Requirements
 
-> Version 0.17 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Version 0.18 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Changes from v0.17 (M1.13, 2026-11-11, D-45): FR-BK-05 takes several `status` values and an `order` (`asc`/`desc`); new FR-UI-11 (five screen widths, light and dark, no sideways scrolling), FR-UI-12 (every dropdown searchable) and FR-UI-13 (My bookings: one paged list per tab with Load more); FR-UI-01 names the category chips as the Browse category control.
 > Changes from v0.16 (M1.12, 2026-11-11, D-44): IDEM-03 defines "same body" as the same bookable and times (normalized), and replays carry `Idempotent-Replayed: true`; IDEM-06 says a replayed refusal has the same status, code and message (new timestamp and request ID); IDEM-07 says an expired key counts as unused before the cleanup deletes it; FR-AUD-01 names the actor rules. CONC-08 proven.
 > Changes from v0.15 (M1.11, 2026-11-11, D-43): FR-CAT-07/08 say a venue's category and a bookable's venue are fixed after creation, updates carry the `version` read (FR-CAT-15), and CAPACITY bookables can't be created before Phase 2 (`422 WRONG_BOOKING_MODEL`); FR-CAT-09 is checked on the effective rules; FR-ADM-01 gives the response shape (`memberDetailsAvailable`); CONC-09 proven.
 > Changes from v0.14 (M1.10, 2026-11-10, D-15): PLAT-07 verified with the deploy setup (restart with backoff, fail fast without the Config Server); new NFR-OPS-05 (nightly encrypted off-site backups with a restore drill) and NFR-OPS-06 (every release is one commit's images, smoke-tested from outside; rollback by redeploying an older commit).
@@ -284,7 +285,7 @@ Acceptance criteria use Given / When / Then. Each story links to the requirement
 - **FR-BK-02** All rules in section 6 shall be validated before insert; the database constraints (BR-10, BR-11) are the final guard.
 - **FR-BK-03** `POST /api/v1/bookings/{id}/confirm` shall move `HELD → CONFIRMED` if `now < expiresAt`; otherwise mark it `EXPIRED` and return `409 HOLD_EXPIRED`. Only the owner may confirm (anyone else, admins included, gets `404`). Confirming a booking already `EXPIRED` also answers `409 HOLD_EXPIRED`; confirming one in any other state answers `409 INVALID_STATE`.
 - **FR-BK-04** `POST /api/v1/bookings/{id}/cancel` shall move `HELD` or `CONFIRMED` → `CANCELLED` according to section 8, with an optional `reason` (max 200 chars). A `HELD` booking whose hold has run out is not cancelled: it is recorded as `EXPIRED` and the answer is `409 INVALID_STATE` (CXL-01). `cancelledBy` is `MEMBER` when the owner cancels (also an admin cancelling their own booking) and `ADMIN` when an admin cancels another member's booking.
-- **FR-BK-05** `GET /api/v1/bookings/me?status=&from=&to=&page=&size=` shall list the caller's bookings, newest start first by default.
+- **FR-BK-05** `GET /api/v1/bookings/me?status=&from=&to=&order=&page=&size=` shall list the caller's bookings. `status` may repeat (`?status=HELD&status=CONFIRMED`; none = all statuses); `from`/`to` filter on the start time; `order` is `desc` (newest start first, the default) or `asc` (soonest first); anything else answers `400 VALIDATION_FAILED` on `order`.
 - **FR-BK-06** `GET /api/v1/bookings/{id}` shall return a booking the caller owns (or any booking, for ADMIN).
 - **FR-BK-07** Every booking response shall include: `id`, `bookableId`, `bookableName`, `bookableLabel`, `venueName`, `venueTimeZone`, `start`, `end`, `status`, `expiresAt` (if HELD), `createdAt`, `cancelledAt`, `cancelledBy` (`MEMBER`/`ADMIN`/`SYSTEM`), `cancellableUntil` (the last moment the owner can cancel: `expiresAt` while HELD, `start − cancellationCutoff` when CONFIRMED, null otherwise; added in v0.12).
 - **FR-BK-08** Allowed status transitions are only those in BR-13. Any other transition returns `409 INVALID_STATE`.
@@ -317,7 +318,7 @@ Acceptance criteria use Given / When / Then. Each story links to the requirement
 
 ### 5.9 Frontend (FR-UI)
 
-- **FR-UI-01** Pages: Login, Register, Browse (category dropdown → venue list → bookable list grouped by type), Slot picker, My bookings, Admin: venues, bookables, all bookings. Routing with React Router.
+- **FR-UI-01** Pages: Login, Register, Browse (category control, shown as one-press chips with "All" → venue list → bookable list grouped by type), Slot picker, My bookings, Admin: venues, bookables, all bookings. Routing with React Router.
 - **FR-UI-02** The bookable label shown everywhere comes from the bookable type (no hard-coded "Room", "Seat", …).
 - **FR-UI-03** Every data view shall have a loading state, an error state (showing the API `message`) and an empty state.
 - **FR-UI-04** The slot picker shall display times in the venue's time zone and show the zone name.
@@ -327,6 +328,9 @@ Acceptance criteria use Given / When / Then. Each story links to the requirement
 - **FR-UI-08** Admin screens shall be hidden from MEMBERs; the backend remains the actual guard (FR-ROLE-03).
 - **FR-UI-09** The admin venue form shall offer a country select and, for that country, its time zones (pre-filled when there is one).
 - **FR-UI-10** On `503 SERVICE_UNAVAILABLE` or `504 UPSTREAM_TIMEOUT` the UI shall show a "temporarily unavailable, please retry" message without losing the user's selection.
+- **FR-UI-11** Every screen shall work at widths 360, 640, 768, 1024 and 1440 px, in light and dark, without sideways scrolling of the page; phones get a bottom tab bar and page headers with a way back (design A, D-45).
+- **FR-UI-12** Every dropdown shall have a search box that filters its options as the user types (case and accents ignored), operable by keyboard.
+- **FR-UI-13** My bookings shall show Upcoming (HELD and CONFIRMED from now, soonest first), Past (CONFIRMED before now, newest first) and Cancelled & expired as separate lists, each asked from the API page by page with a "Load more" button, so no booking is left out.
 
 ## 6. Booking rules, EXCLUSIVE model (BR)
 
@@ -705,7 +709,7 @@ Items carried over from PROJECT.md §10 are marked (PROJECT).
 | 7 Rule validation | BR-01..09, BR-14, CXL-01..06 |
 | 8 Hold expiry | FR-EXP-01..04, CONC-04, FS-08, FS-21 |
 | 9 Error format and validation | API-05, API-06, §15.3, PLAT-12, NFR-SEC-04/05 |
-| 10 Frontend | FR-UI-01..10 |
+| 10 Frontend | FR-UI-01..13 |
 | 11 Platform | PLAT-01..12, RES-01..10, US-12, US-13, FS-32..38 |
 | 12 Quality and delivery | NFR-TEST-01..06, NFR-OPS-01..04, CONC-01, CONC-10, FR-SEED-01..03 |
 | 13 Idempotency and audit | IDEM-01..07, CONC-08, FR-AUD-01..03 |

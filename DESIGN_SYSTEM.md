@@ -1,5 +1,6 @@
 # GridReserve — Design System
 
+> Version 0.2 (draft, 2026-11-11). Changes from v0.1 (M1.13, D-45): design direction **A** chosen by the owner and built on every screen (controls with 10 px corners, cards 14 px, semibold buttons, 44 px inputs; dark selected day in the date strip; taken slots dashed and struck through instead of hatched; phones with a bottom tab bar and page headers with a back button); every dropdown is a searchable `Combobox` (the Radix `Select` was removed); axe checks approved (D-UI-4).
 > Version 0.1 (draft, 2026-11-05). Owner decisions: **calm, precise SaaS** style; components built with **shadcn/ui on Radix primitives**, styled with Tailwind; **light and dark** themes.
 > Applies to everything in `frontend/`. Requirement IDs (`FR-UI-03`, …) refer to REQUIREMENTS.md.
 > No UI code exists yet. Tokens below are the source of truth; the implementation must use them, never raw colors.
@@ -71,7 +72,7 @@ Implementation aliases (no new colors, so no new contrast pairs): shadcn's `--mu
 | `FREE` | `--card` | `--foreground` | `--border` | Hover: `--primary-soft` |
 | `SELECTED` (my pick) | `--primary` | `--primary-foreground` | `--primary` | Check icon; `aria-pressed="true"` |
 | `HELD_BY_ME` | `--warning-soft` | `--warning-soft-foreground` | `--warning` | Timer icon + countdown |
-| `TAKEN` | `--slot-taken` (`#F4F4F5` / `#1C1C21`) | `--slot-taken-foreground` (`#626269` / `#8B8B94`) | none | Diagonal hatch pattern, "Taken" label for screen readers, not focusable as an action |
+| `TAKEN` | `--slot-taken` (`#F4F4F5` / `#1C1C21`) | `--slot-taken-foreground` (`#626269` / `#8B8B94`) | none | Dashed border and struck-through time (design A, v0.2; was a diagonal hatch), "taken" in the accessible name, focusable but not selectable |
 | `PAST` | `--card` at 50 % opacity | `--subtle-foreground` | none | Not interactive |
 
 ### 3.4 Contrast check
@@ -128,7 +129,7 @@ Letter spacing `-0.01em` for 20 px and above. Never more than two weights on one
 | `Button` | `primary`, `secondary`, `outline`, `ghost`, `destructive`, `link`; `sm`, `md`, `lg`, `icon` | default, hover, focus-visible, active, disabled, **loading** (spinner, keeps width, `aria-busy`) | One `primary` per view region |
 | `Input`, `Textarea` | `md`, `sm` | default, focus, invalid (`aria-invalid` + message), disabled | Always paired with `Label` |
 | `Select` | — | open, keyboard navigation, disabled | Radix Select |
-| `Combobox` | — | searching, empty result | Country and time-zone pickers |
+| `Combobox` | — | searching, empty result, invalid, disabled | Every dropdown (v0.2): search box, words in any order, accents ignored, prefix matches first |
 | `DatePicker` / `Calendar` | — | today, selected, disabled (beyond horizon) | Uses the venue time zone for "today" |
 | `Dialog`, `AlertDialog`, `Sheet` | `sm`, `md`, `lg` | open/close, focus trap, Esc | AlertDialog for cancel/deactivate confirmations |
 | `DropdownMenu`, `Popover`, `Tooltip` | — | — | Tooltips never hold essential info |
@@ -193,7 +194,7 @@ Letter spacing `-0.01em` for 20 px and above. Never more than two weights on one
 - Contrast per §3.4; focus ring 2 px `--ring` with 2 px offset on every interactive element.
 - Full keyboard path for the main journey, including the slot grid (arrow keys) and dialogs (focus trap, Esc).
 - Live regions: hold countdown (polite, at 1 minute and expiry), conflict notices (assertive), toasts.
-- State never by color alone (labels, icons, hatch pattern).
+- State never by color alone (labels, icons, dashed borders and strike-through).
 - Forms: visible labels, error text linked with `aria-describedby`, errors summarized on submit.
 - Respects `prefers-reduced-motion` and `prefers-color-scheme`.
 - Tested with keyboard only and a screen reader before each phase closes; automated checks in tests (§9).
@@ -211,7 +212,7 @@ Letter spacing `-0.01em` for 20 px and above. Never more than two weights on one
 
 - Vitest + RTL: each pattern component's states (e.g. `SlotCell` per state, `HoldTimer` warning and expiry, `StatusBadge` mapping, `ConflictNotice` refetch).
 - Playwright: main journey, keyboard-only journey, light/dark screenshots of key screens with Playwright's built-in screenshot comparison (no extra library).
-- Automated accessibility checks with axe in Playwright (pending approval, D-UI-4).
+- Automated accessibility checks with axe in Playwright (D-UI-4, approved 2026-11-11): every screen at 360 and 1440 px, light and dark, WCAG 2.2 AA tags.
 
 ## 10. Decisions
 
@@ -219,6 +220,6 @@ Letter spacing `-0.01em` for 20 px and above. Never more than two weights on one
 |---|---|---|
 | D-UI-1 | Calm, precise SaaS style; neutral + single indigo accent | Decided 2026-11-05 |
 | D-UI-2 | shadcn/ui + Radix, Tailwind, light + dark tokens | Decided 2026-11-05 |
-| D-UI-3 | Supporting UI packages: shadcn's standard helpers (`class-variance-authority`, `clsx`, `tailwind-merge`, `lucide-react` icons, `tw-animate-css`), `radix-ui` (the primitives), `sonner` (toasts), `@fontsource-variable/inter` (self-hosted font) | **Decided 2026-11-07** (M1.6, owner approved the exact list). `react-day-picker` (calendar) and `@tanstack/react-table` (admin tables) still **pending**, asked when first needed |
-| D-UI-4 | `@axe-core/playwright` for automated accessibility checks | **Pending approval** at M1.13 |
+| D-UI-3 | Supporting UI packages: shadcn's standard helpers (`class-variance-authority`, `clsx`, `tailwind-merge`, `lucide-react` icons, `tw-animate-css`), `radix-ui` (the primitives), `sonner` (toasts), `@fontsource-variable/inter` (self-hosted font) | **Decided 2026-11-07** (M1.6, owner approved the exact list). `react-day-picker` and `@tanstack/react-table` **not approved** at M1.13 (native date inputs and a plain `Table` were enough) |
+| D-UI-4 | `@axe-core/playwright` for automated accessibility checks | **Decided 2026-11-11** (M1.13, owner approved; 4.14.0 with `@playwright/test` 1.64.1) |
 | D-UI-5 | Storybook vs dev-only component gallery route | Gallery route (no new dependency) unless Storybook is approved |

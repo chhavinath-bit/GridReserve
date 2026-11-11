@@ -774,9 +774,9 @@ What the new tests execute (behavior): create venue and bookable (201, Location,
 
 ---
 
-## M1.12 Idempotency and audit log — Built, awaiting owner review (2026-11-11)
+## M1.12 Idempotency and audit log — Done (2026-11-11)
 
-One PR (owner); all five recommendations approved (normalized request hash, `Idempotent-Replayed` header, foreign keys without cascade, no backfill, one PR). Decision D-44. Migration V5; no config-repo change.
+Merged by the owner after review: app PR #18 (`6d0d71a`); no config PR. One PR (owner); all five recommendations approved (normalized request hash, `Idempotent-Replayed` header, foreign keys without cascade, no backfill, one PR). Decision D-44. Migration V5; no config-repo change.
 
 **Checkpoint before starting (main `22d1f7e`):** `./mvnw -B verify` BUILD SUCCESS (467 tests); frontend unchanged since M1.11 (38/38); M1.11's CI (system tests 27/27) on the merged code.
 
@@ -825,7 +825,47 @@ What the new tests execute (behavior): FS-17 replay (same body and `Location`, `
 
 ---
 
+## M1.13 Frontend completion and end-to-end tests — Built, awaiting owner review (2026-11-11)
+
+One PR (owner). Decision D-45. Owner choices: design direction **A** for every screen (picked from three directions shown as light/dark designs), five widths (360, 640, 768, 1024, 1440), light and dark; My bookings paged per tab with Load more; `@playwright/test` and `@axe-core/playwright` approved, `@tanstack/react-table` and `react-day-picker` not; every dropdown searchable (owner request); `components/ui/select.tsx` deleted (owner approved). No migration, no config-repo change.
+
+**Checkpoint before starting (main `6d0d71a`):** M1.12 merged with CI green (run 42896222132).
+
+**Built:**
+- API: `GET /bookings/me` takes repeated `status` and `order=asc|desc` (else 400 on `order`); `BookingRepository.findMine` with "any status" (FR-BK-05).
+- Shell and member screens in design A: top bar with Admin for admins, account menu, theme menu; on phones a bottom tab bar and per-page headers with a back button (`usePhoneHeader`); login/register (tinted panel, card on tablets, plain on phones); Browse with category chips and venue cards; venue page (rules per bookable, opening hours, "Open today" on phones); booking page (rule pills, date strip and slots in one card, 3 columns on phones with arrow keys following, summary with time, cancel deadline and hold length as a fixed bar / row / side card, hold panel in the same style); My bookings (one `useInfiniteQuery` per tab, count on Upcoming, segmented tabs on phones, cancellation note, held cards with a countdown badge, confirm dialog for cancel).
+- Admin (ADMIN only, members get not-found): side menu; venues with search, category filter and close/reopen per row; venue and bookable forms (Formik + Yup mirroring the server, country → time zone, weekly hours, rule overrides next to what applies, server field errors under fields, `STALE_UPDATE` → Reload, status panel with a confirm dialog and the kept-bookings count in the toast); all bookings with filters, pages, a row-opened drawer with the audit timeline and cancel with a reason; degraded banner when member names are unavailable.
+- Components: `Dialog` (+ sheet), `ConfirmDialog`, `DropdownMenu`, `Textarea`, `Table`, `Combobox` (search, all words, accents ignored, prefix first, keyboard), `ChipGroup`, `Breadcrumb`, `Logo`; button variant `destructive-outline` and size `touch`; controls with 10 px corners; taken slots dashed and struck through. Gallery `/dev/components` shows them all, light and dark.
+- Playwright (`frontend/e2e`, `npm run e2e`): journey with reload and cancel, hold running out (`page.clock`), two-member race, admin (drawer, form validation, member kept out), 503 with Retry (`page.route`), every screen at five widths in light and dark with no sideways scroll and axe WCAG 2.2 AA at 360 and 1440. Tests cancel what they book (`Cleanup`).
+- CI: the system-tests job runs `npm run e2e` against the fresh Compose stack before the system tests (Chromium only; report kept 7 days on failure) and now waits for the frontend job.
+- Docs: D-45, REQUIREMENTS v0.18 (FR-BK-05, FR-UI-01, new FR-UI-11..13), DESIGN_SYSTEM v0.2 (design A, Combobox, D-UI-4 decided), CLAUDE.md §13 and §15, README (frontend section, e2e, screenshots in `docs/screenshots/`), review guide, learning rows.
+
+### Test results
+
+`cd backend && ./mvnw -B verify` (in a clean worktree of the branch, without the owner's uncommitted edits): **BUILD SUCCESS, 509 tests**, 0 failures, 0 skipped: common-web 23, config-server 1, discovery-server 1, api-gateway 2 + 12, identity-service 10 + 37, booking-service 70 + 353 (new: `BookingLifecycleIT.myBookingsStatusesAndOrder_FRBK05`).
+
+Frontend: type check and lint clean; **61/61** unit and component tests (new: `rules.test.ts`, `hours.test.ts`, `admin.test.ts`, `combobox.test.tsx`, `initialOf.test.ts`); build OK (700 kB bundle, Vite's size warning).
+
+Playwright `npm run e2e` against the dev Compose stack (two booking instances): **27/27** passed in five consecutive full runs after the redesign fixes, and in three consecutive runs after the design-A rebuild; the last full run after the combobox 27/27.
+
+What the e2e tests execute (behavior): log in, Sports → Sunrise Turf → Court B, last day of the window, hold (countdown shown), confirm, the card in My bookings, reload keeps the session, cancel through the dialog, gone from Upcoming; a hold whose countdown runs out (page clock +5:01) shows "Your hold ran out" and Pick again; alice and bob hold the same slot at once → exactly one Confirm and one "This slot was just taken", the slot then shows taken; admin opens a booking's history drawer and closes it with Escape; the new-venue form reports 5 fields, the weekday error and focuses Category; a member sees no Admin link and gets not-found on `/admin/venues`; availability answering 503 shows the temporary message and Retry recovers; 20 screen runs (member and admin screens × 5 widths × light/dark) with page width = viewport and, at 360 and 1440, no axe violations.
+
+**Found and fixed on the way:** `Button asChild` crashed every page with a link-button (Slot got two children); axe found two real WCAG 2.5.3 problems (account button "AD" named "Account: …", date buttons "Thu12" vs "Thu 12"); two flaky tests were test bugs (reading the old day's slots; axe measuring a colour mid-fade), fixed by waiting for conditions, not retried; the e2e runs first left bookings behind that hit Alice's limit (now cleaned up by the tests; the leftovers 7366, 7367, 7370 were test-made and cancelled).
+
+**Changed tests (not weakened):** `SlotPickerPage.test.tsx` fixture gains the bookable's new fields.
+
+**Not run locally this milestone:** the backend system tests (unchanged code paths; CI runs them with the new e2e step).
+
+### Not covered yet
+- Degraded mode with identity really stopped, in the browser (mocked 503 here; real outage in the system tests); a real screen-reader pass; the deployed site (M1.10 waits for the VM).
+
+### Open issues for later milestones
+- Browse venue cards have no bookable count (the venue list API returns none).
+- JS bundle 700 kB: split admin into its own chunk (M1.14).
+- The dev database holds many cancelled Court A/B test bookings from e2e runs (harmless; `docker compose down -v` would reset it, with approval).
+
+---
+
 ## Open issues
 
-- **My bookings pagination** (owner decision 2026-11-11; do it in M1.13): the page asks only for `GET /bookings/me?page=0&size=50` and splits Upcoming/Past in the browser, so with more than 50 bookings older ones (and, with many future bookings, the nearest upcoming ones) are missing without notice. Fix: each tab asks the API for its own list (Upcoming `from=now`, soonest first, which needs a small sort option on the endpoint; Past `to=now`, newest first; Cancelled & expired by `status`), with a **Load more** button (TanStack Query `useInfiniteQuery`, owner's choice).
 - **M1.10 live deployment** (owner decision 2026-11-11; finish before M1.14): create the Oracle VM when capacity appears, then `docs/deploy/oracle.md` steps 3–8: prod public key into the config repo, Google Drive token, GitHub variables and secrets, packages public, first release with the smoke test from CI, reboot and fail-fast checks on the host, a backup in Drive and `restore-drill.sh`, tag `first-deploy`, README live URL. Until then the live demo is `scripts/demo-tunnel.sh`.

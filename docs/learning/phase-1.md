@@ -100,6 +100,7 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | `@PutMapping` and full replacement | PUT sends the whole editable state, not a patch; the server replaces the fields (and, here, the weekly hours) at once. Simpler to validate than partial updates. | `AdminCatalogController` | M1.11 |
 | Validating list elements: `List<@Valid @NotNull X>` | Annotations on the type argument check each element, and `@Valid` cascades into it; a field error names its index (`openingHours[1].opensAt`). | `CreateVenueRequest` | M1.11 |
 | HTTP method in security rules | `requestMatchers(HttpMethod.POST, "/api/v1/venues/**")` lets members GET a path while only admins POST or PUT to it. | booking `SecurityConfig` | M1.11 |
+| A repeated query parameter as a `List` | `@RequestParam(required = false) List<BookingStatus> status` binds `?status=HELD&status=CONFIRMED` to a list of enums; absent → `null`. A sort direction is checked by hand (`asc`/`desc`) and anything else is a field error. | `BookingController.mine` | M1.13 |
 
 ## 5. Data: PostgreSQL, Flyway, JPA
 
@@ -153,6 +154,7 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | `@Lock(PESSIMISTIC_WRITE)` | A Spring Data query that adds `FOR UPDATE`: the row stays locked until the transaction ends. Cancel uses it so the status it records as "from" can't change underneath. | `BookingRepository.lockById` | M1.12 |
 | `Propagation.MANDATORY` | The method refuses to run without a caller's transaction instead of starting its own. Guarantees an audit row commits or rolls back with its change. | `AuditService.record` | M1.12 |
 | Foreign key without cascade | Deleting a booking that has audit rows fails; history can't disappear by accident (tests delete in order: `TestBookings`). | `V5__audit_and_idempotency.sql` | M1.12 |
+| "Any of these, or all" in JPQL | `(:anyStatus = true or b.status in :statuses)`: one query serves both a filtered and an unfiltered list; the list parameter still needs a non-empty value, so the service passes a dummy when no status was asked for. | `BookingRepository.findMine` | M1.13 |
 
 ## 6. Spring Cloud and the platform
 
@@ -236,6 +238,13 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | Making a test fail on purpose first | A new assertion is checked against the code without the fix; if it still passes, the test proves nothing (here: macOS clocks have no nanoseconds, so the test moves the clock by 123 ns). | `BookingLifecycleIT.holdCreated_FRBK01` | M1.5 |
 | Test data that cleans up after itself | Tests that share a Spring context share one database; a test that creates venues removes them again (`TestCatalog.removeAll`), or other tests' counts change. | `support/TestCatalog` | M1.11 |
 | Proving a race test races | Count how often the interesting interleaving happened (here: holds on both sides of the deactivation) and print it; a race that never interleaves proves little. | `DeactivationRaceIT` | M1.11 |
+| Playwright | Drives a real browser (Chromium) against the running app: `page.getByRole(...)`, `expect(...).toBeVisible()` waits until true. `webServer` in the config starts the app (or reuses one). Fixtures (`test.extend`) add setup and cleanup around each test. | `frontend/playwright.config.ts`, `frontend/e2e/*.spec.ts` | M1.13 |
+| Two browser contexts | Two separate sessions (cookies, storage) in one test, like two people on two phones; used to race two members for one slot. | `e2e/race.spec.ts` | M1.13 |
+| `page.clock` | Playwright's fake clock inside the page: `fastForward('05:01')` makes the countdown run out without waiting 5 minutes. The server's own clock is untouched. | `e2e/journey.spec.ts` | M1.13 |
+| `page.route` | Intercepts the page's requests and answers them from the test (here a `503`), to show the "temporarily unavailable" path without stopping a service. | `e2e/degraded.spec.ts` | M1.13 |
+| axe (`@axe-core/playwright`) | Runs the axe accessibility rules on the rendered page (contrast, names, labels, landmarks) and lists violations; we require none for the WCAG 2.2 AA tags. | `e2e/screens.spec.ts` | M1.13 |
+| Waiting for conditions, not time | Flaky tests here came from reading a value too early (the old day's slots) and measuring a colour mid-fade; the fixes wait for a state (`aria-pressed=true`, `document.getAnimations().length === 0`), never a fixed delay. | `e2e/support.ts`, `e2e/screens.spec.ts` | M1.13 |
+| Test data cleanup through the API | The tests record every booking they create (watching responses) and cancel them afterwards, so a failed run leaves nothing that counts against the member limit. | `Cleanup` in `e2e/support.ts` | M1.13 |
 
 ## 9. Architecture ideas behind the code
 
@@ -311,3 +320,12 @@ Suggested order: Java → Spring core → Spring MVC → Data → Spring Cloud �
 | Client validation vs server validation | The client checks give instant feedback; the server checks are the guard (anyone can send a request without our UI). Server field errors are put back into the form with `setErrors`. | `RegisterPage.tsx` | M1.6 |
 | `npm ci` and exact versions | `npm ci` installs exactly what `package-lock.json` says (CI and fresh clones); every package is pinned without `^`. | `frontend/package.json`, CI | M1.6 |
 | `crypto.randomUUID()` and `useRef` for the key | The browser makes the UUID; a ref keeps it between renders without causing one, so Retry sends the same key and a new selection gets a new one. | `SlotPickerPage`, `lib/idempotency.ts` | M1.12 |
+| `useInfiniteQuery` | TanStack Query for page-by-page lists: `getNextPageParam` says which page comes next, `fetchNextPage()` loads it, `data.pages` keeps every page. | `features/bookings/MyBookingsPage.tsx` | M1.13 |
+| Responsive Tailwind (`sm:` `md:` `lg:`) | Classes without a prefix apply from 0 px; `md:` from 768 px, `lg:` from 1024 px. One component changes layout by width (the booking summary is a fixed bar, a row, then a side card). | `SlotPickerPage`, `AppShell` | M1.13 |
+| React context for the phone header | A page tells the app shell what to show in the phone top bar (`usePhoneHeader`); the shell provides a setter through context, the page sets it in an effect and clears it when it unmounts. | `components/patterns/AppShell.tsx` | M1.13 |
+| Radix Dialog, AlertDialog, DropdownMenu, Tabs, Popover | Unstyled accessible building blocks: focus trap, Escape, focus return, arrow keys and ARIA roles come built in; we add the look with Tailwind. | `components/ui/*`, `MyBookingsPage` (Tabs) | M1.13 |
+| WAI-ARIA combobox | A search input with `role="combobox"` controls a `role="listbox"`; `aria-activedescendant` names the highlighted option, so focus stays in the input while screen readers hear the option. | `components/ui/combobox.tsx` | M1.13 |
+| `String.normalize('NFD')` | Splits "Å" into "A" + a combining ring, so removing the marks (`\p{Diacritic}`) lets "aland" match "Åland". | `components/ui/combobox.tsx` | M1.13 |
+| `Intl.DisplayNames` | The browser's own list of names: `new Intl.DisplayNames(['en'], { type: 'region' }).of('IN')` → "India"; no country-name table to maintain. | `CountryZoneFields`, `VenuePage` | M1.13 |
+| Label in name (WCAG 2.5.3) | A control's accessible name must contain its visible text, so people using voice control can say what they see; axe found two violations ("AD" vs "Account: Alice Demo", "Thu12" vs "Thu 12"). | `AppShell`, `DateStrip` | M1.13 |
+| `asChild` (Radix Slot) | Renders a component's look on its single child instead of its own element, e.g. a `Link` styled as a `Button`; it needs exactly one child, so the spinner is left out then. | `components/ui/button.tsx` | M1.13 |
