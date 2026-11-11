@@ -12,6 +12,8 @@ const booking = (overrides: Partial<Booking>): Booking => ({
   bookableName: 'Court A',
   bookableLabel: 'Court',
   venueName: 'Sunrise Turf',
+  venueCity: 'Bengaluru',
+  venueCountryCode: 'IN',
   venueTimeZone: 'Asia/Kolkata',
   start: '2026-11-08T04:30:00Z',
   end: '2026-11-08T05:30:00Z',

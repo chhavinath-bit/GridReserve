@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label'
 import { Combobox } from '@/components/ui/combobox'
 import { Table, TableCell, TableHead } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
+import { placeLabel } from '@/lib/place'
 import { addDays, formatDay, formatRange, formatTimeRange } from '@/lib/time'
 import { AuditTimeline } from './AuditTimeline'
 
@@ -197,7 +198,9 @@ function BookingRows({ items, onOpen }: { items: AdminBooking[]; onOpen: (row: A
                   </TableCell>
                   <TableCell>
                     {opener(row)}
-                    <span className="block text-[13px] text-muted-foreground">{row.booking.venueName}</span>
+                    <span className="block text-[13px] text-muted-foreground">
+                      {row.booking.venueName}, {row.booking.venueCity}
+                    </span>
                   </TableCell>
                   <TableCell>
                     <span className="block">{who.name}</span>
@@ -220,7 +223,9 @@ function BookingRows({ items, onOpen }: { items: AdminBooking[]; onOpen: (row: A
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   {opener(row)}
-                  <p className="text-[13px] text-muted-foreground">{row.booking.venueName}</p>
+                  <p className="text-[13px] text-muted-foreground">
+                    {row.booking.venueName}, {row.booking.venueCity}
+                  </p>
                 </div>
                 <StatusBadge status={row.booking.status} />
               </div>
@@ -251,7 +256,7 @@ function BookingDrawer({ row, onClose, onCancel }: { row: AdminBooking | null; o
                 {row.booking.bookableName} · {formatDay(row.booking.start, zone)}
               </DialogTitle>
               <DialogDescription>
-                {formatTimeRange(row.booking.start, row.booking.end, zone)} · {member(row).name} · {row.booking.venueName}
+                {formatTimeRange(row.booking.start, row.booking.end, zone)} · {member(row).name} · {row.booking.venueName}, {placeLabel(row.booking.venueCity, row.booking.venueCountryCode)}
               </DialogDescription>
               <div className="mt-1">
                 <StatusBadge status={row.booking.status} />
@@ -299,7 +304,7 @@ function CancelDialog({ row, onClose, onDone }: { row: AdminBooking | null; onCl
         <DialogTitle>Cancel this booking?</DialogTitle>
         {row ? (
           <DialogDescription>
-            {row.booking.bookableName} at {row.booking.venueName}, {formatRange(row.booking.start, row.booking.end, row.booking.venueTimeZone)}, for {member(row).name}. The slot becomes free straight away.
+            {row.booking.bookableName} at {row.booking.venueName}, {row.booking.venueCity}: {formatRange(row.booking.start, row.booking.end, row.booking.venueTimeZone)}, for {member(row).name}. The slot becomes free straight away.
           </DialogDescription>
         ) : null}
         {cancel.error ? (

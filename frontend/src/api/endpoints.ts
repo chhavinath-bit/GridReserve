@@ -14,11 +14,19 @@ export const authApi = {
   me: () => api<User>('/me'),
 }
 
+/** A city in a country, the Browse Location filter (FR-CAT-16). */
+export interface Place {
+  countryCode: string
+  city: string
+}
+
 export const catalogApi = {
   categories: () => api<Category[]>('/categories'),
   /** All venues, or one category's; admins may include closed ones. */
-  venues: (categoryId?: number, includeInactive = false) =>
-    api<Page<VenueSummary>>(`/venues?${query({ categoryId, includeInactive: includeInactive || undefined, size: 100 })}`),
+  venues: (categoryId?: number, includeInactive = false, place?: Place) =>
+    api<Page<VenueSummary>>(
+      `/venues?${query({ categoryId, country: place?.countryCode, city: place?.city, includeInactive: includeInactive || undefined, size: 100 })}`,
+    ),
   venue: (venueId: number) => api<Venue>(`/venues/${venueId}`),
   bookables: (venueId: number, includeInactive = false) =>
     api<Page<BookableSummary>>(`/venues/${venueId}/bookables?${query({ includeInactive: includeInactive || undefined, size: 100 })}`),

@@ -5,6 +5,7 @@ public record VenueSummaryResponse(
         long categoryId,
         String name,
         String addressLine,
+        String city,
         String countryCode,
         String timeZone,
         boolean active) {

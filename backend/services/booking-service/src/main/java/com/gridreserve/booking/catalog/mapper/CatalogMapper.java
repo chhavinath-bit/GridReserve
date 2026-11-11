@@ -42,13 +42,14 @@ public final class CatalogMapper {
 
     public static VenueSummaryResponse toSummary(Venue venue) {
         return new VenueSummaryResponse(venue.getId(), venue.getCategory().getId(), venue.getName(),
-                venue.getAddressLine(), venue.getCountryCode(), venue.getTimeZone().getId(), venue.isActive());
+                venue.getAddressLine(), venue.getCity(), venue.getCountryCode(), venue.getTimeZone().getId(),
+                venue.isActive());
     }
 
     public static VenueResponse toResponse(Venue venue, WeeklyHours hours) {
         return new VenueResponse(venue.getId(), venue.getCategory().getId(), venue.getName(),
-                venue.getAddressLine(), venue.getCountryCode(), venue.getTimeZone().getId(), venue.isActive(),
-                venue.getVersion(), toResponse(hours));
+                venue.getAddressLine(), venue.getCity(), venue.getCountryCode(), venue.getTimeZone().getId(),
+                venue.isActive(), venue.getVersion(), toResponse(hours));
     }
 
     public static BookableSummaryResponse toSummary(Bookable bookable) {
@@ -60,7 +61,8 @@ public final class CatalogMapper {
     public static BookableResponse toResponse(Bookable bookable, EffectiveRules rules) {
         BookableType type = bookable.getBookableType();
         Venue venue = bookable.getVenue();
-        return new BookableResponse(bookable.getId(), venue.getId(), venue.getName(), venue.getTimeZone().getId(),
+        return new BookableResponse(bookable.getId(), venue.getId(), venue.getName(), venue.getCity(),
+                venue.getCountryCode(), venue.getTimeZone().getId(),
                 bookable.getName(), type.getCode(), type.getLabel(), type.getBookingModel(), bookable.isActive(),
                 bookable.getVersion(), toResponse(rules), toResponse(bookable.overrides()), toResponse(rules.hours()),
                 rules.ownHours());

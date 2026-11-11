@@ -13,6 +13,8 @@ public record BookableResponse(
         long id,
         long venueId,
         String venueName,
+        String venueCity,
+        String venueCountryCode,
         String venueTimeZone,
         String name,
         String typeCode,

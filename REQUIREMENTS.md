@@ -1,6 +1,7 @@
 # GridReserve — Requirements
 
-> Version 0.18 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Version 0.19 (draft). Derived from [PROJECT.md](PROJECT.md) v0.3. No application code exists yet.
+> Changes from v0.18 (M1.13, owner request 2026-11-11, D-46): new FR-CAT-16 (a venue has a required city; the venue list filters by `country` and `city`) and FR-UI-14 (Browse filters by location; city and country shown wherever a booking or venue is named); FR-BK-07 adds `venueCity` and `venueCountryCode`.
 > Changes from v0.17 (M1.13, 2026-11-11, D-45): FR-BK-05 takes several `status` values and an `order` (`asc`/`desc`); new FR-UI-11 (five screen widths, light and dark, no sideways scrolling), FR-UI-12 (every dropdown searchable) and FR-UI-13 (My bookings: one paged list per tab with Load more); FR-UI-01 names the category chips as the Browse category control.
 > Changes from v0.16 (M1.12, 2026-11-11, D-44): IDEM-03 defines "same body" as the same bookable and times (normalized), and replays carry `Idempotent-Replayed: true`; IDEM-06 says a replayed refusal has the same status, code and message (new timestamp and request ID); IDEM-07 says an expired key counts as unused before the cleanup deletes it; FR-AUD-01 names the actor rules. CONC-08 proven.
 > Changes from v0.15 (M1.11, 2026-11-11, D-43): FR-CAT-07/08 say a venue's category and a bookable's venue are fixed after creation, updates carry the `version` read (FR-CAT-15), and CAPACITY bookables can't be created before Phase 2 (`422 WRONG_BOOKING_MODEL`); FR-CAT-09 is checked on the effective rules; FR-ADM-01 gives the response shape (`memberDetailsAvailable`); CONC-09 proven.
@@ -266,6 +267,7 @@ Acceptance criteria use Given / When / Then. Each story links to the requirement
 - **FR-CAT-13** Venue deactivation (`POST /api/v1/venues/{id}/deactivate`) shall follow the same soft-close rule: no new bookings on any of its bookables (BR-06 checks venue and bookable), existing bookings unchanged. Bookables keep their own `active` flag, so reactivating the venue restores exactly the bookables that were active before.
 - **FR-CAT-14** The country-to-zone list shall be seed data derived from the IANA time zone database (`zone1970.tab` / `zone.tab`), not hard-coded logic. `GET /api/v1/countries` and `GET /api/v1/countries/{code}/time-zones` shall serve it. If a country has exactly one zone, the admin UI pre-fills it.
 - **FR-CAT-15** Concurrent admin edits of the same venue or bookable shall not overwrite each other silently: a stale `version` → `409 STALE_UPDATE`.
+- **FR-CAT-16** Every venue shall have a city (required, 1–100 characters, set by the admin with the address). `GET /api/v1/venues` shall accept optional `country` (ISO code, any case) and `city` (case-insensitive, exact) filters; an empty value means any. Venue and bookable responses include `city` / `venueCity` and the country code. Existing venues got the city from the end of their address (migration V6).
 - **FR-CAT-16** Bookables and venues shall never be deleted through the API (past bookings and the audit log reference them); deactivation is the way to retire them, and `POST /…/activate` reverses it.
 
 ### 5.3 Availability (FR-AV) — booking service
@@ -287,7 +289,7 @@ Acceptance criteria use Given / When / Then. Each story links to the requirement
 - **FR-BK-04** `POST /api/v1/bookings/{id}/cancel` shall move `HELD` or `CONFIRMED` → `CANCELLED` according to section 8, with an optional `reason` (max 200 chars). A `HELD` booking whose hold has run out is not cancelled: it is recorded as `EXPIRED` and the answer is `409 INVALID_STATE` (CXL-01). `cancelledBy` is `MEMBER` when the owner cancels (also an admin cancelling their own booking) and `ADMIN` when an admin cancels another member's booking.
 - **FR-BK-05** `GET /api/v1/bookings/me?status=&from=&to=&order=&page=&size=` shall list the caller's bookings. `status` may repeat (`?status=HELD&status=CONFIRMED`; none = all statuses); `from`/`to` filter on the start time; `order` is `desc` (newest start first, the default) or `asc` (soonest first); anything else answers `400 VALIDATION_FAILED` on `order`.
 - **FR-BK-06** `GET /api/v1/bookings/{id}` shall return a booking the caller owns (or any booking, for ADMIN).
-- **FR-BK-07** Every booking response shall include: `id`, `bookableId`, `bookableName`, `bookableLabel`, `venueName`, `venueTimeZone`, `start`, `end`, `status`, `expiresAt` (if HELD), `createdAt`, `cancelledAt`, `cancelledBy` (`MEMBER`/`ADMIN`/`SYSTEM`), `cancellableUntil` (the last moment the owner can cancel: `expiresAt` while HELD, `start − cancellationCutoff` when CONFIRMED, null otherwise; added in v0.12).
+- **FR-BK-07** Every booking response shall include: `id`, `bookableId`, `bookableName`, `bookableLabel`, `venueName`, `venueTimeZone`, `start`, `end`, `status`, `expiresAt` (if HELD), `createdAt`, `cancelledAt`, `cancelledBy` (`MEMBER`/`ADMIN`/`SYSTEM`), `venueCity` and `venueCountryCode` (added in v0.19), `cancellableUntil` (the last moment the owner can cancel: `expiresAt` while HELD, `start − cancellationCutoff` when CONFIRMED, null otherwise; added in v0.12).
 - **FR-BK-08** Allowed status transitions are only those in BR-13. Any other transition returns `409 INVALID_STATE`.
 - **FR-BK-09** Booking operations shall not call any other service synchronously inside the booking transaction (RES-07).
 
@@ -330,6 +332,7 @@ Acceptance criteria use Given / When / Then. Each story links to the requirement
 - **FR-UI-10** On `503 SERVICE_UNAVAILABLE` or `504 UPSTREAM_TIMEOUT` the UI shall show a "temporarily unavailable, please retry" message without losing the user's selection.
 - **FR-UI-11** Every screen shall work at widths 360, 640, 768, 1024 and 1440 px, in light and dark, without sideways scrolling of the page; phones get a bottom tab bar and page headers with a way back (design A, D-45).
 - **FR-UI-12** Every dropdown shall have a search box that filters its options as the user types (case and accents ignored), operable by keyboard.
+- **FR-UI-14** Browse shall let members filter venues by location (a searchable list of the cities that have venues, "Hyderabad, India"), together with the category. The city and country shall be shown prominently on venue cards, the venue page, the booking page and its summary, the hold panel, My bookings and the cancel dialog, so a member can't book in the wrong city unnoticed.
 - **FR-UI-13** My bookings shall show Upcoming (HELD and CONFIRMED from now, soonest first), Past (CONFIRMED before now, newest first) and Cancelled & expired as separate lists, each asked from the API page by page with a "Load more" button, so no booking is left out.
 
 ## 6. Booking rules, EXCLUSIVE model (BR)

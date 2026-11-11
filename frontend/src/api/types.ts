@@ -54,6 +54,8 @@ export interface VenueSummary {
   categoryId: number
   name: string
   addressLine: string
+  /** Since M1.13 (FR-CAT-16): the Location filter and "where am I booking" use it. */
+  city: string
   countryCode: string
   timeZone: string
   active: boolean
@@ -101,6 +103,8 @@ export interface RuleOverrides {
 
 export interface Bookable extends BookableSummary {
   venueName: string
+  venueCity: string
+  venueCountryCode: string
   venueTimeZone: string
   version: number
   rules: Rules
@@ -136,6 +140,8 @@ export interface Booking {
   bookableName: string
   bookableLabel: string
   venueName: string
+  venueCity: string
+  venueCountryCode: string
   venueTimeZone: string
   start: string
   end: string
@@ -179,6 +185,7 @@ export interface VenueInput {
   version?: number
   name: string
   addressLine: string | null
+  city: string
   countryCode: string
   timeZone: string
   openingHours: OpeningHours[]

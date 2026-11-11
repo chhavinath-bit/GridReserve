@@ -151,6 +151,8 @@ class BookingLifecycleIT {
             assertThat(response.body().get("bookableName").asString()).isEqualTo("Court A");
             assertThat(response.body().get("bookableLabel").asString()).isEqualTo("Court");
             assertThat(response.body().get("venueName").asString()).isEqualTo("Sunrise Turf");
+            assertThat(response.body().get("venueCity").asString()).isEqualTo("Bengaluru");
+            assertThat(response.body().get("venueCountryCode").asString()).isEqualTo("IN");
             assertThat(response.body().get("venueTimeZone").asString()).isEqualTo("Asia/Kolkata");
             assertThat(Instant.parse(response.body().get("start").asString())).isEqualTo(tomorrowAt("10:00"));
             assertThat(Instant.parse(response.body().get("expiresAt").asString()))

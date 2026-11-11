@@ -17,7 +17,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import tools.jackson.databind.JsonNode;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -92,6 +94,34 @@ class CatalogIT {
             assertThat(response.body().get("size").asInt()).isEqualTo(20);
             assertThat(response.body().get("totalItems").asLong()).isEqualTo(1);
             assertThat(response.body().get("totalPages").asInt()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("FR-CAT-16: every seed venue has its city, taken from the end of its address by V6")
+        void seedCities_FRCAT16() {
+            Response response = http.get("/api/v1/venues?size=100", member);
+
+            Map<String, String> cities = new HashMap<>();
+            response.body().get("items").forEach(venue -> cities.put(venue.get("name").asString(),
+                    venue.get("city").asString() + ", " + venue.get("countryCode").asString()));
+            assertThat(cities).containsEntry("Central Library", "Pune, IN")
+                    .containsEntry("Sunrise Turf", "Bengaluru, IN")
+                    .containsEntry("Palm Apartments", "Chennai, IN")
+                    .containsEntry("CityCare Clinic", "Hyderabad, IN")
+                    .containsEntry("IronWorks", "London, GB");
+        }
+
+        @Test
+        @DisplayName("FR-CAT-16: venues filtered by country and city; the city ignores case, an empty filter means any")
+        void venuesByPlace_FRCAT16() {
+            assertThat(texts(http.get("/api/v1/venues?country=GB", member).body().get("items"), "name"))
+                    .containsExactly("IronWorks");
+            assertThat(texts(http.get("/api/v1/venues?country=in&city=hyderabad", member).body().get("items"), "name"))
+                    .containsExactly("CityCare Clinic");
+            assertThat(texts(http.get("/api/v1/venues?city=London&categoryId=" + id("category", "Study"), member)
+                    .body().get("items"), "name")).isEmpty();
+            assertThat(http.get("/api/v1/venues?country=&city=&size=100", member).body().get("totalItems").asLong())
+                    .isEqualTo(http.get("/api/v1/venues?size=100", member).body().get("totalItems").asLong());
         }
 
         @Test

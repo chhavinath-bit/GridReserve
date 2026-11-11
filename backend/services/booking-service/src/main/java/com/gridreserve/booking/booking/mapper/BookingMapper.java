@@ -14,7 +14,7 @@ public final class BookingMapper {
 
     public static BookingResponse toResponse(Booking booking, BookableInfo bookable) {
         return new BookingResponse(booking.getId(), booking.getBookableId(), bookable.name(), bookable.label(),
-                bookable.venueName(), bookable.zone().getId(), booking.getStartTime(), booking.getEndTime(),
+                bookable.venueName(), bookable.venueCity(), bookable.venueCountryCode(), bookable.zone().getId(), booking.getStartTime(), booking.getEndTime(),
                 booking.getStatus(), booking.getExpiresAt(), booking.getCreatedAt(), booking.getCancelledAt(),
                 booking.getCancelledBy(), cancellableUntil(booking, bookable));
     }

@@ -17,6 +17,7 @@ public record UpdateVenueRequest(
         @NotNull Long version,
         @NotBlank @Size(max = 100) String name,
         @Size(max = 200) String addressLine,
+        @NotBlank @Size(max = 100) String city,
         @NotBlank @Pattern(regexp = "[A-Za-z]{2}", message = "Must be a two-letter ISO country code.") String countryCode,
         @NotBlank @Size(max = 64) String timeZone,
         @NotNull @Size(max = 7) List<@Valid @NotNull OpeningHoursRequest> openingHours) {

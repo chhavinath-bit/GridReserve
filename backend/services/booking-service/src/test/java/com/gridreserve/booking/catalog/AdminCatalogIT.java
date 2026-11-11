@@ -94,6 +94,7 @@ class AdminCatalogIT {
         long venueId = venue.body().get("id").asLong();
         assertThat(venue.location()).isEqualTo("/api/v1/venues/" + venueId);
         assertThat(venue.body().get("version").asLong()).isZero();
+        assertThat(venue.body().get("city").asString()).isEqualTo("Testville");
         assertThat(venue.body().get("openingHours")).hasSize(7);
         assertThat(venue.body().get("openingHours").get(0).get("closesAt").asString()).isEqualTo("24:00");
 
@@ -156,10 +157,12 @@ class AdminCatalogIT {
         Map<String, Object> body = with(with(venueBody(catalog.categoryId("SPORTS"), "x"), "name", ""), "countryCode", "IND");
         body = with(body, "openingHours", List.of(Map.of("weekday", "MONDAY", "opensAt", "24:00", "closesAt", "24:00")));
 
+        body = with(body, "city", " ");
+
         Response response = http.post("/api/v1/venues", admin, body);
 
         assertThat(response.status()).isEqualTo(400);
-        assertThat(fieldNames(response)).contains("name", "countryCode", "openingHours[0].opensAt");
+        assertThat(fieldNames(response)).contains("name", "city", "countryCode", "openingHours[0].opensAt");
     }
 
     @Test

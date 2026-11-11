@@ -43,7 +43,7 @@ test('the venue form checks its fields before sending (FR-CAT-09)', async ({ pag
   await page.getByRole('textbox', { name: 'Monday opens' }).fill('22:00')
   await page.getByRole('textbox', { name: 'Monday closes' }).fill('08:00')
   await page.getByRole('button', { name: 'Create venue' }).click()
-  await expect(page.getByRole('alert')).toContainText('Check 5 fields')
+  await expect(page.getByRole('alert')).toContainText('Check 6 fields')
   await expect(page.getByText('Monday: must open before it closes.')).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Category' })).toBeFocused()
 })

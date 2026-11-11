@@ -5,6 +5,7 @@ import { HoldTimer } from '@/components/patterns/HoldTimer'
 import { StatusBadge } from '@/components/patterns/StatusBadge'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { placeLabel } from '@/lib/place'
 import { formatDay, formatTimeRange } from '@/lib/time'
 
 export type HoldPhase = 'held' | 'confirmed' | 'expired'
@@ -36,7 +37,7 @@ export function HoldPanel(props: HoldPanelProps) {
         <p className="text-[13px] font-semibold text-primary-soft-foreground">{formatDay(booking.start, zone)}</p>
         <p className="text-2xl font-bold tabular">{formatTimeRange(booking.start, booking.end, zone)}</p>
         <p className="text-sm text-muted-foreground">
-          {booking.bookableName} · {booking.venueName}
+          {booking.bookableName} · {booking.venueName}, {placeLabel(booking.venueCity, booking.venueCountryCode)}
         </p>
       </div>
       {props.error ? (

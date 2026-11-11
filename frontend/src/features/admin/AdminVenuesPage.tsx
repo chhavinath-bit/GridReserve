@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Combobox } from '@/components/ui/combobox'
 import { Table, TableCell, TableHead } from '@/components/ui/table'
+import { placeLabel } from '@/lib/place'
 import { CloseReopenButton } from './CloseReopen'
 
 const ALL = 'all'
@@ -30,7 +31,7 @@ export function AdminVenuesPage() {
   const categoryName = new Map(categories.data?.map((category) => [category.id, category.name]))
   // All venues fit on one page (size 100), so the name search runs here.
   const needle = search.trim().toLowerCase()
-  const shown = venues.data?.items.filter((venue) => !needle || `${venue.name} ${venue.addressLine}`.toLowerCase().includes(needle)) ?? []
+  const shown = venues.data?.items.filter((venue) => !needle || `${venue.name} ${venue.addressLine} ${venue.city}`.toLowerCase().includes(needle)) ?? []
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.admin })
     void queryClient.invalidateQueries({ queryKey: queryKeys.venuesAll })
@@ -72,7 +73,7 @@ export function AdminVenuesPage() {
                 <tr>
                   <TableHead>Venue</TableHead>
                   <TableHead>Category</TableHead>
-                  <TableHead>Country · zone</TableHead>
+                  <TableHead>Location · zone</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>
                     <span className="sr-only">Actions</span>
@@ -88,7 +89,8 @@ export function AdminVenuesPage() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">{categoryName.get(venue.categoryId) ?? '—'}</TableCell>
                     <TableCell className="text-muted-foreground">
-                      {venue.countryCode} · {venue.timeZone}
+                      <span className="block font-medium text-foreground">{placeLabel(venue.city, venue.countryCode)}</span>
+                      <span className="block text-[13px]">{venue.timeZone}</span>
                     </TableCell>
                     <TableCell>
                       <OpenBadge active={venue.active} />
@@ -110,7 +112,7 @@ export function AdminVenuesPage() {
                     <OpenBadge active={venue.active} />
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    {categoryName.get(venue.categoryId) ?? '—'} · {venue.countryCode} · {venue.timeZone}
+                    {categoryName.get(venue.categoryId) ?? '—'} · {placeLabel(venue.city, venue.countryCode)} · {venue.timeZone}
                   </p>
                 </div>
                 <RowActions venue={venue} onDone={refresh} />

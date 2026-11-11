@@ -238,8 +238,8 @@ class BookingConstraintsIT {
         @DisplayName("FR-CAT-03: a venue whose zone belongs to another country is rejected by fk_venue_country_zone")
         void zoneMustBelongToCountry() {
             assertRejectedBy(FOREIGN_KEY_VIOLATION, "fk_venue_country_zone", () -> jdbc.update("""
-                    INSERT INTO venue (category_id, name, country_code, time_zone, created_at, updated_at)
-                    SELECT id, 'Wrong Zone Venue', 'IN', 'Europe/London', now(), now() FROM category WHERE code = 'STUDY'
+                    INSERT INTO venue (category_id, name, city, country_code, time_zone, created_at, updated_at)
+                    SELECT id, 'Wrong Zone Venue', 'Pune', 'IN', 'Europe/London', now(), now() FROM category WHERE code = 'STUDY'
                     """));
         }
 
