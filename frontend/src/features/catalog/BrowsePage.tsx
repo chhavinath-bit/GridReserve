@@ -4,10 +4,10 @@ import { Link, useSearchParams } from 'react-router'
 import { catalogApi } from '@/api/endpoints'
 import { queryKeys } from '@/api/queryKeys'
 import type { Category, VenueSummary } from '@/api/types'
+import { ChipGroup } from '@/components/patterns/ChipGroup'
 import { PageHeader } from '@/components/patterns/PageHeader'
 import { EmptyState, ErrorState, LoadingState } from '@/components/patterns/States'
 import { Badge } from '@/components/ui/badge'
-import { cn } from '@/lib/utils'
 
 /**
  * Category → venues (FR-UI-01/02). The category chips act as the dropdown: one press filters the
@@ -25,8 +25,9 @@ export function BrowsePage() {
       {categories.isError ? <ErrorState error={categories.error} onRetry={() => void categories.refetch()} /> : null}
       {categories.data ? (
         <div className="flex flex-col gap-6">
-          <CategoryChips
-            categories={categories.data}
+          <ChipGroup
+            label="Category"
+            chips={[{ value: undefined, label: 'All' }, ...categories.data.map((category) => ({ value: category.id, label: category.name }))]}
             value={categoryId}
             onChange={(id) => setParams(id ? { category: String(id) } : {})}
           />
@@ -34,31 +35,6 @@ export function BrowsePage() {
         </div>
       ) : null}
     </>
-  )
-}
-
-function CategoryChips({ categories, value, onChange }: { categories: Category[]; value: number | undefined; onChange: (id: number | undefined) => void }) {
-  const chips = [{ id: undefined, name: 'All' }, ...categories]
-  return (
-    <div role="group" aria-label="Category" className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
-      {chips.map((chip) => {
-        const selected = chip.id === value
-        return (
-          <button
-            key={chip.id ?? 'all'}
-            type="button"
-            aria-pressed={selected}
-            onClick={() => onChange(chip.id)}
-            className={cn(
-              'h-9 shrink-0 rounded-full border px-4 text-sm font-semibold transition-colors duration-[120ms] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-              selected ? 'border-foreground bg-foreground text-background' : 'bg-card text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {chip.name}
-          </button>
-        )
-      })}
-    </div>
   )
 }
 

@@ -19,7 +19,16 @@ export default defineConfig({
       '/api': 'http://localhost:8080',
     },
   },
+  // The end-to-end tests run the production build here, on the same origin and proxy as `npm run dev`.
+  preview: {
+    port: 5173,
+    strictPort: true,
+    proxy: {
+      '/api': 'http://localhost:8080',
+    },
+  },
   test: {
+    include: ['src/**/*.test.{ts,tsx}'],
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     css: false,

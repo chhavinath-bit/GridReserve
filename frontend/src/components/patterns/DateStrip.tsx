@@ -23,7 +23,6 @@ export function DateStrip({ today, days, value, onChange }: DateStripProps) {
             key={date}
             type="button"
             aria-pressed={active}
-            aria-label={date === today ? `Today, ${weekday} ${day}` : `${weekday} ${day}`}
             onClick={() => onChange(date)}
             className={cn(
               'flex h-14 min-w-12 flex-col items-center justify-center rounded-sm border text-sm tabular transition-colors duration-[120ms]',
@@ -32,7 +31,8 @@ export function DateStrip({ today, days, value, onChange }: DateStripProps) {
                 : 'border-border bg-card hover:bg-primary-soft hover:text-primary-soft-foreground',
             )}
           >
-            <span className="text-xs">{date === today ? 'Today' : weekday}</span>
+            {/* The visible words are the name ("Today, Wed 11", "Thu 12"), so speech input can say what it sees (WCAG 2.5.3). */}
+            <span className="text-xs">{date === today ? <>Today<span className="sr-only">, {weekday}</span></> : weekday}</span>{' '}
             <span className="font-semibold">{day}</span>
           </button>
         )

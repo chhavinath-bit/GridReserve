@@ -1,6 +1,12 @@
 import { lazy, Suspense } from 'react'
-import { createBrowserRouter, type RouteObject } from 'react-router'
+import { createBrowserRouter, Navigate, type RouteObject } from 'react-router'
 import { LoadingState } from '@/components/patterns/States'
+import { AdminBookingsPage } from '@/features/admin/AdminBookingsPage'
+import { AdminLayout } from '@/features/admin/AdminLayout'
+import { AdminVenuesPage } from '@/features/admin/AdminVenuesPage'
+import { BookableEditPage } from '@/features/admin/BookableEditPage'
+import { RequireAdmin } from '@/features/admin/RequireAdmin'
+import { VenueEditPage } from '@/features/admin/VenueEditPage'
 import { LoginPage } from '@/features/auth/LoginPage'
 import { RegisterPage } from '@/features/auth/RegisterPage'
 import { RequireAuth } from '@/features/auth/RequireAuth'
@@ -33,6 +39,24 @@ export const router = createBrowserRouter([
           { path: '/venues/:venueId', element: <VenuePage /> },
           { path: '/bookables/:bookableId', element: <SlotPickerPage /> },
           { path: '/bookings', element: <MyBookingsPage /> },
+          {
+            element: <RequireAdmin />,
+            children: [
+              {
+                path: '/admin',
+                element: <AdminLayout />,
+                children: [
+                  { index: true, element: <Navigate to="/admin/venues" replace /> },
+                  { path: 'venues', element: <AdminVenuesPage /> },
+                  { path: 'venues/new', element: <VenueEditPage /> },
+                  { path: 'venues/:venueId', element: <VenueEditPage /> },
+                  { path: 'venues/:venueId/bookables/new', element: <BookableEditPage /> },
+                  { path: 'bookables/:bookableId', element: <BookableEditPage /> },
+                  { path: 'bookings', element: <AdminBookingsPage /> },
+                ],
+              },
+            ],
+          },
           { path: '*', element: <NotFoundPage /> },
         ],
       },

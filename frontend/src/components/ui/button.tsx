@@ -38,16 +38,18 @@ export interface ButtonProps extends ComponentProps<'button'>, VariantProps<type
 }
 
 export function Button({ className, variant, size, asChild = false, loading = false, disabled, children, ...props }: ButtonProps) {
-  const Component = asChild ? Slot.Root : 'button'
+  if (asChild) {
+    // Slot needs exactly one child to merge into (a link styled as a button), so no spinner here.
+    return (
+      <Slot.Root className={cn(buttonVariants({ variant, size }), className)} {...props}>
+        {children}
+      </Slot.Root>
+    )
+  }
   return (
-    <Component
-      className={cn(buttonVariants({ variant, size }), className)}
-      disabled={asChild ? undefined : disabled || loading}
-      aria-busy={loading || undefined}
-      {...props}
-    >
-      {loading && !asChild ? <Loader2 className="animate-spin" aria-hidden /> : null}
+    <button className={cn(buttonVariants({ variant, size }), className)} disabled={disabled || loading} aria-busy={loading || undefined} {...props}>
+      {loading ? <Loader2 className="animate-spin" aria-hidden /> : null}
       {children}
-    </Component>
+    </button>
   )
 }

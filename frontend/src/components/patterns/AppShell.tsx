@@ -120,10 +120,11 @@ function AccountMenu({ user, onLogout }: { user: ShellUser; onLogout: () => void
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label={`Account: ${user.displayName}`}
         className="ml-1 flex size-9 items-center justify-center rounded-full bg-primary-soft text-xs font-semibold text-primary-soft-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
-        {initials(user.displayName)}
+        {/* The initials are decoration; the name read out is the full one (no aria-label, WCAG 2.5.3). */}
+        <span aria-hidden>{initials(user.displayName)}</span>
+        <span className="sr-only">Account: {user.displayName}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuLabel>
