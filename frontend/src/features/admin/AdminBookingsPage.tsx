@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Combobox } from '@/components/ui/combobox'
 import { Table, TableCell, TableHead } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import { addDays, formatDay, formatRange, formatTimeRange } from '@/lib/time'
@@ -65,34 +65,22 @@ export function AdminBookingsPage() {
       <PageHeader title="All bookings" description="Newest start first. Times are in each venue’s zone." />
       <div className="mb-4 grid gap-2.5 sm:grid-cols-2 lg:flex lg:flex-wrap">
         <div className="lg:w-52">
-          <Select value={params.get('venue') ?? ANY} onValueChange={(value) => setParam('venue', value === ANY ? null : value)}>
-            <SelectTrigger aria-label="Venue">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ANY}>All venues</SelectItem>
-              {venues.data?.items.map((venue) => (
-                <SelectItem key={venue.id} value={String(venue.id)}>
-                  {venue.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            aria-label="Venue"
+            searchPlaceholder="Search venues"
+            value={params.get('venue') ?? ANY}
+            onValueChange={(value) => setParam('venue', value === ANY ? null : value)}
+            options={[{ value: ANY, label: 'All venues' }, ...(venues.data?.items ?? []).map((venue) => ({ value: String(venue.id), label: venue.name }))]}
+          />
         </div>
         <div className="lg:w-44">
-          <Select value={filter.status ?? ANY} onValueChange={(value) => setParam('status', value === ANY ? null : value)}>
-            <SelectTrigger aria-label="Status">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ANY}>Any status</SelectItem>
-              {STATUSES.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {status[0] + status.slice(1).toLowerCase()}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            aria-label="Status"
+            searchPlaceholder="Search statuses"
+            value={filter.status ?? ANY}
+            onValueChange={(value) => setParam('status', value === ANY ? null : value)}
+            options={[{ value: ANY, label: 'Any status' }, ...STATUSES.map((status) => ({ value: status, label: status[0] + status.slice(1).toLowerCase() }))]}
+          />
         </div>
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           <span className="w-12 shrink-0 lg:w-auto">From</span>

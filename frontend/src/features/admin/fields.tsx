@@ -1,14 +1,14 @@
 import { useField } from 'formik'
 import type { ReactNode } from 'react'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Combobox } from '@/components/ui/combobox'
 
 export interface Option {
   value: string
   label: string
 }
 
-/** A Radix Select bound to Formik, with the same error and hint wiring as FormField. */
+/** A searchable dropdown (Combobox) bound to Formik, with the same error and hint wiring as FormField. */
 export function SelectField(props: {
   name: string
   label: string
@@ -28,9 +28,15 @@ export function SelectField(props: {
       <Label htmlFor={props.name} className={props.hideLabel ? 'sr-only' : undefined}>
         {props.label}
       </Label>
-      <Select
+      <Combobox
+        id={props.name}
         value={field.value || undefined}
         disabled={props.disabled}
+        options={props.options}
+        placeholder={props.placeholder}
+        searchPlaceholder={`Search ${props.label.replace(/ override$/, '').toLowerCase()}`}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={describedBy}
         onValueChange={(value) => {
           void helpers.setValue(value)
           props.onChange?.(value)
@@ -38,18 +44,7 @@ export function SelectField(props: {
         onOpenChange={(open) => {
           if (!open) void helpers.setTouched(true, false)
         }}
-      >
-        <SelectTrigger id={props.name} aria-invalid={error ? true : undefined} aria-describedby={describedBy}>
-          <SelectValue placeholder={props.placeholder ?? 'Choose'} />
-        </SelectTrigger>
-        <SelectContent>
-          {props.options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      />
       {error ? (
         <p id={`${props.name}-error`} className="text-sm text-destructive">
           {error}

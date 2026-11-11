@@ -10,7 +10,7 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/patterns/Stat
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Combobox } from '@/components/ui/combobox'
 import { Table, TableCell, TableHead } from '@/components/ui/table'
 import { CloseReopenButton } from './CloseReopen'
 
@@ -52,19 +52,13 @@ export function AdminVenuesPage() {
           <Input type="search" aria-label="Search venues" placeholder="Search venues" className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} />
         </div>
         <div className="sm:w-52">
-          <Select value={categoryId ? String(categoryId) : ALL} onValueChange={(value) => setParams(value === ALL ? {} : { category: value })}>
-            <SelectTrigger aria-label="Category">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All categories</SelectItem>
-              {categories.data?.map((category) => (
-                <SelectItem key={category.id} value={String(category.id)}>
-                  {category.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Combobox
+            aria-label="Category"
+            searchPlaceholder="Search categories"
+            value={categoryId ? String(categoryId) : ALL}
+            onValueChange={(value) => setParams(value === ALL ? {} : { category: value })}
+            options={[{ value: ALL, label: 'All categories' }, ...(categories.data ?? []).map((category) => ({ value: String(category.id), label: category.name }))]}
+          />
         </div>
       </div>
       {venues.isPending ? <LoadingState /> : null}
