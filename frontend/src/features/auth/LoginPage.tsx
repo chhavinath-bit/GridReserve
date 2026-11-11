@@ -34,7 +34,7 @@ export function LoginPage() {
   }
 
   return (
-    <AuthLayout title="Log in" description="Welcome back. Book rooms, courts, bays and appointments.">
+    <AuthLayout title="Log in" description="Welcome back. Pick up where you left off.">
           <Formik<LoginValues> initialValues={{ email: '', password: '' }} validationSchema={loginSchema} onSubmit={onSubmit}>
             {({ isSubmitting, status: formError }) => (
               <Form className="flex flex-col gap-4" noValidate>
