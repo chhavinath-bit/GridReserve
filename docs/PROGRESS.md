@@ -854,7 +854,9 @@ What the e2e tests execute (behavior): log in, Sports → Sunrise Turf → Court
 
 **Changed tests (not weakened):** `SlotPickerPage.test.tsx` fixture gains the bookable's new fields.
 
-**Not run locally this milestone:** the backend system tests (unchanged code paths; CI runs them with the new e2e step).
+**CI, first run (42965517017) failed in the new e2e step:** 26/27; `admin.spec.ts` (history drawer) timed out clicking the first booking row, because CI starts with an empty database and that spec runs first, so the list had no rows (locally the dev database had bookings). Test bug, fixed in the test: it now has alice hold a slot first and cancels it afterwards. The backend system tests didn't run in that job (the step stops the job); every other job was green.
+
+**Not run locally this milestone:** the backend system tests (unchanged code paths; CI runs them after the e2e step).
 
 ### Not covered yet
 - Degraded mode with identity really stopped, in the browser (mocked 503 here; real outage in the system tests); a real screen-reader pass; the deployed site (M1.10 waits for the VM).

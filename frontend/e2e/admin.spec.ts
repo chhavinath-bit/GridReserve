@@ -1,7 +1,25 @@
-import { expect, test } from '@playwright/test'
-import { logIn, settled } from './support'
+import { expect, test, type Page } from '@playwright/test'
+import { Cleanup, logIn, openBookable, pickLastDay, settled } from './support'
 
-test('an admin sees every venue and a booking’s history (FR-ADM-01, FR-AUD-03)', async ({ page }) => {
+test('an admin sees every venue and a booking’s history (FR-ADM-01, FR-AUD-03)', async ({ page, browser, request }) => {
+  // A fresh database (CI) has no bookings yet: alice holds one first, so the list has a row with history.
+  const cleanup = new Cleanup(request)
+  const alice = await (await browser.newContext()).newPage()
+  cleanup.watch(alice, 'alice')
+  try {
+    await logIn(alice, 'alice')
+    await openBookable(alice, 'Sports', 'Sunrise Turf', 'Court B')
+    await pickLastDay(alice)
+    await alice.getByRole('button', { name: /, free$/ }).first().click()
+    await alice.getByRole('button', { name: 'Hold slot' }).click()
+    await expect(alice.getByRole('button', { name: 'Confirm booking' })).toBeVisible()
+    await seeVenuesAndHistory(page)
+  } finally {
+    await cleanup.run()
+  }
+})
+
+async function seeVenuesAndHistory(page: Page) {
   await logIn(page, 'admin')
   await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Admin' }).click()
   await expect(page.getByRole('heading', { name: 'Venues', level: 1 })).toBeVisible()
@@ -16,7 +34,7 @@ test('an admin sees every venue and a booking’s history (FR-ADM-01, FR-AUD-03)
   await expect(sheet.getByRole('listitem').first()).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(sheet).toBeHidden()
-})
+}
 
 test('the venue form checks its fields before sending (FR-CAT-09)', async ({ page }) => {
   await logIn(page, 'admin')
