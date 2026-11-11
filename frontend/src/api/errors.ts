@@ -24,6 +24,8 @@ const MESSAGES: Record<string, string> = {
   DURATION_INVALID: 'That length isn’t allowed here.',
   MEMBER_LIMIT_REACHED: 'You’ve reached the limit of active bookings here.',
   CUTOFF_PASSED: 'It’s too late to cancel this booking.',
+  STALE_UPDATE: 'Someone else changed this in the meantime. Reload it and try again.',
+  METHOD_NOT_ALLOWED: 'That action isn’t possible here.',
   IDEMPOTENCY_IN_PROGRESS: 'Your booking is still being processed. Please retry in a moment.',
   IDEMPOTENCY_KEY_REUSED: 'Something went wrong with this request. Please pick the slot again.',
   INTERNAL_ERROR: 'Something went wrong on our side. Please try again.',

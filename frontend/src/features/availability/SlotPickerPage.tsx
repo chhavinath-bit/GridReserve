@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CloudOff } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router'
+import { useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { ApiError } from '@/api/client'
 import { bookingApi, catalogApi } from '@/api/endpoints'
@@ -10,6 +10,7 @@ import { queryKeys } from '@/api/queryKeys'
 import type { Availability, Bookable, Booking } from '@/api/types'
 import { ConflictNotice } from '@/components/patterns/ConflictNotice'
 import { DateStrip } from '@/components/patterns/DateStrip'
+import { Breadcrumb } from '@/components/patterns/Breadcrumb'
 import { PageHeader } from '@/components/patterns/PageHeader'
 import { SlotGrid } from '@/components/patterns/SlotGrid'
 import { EmptyState, ErrorState, LoadingState } from '@/components/patterns/States'
@@ -19,7 +20,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { holdDeadline } from '@/features/bookings/hold'
 import { holdIntent, keyFor, type IntentKey } from '@/lib/idempotency'
 import { HoldPanel, type HoldPhase } from '@/features/bookings/HoldPanel'
+import { describeCutoff, describeDuration } from '@/lib/rules'
 import { formatRange, todayIn } from '@/lib/time'
+import { cn } from '@/lib/utils'
 import { nextSelection } from './selection'
 
 interface CurrentHold {
@@ -170,19 +173,15 @@ function SlotPicker({ bookable }: { bookable: Bookable }) {
 
   return (
     <>
-      <PageHeader
-        title={bookable.name}
-        description={
-          <>
-            <Link to={`/venues/${bookable.venueId}`} className="underline-offset-4 hover:underline">
-              {bookable.venueName}
-            </Link>{' '}
-            · {bookable.label} · times in {zone}
-          </>
-        }
+      <Breadcrumb
+        items={[
+          { label: bookable.venueName, to: `/venues/${bookable.venueId}` },
+          { label: bookable.name },
+        ]}
       />
-      <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
-        <div className="flex flex-col gap-4">
+      <PageHeader title={bookable.name} description={`${bookable.label} at ${bookable.venueName} · times in ${zone}`} />
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="flex min-w-0 flex-col gap-4">
           <DateStrip today={today} days={bookable.rules.bookingHorizonDays} value={date} onChange={chooseDate} />
           {conflict ? <ConflictNotice message={conflict} /> : null}
           {hint ? (
@@ -201,7 +200,7 @@ function SlotPicker({ bookable }: { bookable: Bookable }) {
             onSelect={onSelect}
           />
         </div>
-        <aside className="lg:sticky lg:top-6 lg:self-start">
+        <aside aria-label="Your booking" className={cn('lg:sticky lg:top-24 lg:self-start', hold ? 'order-first lg:order-none' : undefined)}>
           {hold ? (
             <HoldPanel
               booking={hold.booking}
@@ -272,6 +271,10 @@ function SlotsView(props: {
   )
 }
 
+/**
+ * What is picked, the rules, and "Hold slot". From 1024 px a card beside the grid; below that a bar
+ * fixed to the bottom of the screen (above the phone tab bar), so the action is always in reach.
+ */
 function BookingSummary(props: {
   bookable: Bookable
   range: string | null
@@ -281,32 +284,41 @@ function BookingSummary(props: {
 }) {
   const { rules } = props.bookable
   const temporary = props.error && TEMPORARY_CODES.has(props.error.code)
+  const duration = describeDuration(rules)
+  const canExtend = rules.minDurationMinutes !== rules.maxDurationMinutes
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Your booking</CardTitle>
-        <p className="text-sm text-muted-foreground tabular">{props.range ?? 'Pick a start time.'}</p>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <ul className="flex flex-col gap-1 text-sm text-muted-foreground">
-          <li>
-            {rules.minDurationMinutes === rules.maxDurationMinutes
-              ? `${rules.minDurationMinutes} minutes`
-              : `${rules.minDurationMinutes} to ${rules.maxDurationMinutes} minutes; click a later slot to extend`}
-          </li>
-          <li>Held for 5 minutes while you confirm</li>
-          <li>Free cancellation until {rules.cancellationCutoffMinutes / 60} hours before</li>
-        </ul>
-        {props.error ? (
-          <Alert variant={temporary ? 'warning' : 'destructive'} role="alert">
-            {temporary ? <CloudOff aria-hidden /> : null}
-            <p>{props.error.message}</p>
-          </Alert>
-        ) : null}
-        <Button onClick={props.onHold} disabled={!props.range} loading={props.holding}>
-          {props.error && temporary ? 'Retry' : 'Hold slot'}
-        </Button>
-      </CardContent>
-    </Card>
+    <>
+      {/* Keeps the last row of slots clear of the fixed bar on small screens. */}
+      <div aria-hidden className="h-24 lg:hidden" />
+      <Card className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-20 rounded-none border-x-0 border-b-0 shadow-lg md:bottom-0 lg:static lg:rounded-lg lg:border lg:shadow-none">
+        <CardHeader className="hidden lg:flex">
+          <CardTitle>Your booking</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 p-4 lg:gap-4 lg:pt-2">
+          <div className="flex items-center gap-3 lg:flex-col lg:items-stretch">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold tabular lg:text-base" aria-live="polite">
+                {props.range ?? 'Pick a start time.'}
+              </p>
+              <p className="text-xs text-muted-foreground lg:hidden">Held for 5 minutes while you confirm</p>
+            </div>
+            <ul className="hidden flex-col gap-1.5 text-sm text-muted-foreground lg:flex">
+              {duration ? <li>{duration}{canExtend ? '; pick a later slot to extend' : ''}</li> : null}
+              <li>Held for 5 minutes while you confirm</li>
+              <li>{describeCutoff(rules.cancellationCutoffMinutes)}</li>
+            </ul>
+            <Button onClick={props.onHold} disabled={!props.range} loading={props.holding} size="touch" className="shrink-0">
+              {props.error && temporary ? 'Retry' : 'Hold slot'}
+            </Button>
+          </div>
+          {props.error ? (
+            <Alert variant={temporary ? 'warning' : 'destructive'} role="alert">
+              {temporary ? <CloudOff aria-hidden /> : null}
+              <p>{props.error.message}</p>
+            </Alert>
+          ) : null}
+        </CardContent>
+      </Card>
+    </>
   )
 }

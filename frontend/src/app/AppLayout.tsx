@@ -7,7 +7,7 @@ export function AppLayout() {
   const navigate = useNavigate()
   return (
     <AppShell
-      userName={user?.displayName ?? null}
+      user={user ? { displayName: user.displayName, email: user.email, isAdmin: user.role === 'ADMIN' } : null}
       onLogout={() => {
         void logout().finally(() => navigate('/login', { replace: true }))
       }}

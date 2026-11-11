@@ -23,6 +23,8 @@ const buttonVariants = cva(
         md: 'h-10 px-4',
         lg: 'h-11 px-6 text-base',
         icon: 'size-10',
+        // 44 px on phones (WCAG 2.5.8 target size, thumbs), the usual 40 px from 640 px.
+        touch: 'h-11 px-4 sm:h-10',
       },
     },
     defaultVariants: { variant: 'primary', size: 'md' },

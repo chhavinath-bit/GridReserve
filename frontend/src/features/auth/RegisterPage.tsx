@@ -4,7 +4,6 @@ import { ApiError } from '@/api/client'
 import { FormErrors } from '@/components/patterns/FormErrors'
 import { FormField } from '@/components/patterns/FormField'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from './AuthContext'
 import { AuthLayout } from './AuthLayout'
 import { safeReturnTo } from './RequireAuth'
@@ -40,13 +39,7 @@ export function RegisterPage() {
   }
 
   return (
-    <AuthLayout>
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>Create an account</CardTitle>
-          <CardDescription>You can book right after.</CardDescription>
-        </CardHeader>
-        <CardContent>
+    <AuthLayout title="Create an account" description="You can book right after.">
           <Formik<RegisterValues>
             initialValues={{ displayName: '', email: '', password: '' }}
             validationSchema={registerSchema}
@@ -70,8 +63,6 @@ export function RegisterPage() {
               </Form>
             )}
           </Formik>
-        </CardContent>
-      </Card>
-    </AuthLayout>
+        </AuthLayout>
   )
 }

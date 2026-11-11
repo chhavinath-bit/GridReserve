@@ -4,7 +4,6 @@ import { ApiError } from '@/api/client'
 import { FormErrors } from '@/components/patterns/FormErrors'
 import { FormField } from '@/components/patterns/FormField'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from './AuthContext'
 import { AuthLayout } from './AuthLayout'
 import { safeReturnTo } from './RequireAuth'
@@ -35,13 +34,7 @@ export function LoginPage() {
   }
 
   return (
-    <AuthLayout>
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>Log in</CardTitle>
-          <CardDescription>Welcome back. Pick up where you left off.</CardDescription>
-        </CardHeader>
-        <CardContent>
+    <AuthLayout title="Log in" description="Welcome back. Book rooms, courts, bays and appointments.">
           <Formik<LoginValues> initialValues={{ email: '', password: '' }} validationSchema={loginSchema} onSubmit={onSubmit}>
             {({ isSubmitting, status: formError }) => (
               <Form className="flex flex-col gap-4" noValidate>
@@ -60,8 +53,6 @@ export function LoginPage() {
               </Form>
             )}
           </Formik>
-        </CardContent>
-      </Card>
-    </AuthLayout>
+        </AuthLayout>
   )
 }
