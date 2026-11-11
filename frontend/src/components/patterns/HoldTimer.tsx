@@ -7,6 +7,8 @@ export interface HoldTimerProps {
   /** Local deadline in ms (Date.now() scale). See HoldPanel for why it is not expiresAt directly. */
   deadline: number
   onExpire: () => void
+  /** "badge": the warning pill "Held · 4:12 left" used on booking cards (design A). */
+  variant?: 'line' | 'badge'
 }
 
 const WARN_AT_SECONDS = 60
@@ -15,7 +17,7 @@ const WARN_AT_SECONDS = 60
  * Countdown for a hold (FR-UI-06). Turns to the warning look under 60 s. Screen readers hear it only at
  * 1 minute left and at expiry (a polite live region), not every second (§4.2, §7).
  */
-export function HoldTimer({ deadline, onExpire }: HoldTimerProps) {
+export function HoldTimer({ deadline, onExpire, variant = 'line' }: HoldTimerProps) {
   const [now, setNow] = useState(() => Date.now())
   const left = Math.max(0, Math.ceil((deadline - now) / 1000))
   const running = left > 0
@@ -37,6 +39,18 @@ export function HoldTimer({ deadline, onExpire }: HoldTimerProps) {
   }, [left, onExpire])
 
   const announcement = left === 0 ? 'Hold expired.' : left <= WARN_AT_SECONDS ? 'One minute left to confirm.' : ''
+
+  if (variant === 'badge') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2 py-0.5 text-xs font-semibold text-warning-soft-foreground tabular">
+        <Timer className="size-3" aria-hidden />
+        {left === 0 ? 'Hold expired' : <>Held · <strong className="font-semibold">{formatCountdown(left)}</strong> left</>}
+        <span aria-live="polite" className="sr-only">
+          {announcement}
+        </span>
+      </span>
+    )
+  }
 
   return (
     <div className={cn('flex items-center gap-2 text-sm tabular', left <= WARN_AT_SECONDS ? 'text-warning-soft-foreground' : 'text-muted-foreground')}>

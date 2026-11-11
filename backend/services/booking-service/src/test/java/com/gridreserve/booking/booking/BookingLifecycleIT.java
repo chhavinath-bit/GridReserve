@@ -542,6 +542,23 @@ class BookingLifecycleIT {
         }
 
         @Test
+        @DisplayName("FR-BK-05: several statuses at once, and soonest first with order=asc (the Upcoming tab)")
+        void myBookingsStatusesAndOrder_FRBK05() {
+            long early = id(hold(memberA, "Court A", "08:00", "09:00"));
+            long middle = id(hold(memberA, "Court A", "10:00", "11:00"));
+            long late = id(hold(memberA, "Court B", "12:00", "13:00"));
+            confirm(memberA, middle);
+            http.post("/api/v1/bookings/" + late + "/cancel", memberA, null);
+
+            assertThat(ids(http.get("/api/v1/bookings/me?status=HELD&status=CONFIRMED&order=asc", memberA)))
+                    .containsExactly(early, middle);
+            assertThat(ids(http.get("/api/v1/bookings/me?status=CANCELLED&status=EXPIRED", memberA))).containsExactly(late);
+            Response badOrder = http.get("/api/v1/bookings/me?order=newest", memberA);
+            assertThat(badOrder.status()).isEqualTo(400);
+            assertThat(badOrder.body().get("fieldErrors").get(0).get("field").asString()).isEqualTo("order");
+        }
+
+        @Test
         @DisplayName("FR-BK-05: an unknown status → 400 VALIDATION_FAILED")
         void badStatusFilter() {
             Response response = http.get("/api/v1/bookings/me?status=MAYBE", memberA);

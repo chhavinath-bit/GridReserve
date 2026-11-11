@@ -85,7 +85,7 @@ export function refreshSession(): Promise<boolean> {
 }
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST'
+  method?: 'GET' | 'POST' | 'PUT'
   body?: unknown
   /** Auth endpoints carry the cookie and no access token. */
   authEndpoint?: boolean

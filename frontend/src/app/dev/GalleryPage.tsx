@@ -13,6 +13,16 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Breadcrumb } from '@/components/patterns/Breadcrumb'
+import { ChipGroup } from '@/components/patterns/ChipGroup'
+import { Logo } from '@/components/patterns/Logo'
+import { ThemeToggle } from '@/components/patterns/ThemeToggle'
+import { ConfirmDialog } from '@/components/ui/alert-dialog'
+import { Combobox } from '@/components/ui/combobox'
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Table, TableCell, TableHead } from '@/components/ui/table'
+import { Textarea } from '@/components/ui/textarea'
 
 // Dev-only gallery (DESIGN_SYSTEM §8, D-UI-5): every component in every state, light and dark side by
 // side. Not routed in production builds.
@@ -35,19 +45,133 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
-function Everything() {
+const COUNTRIES = [
+  { value: 'IN', label: 'India (IN)' },
+  { value: 'ID', label: 'Indonesia (ID)' },
+  { value: 'GB', label: 'United Kingdom (GB)' },
+  { value: 'AX', label: 'Åland Islands (AX)' },
+]
+
+function Everything({ prefix }: { prefix: string }) {
   const [deadlines] = useState(() => ({ long: Date.now() + 240_000, short: Date.now() + 45_000 }))
+  const [country, setCountry] = useState<string | undefined>('IN')
+  const [chip, setChip] = useState<number | undefined>(undefined)
+  const [confirming, setConfirming] = useState(false)
   return (
     <div className="flex flex-col gap-8">
       <Section title="Button">
         <div className="flex flex-wrap gap-2">
-          {(['primary', 'secondary', 'outline', 'ghost', 'destructive', 'link'] as const).map((variant) => (
+          {(['primary', 'secondary', 'outline', 'ghost', 'destructive', 'destructive-outline', 'link'] as const).map((variant) => (
             <Button key={variant} variant={variant}>
               {variant}
             </Button>
           ))}
           <Button loading>Loading</Button>
           <Button disabled>Disabled</Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {(['sm', 'md', 'touch', 'lg'] as const).map((size) => (
+            <Button key={size} size={size} variant="outline">
+              size {size}
+            </Button>
+          ))}
+        </div>
+      </Section>
+      <Section title="Logo / ThemeToggle / Breadcrumb">
+        <div className="flex items-center gap-4">
+          <Logo />
+          <Logo withName={false} />
+          <ThemeToggle />
+        </div>
+        <Breadcrumb items={[{ label: 'Sunrise Turf', to: '/venues/6' }, { label: 'Court A' }]} />
+      </Section>
+      <Section title="ChipGroup">
+        <ChipGroup
+          label={`Category (${prefix})`}
+          chips={[{ value: undefined, label: 'All' }, { value: 1, label: 'Study' }, { value: 2, label: 'Sports' }]}
+          value={chip}
+          onChange={setChip}
+        />
+      </Section>
+      <Section title="Combobox (searchable dropdown): chosen, empty, invalid, disabled">
+        <div className="grid max-w-xl gap-2 sm:grid-cols-2">
+          <Combobox aria-label={`Country (${prefix})`} value={country} onValueChange={setCountry} options={COUNTRIES} searchPlaceholder="Search countries" />
+          <Combobox aria-label={`Time zone (${prefix})`} value={undefined} onValueChange={() => undefined} options={[]} placeholder="Choose a time zone" />
+          <Combobox aria-label={`Category (${prefix}, invalid)`} aria-invalid value={undefined} onValueChange={() => undefined} options={[]} placeholder="Choose" />
+          <Combobox aria-label={`Disabled (${prefix})`} disabled value={undefined} onValueChange={() => undefined} options={[]} placeholder="Choose a country first" />
+        </div>
+      </Section>
+      <Section title="Textarea">
+        <Textarea aria-label={`Reason (${prefix})`} className="max-w-md" placeholder="Reason (optional)" />
+      </Section>
+      <Section title="Table">
+        <Table>
+          <thead>
+            <tr>
+              <TableHead>Venue</TableHead>
+              <TableHead>Status</TableHead>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <TableCell>Sunrise Turf</TableCell>
+              <TableCell>
+                <Badge variant="success">Open</Badge>
+              </TableCell>
+            </tr>
+            <tr>
+              <TableCell>Palm Apartments</TableCell>
+              <TableCell>
+                <Badge variant="muted">Closed</Badge>
+              </TableCell>
+            </tr>
+          </tbody>
+        </Table>
+      </Section>
+      <Section title="Dialog / sheet / ConfirmDialog / DropdownMenu">
+        <div className="flex flex-wrap gap-2">
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline">Dialog</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogTitle>Cancel this booking?</DialogTitle>
+              <DialogDescription>Court A, Thu 12 Nov · 16:00 – 18:00.</DialogDescription>
+            </DialogContent>
+          </Dialog>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline">Sheet</Button>
+            </DialogTrigger>
+            <DialogContent side="right">
+              <DialogTitle>Court A · Thu 12 Nov</DialogTitle>
+              <DialogDescription>16:00 – 18:00 · Alice Demo</DialogDescription>
+            </DialogContent>
+          </Dialog>
+          <Button variant="destructive-outline" onClick={() => setConfirming(true)}>
+            Close Court A…
+          </Button>
+          <ConfirmDialog
+            open={confirming}
+            onOpenChange={setConfirming}
+            title="Close Court A?"
+            confirmLabel="Close for new bookings"
+            cancelLabel="Keep open"
+            variant="destructive"
+            onConfirm={() => setConfirming(false)}
+          >
+            <p>Bookings already made are not cancelled or changed.</p>
+          </ConfirmDialog>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">Menu</Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuLabel>Alice Demo</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem>Log out</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </Section>
       <Section title="Badge / StatusBadge">
@@ -64,10 +188,10 @@ function Everything() {
       </Section>
       <Section title="Input / Label">
         <div className="flex max-w-xs flex-col gap-2">
-          <Label htmlFor="g-ok">Email</Label>
-          <Input id="g-ok" placeholder="you@example.test" />
-          <Label htmlFor="g-bad">Invalid</Label>
-          <Input id="g-bad" aria-invalid defaultValue="not-an-email" />
+          <Label htmlFor={`${prefix}-ok`}>Email</Label>
+          <Input id={`${prefix}-ok`} placeholder="you@example.test" />
+          <Label htmlFor={`${prefix}-bad`}>Invalid</Label>
+          <Input id={`${prefix}-bad`} aria-invalid defaultValue="not-an-email" />
         </div>
       </Section>
       <Section title="Card">
@@ -89,12 +213,16 @@ function Everything() {
       <Section title="DateStrip">
         <DateStrip today="2026-11-07" days={7} value="2026-11-08" onChange={() => undefined} />
       </Section>
-      <Section title="SlotGrid: past, free, taken, selected (06:30), held by me (11:30)">
+      <Section title="SlotGrid: past, free, taken (dashed, struck through), selected (06:30), held by me (11:30)">
         <SlotGrid slots={SLOTS} zone={ZONE} selected={[2]} heldByMe={[6]} onSelect={() => undefined} />
       </Section>
-      <Section title="HoldTimer (4:00 and under a minute)">
+      <Section title="HoldTimer: line and badge (4:00 and under a minute)">
         <HoldTimer deadline={deadlines.long} onExpire={() => undefined} />
         <HoldTimer deadline={deadlines.short} onExpire={() => undefined} />
+        <div className="flex gap-2">
+          <HoldTimer deadline={deadlines.long} onExpire={() => undefined} variant="badge" />
+          <HoldTimer deadline={deadlines.short} onExpire={() => undefined} variant="badge" />
+        </div>
       </Section>
       <Section title="Loading / Empty / Error / Temporary">
         <LoadingState rows={2} />
@@ -111,12 +239,12 @@ export default function GalleryPage() {
     <div className="grid min-h-dvh lg:grid-cols-2">
       <div className="bg-canvas p-8 text-foreground">
         <h1 className="mb-6 text-2xl font-semibold">Light</h1>
-        <Everything />
+        <Everything prefix="light" />
       </div>
       {/* The .dark class switches every token for this subtree. */}
       <div className="dark bg-canvas p-8 text-foreground">
         <h1 className="mb-6 text-2xl font-semibold">Dark</h1>
-        <Everything />
+        <Everything prefix="dark" />
       </div>
     </div>
   )

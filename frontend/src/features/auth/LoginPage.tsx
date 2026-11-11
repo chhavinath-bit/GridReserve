@@ -4,7 +4,6 @@ import { ApiError } from '@/api/client'
 import { FormErrors } from '@/components/patterns/FormErrors'
 import { FormField } from '@/components/patterns/FormField'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from './AuthContext'
 import { AuthLayout } from './AuthLayout'
 import { safeReturnTo } from './RequireAuth'
@@ -35,33 +34,25 @@ export function LoginPage() {
   }
 
   return (
-    <AuthLayout>
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>Log in</CardTitle>
-          <CardDescription>Welcome back. Pick up where you left off.</CardDescription>
-        </CardHeader>
-        <CardContent>
+    <AuthLayout title="Log in" description="Welcome back. Book rooms, courts, bays and appointments.">
           <Formik<LoginValues> initialValues={{ email: '', password: '' }} validationSchema={loginSchema} onSubmit={onSubmit}>
             {({ isSubmitting, status: formError }) => (
               <Form className="flex flex-col gap-4" noValidate>
                 <FormErrors fields={FIELDS} formError={formError as string | null} />
                 <FormField name="email" label="Email" type="email" autoComplete="email" />
                 <FormField name="password" label="Password" type="password" autoComplete="current-password" />
-                <Button type="submit" loading={isSubmitting}>
+                <Button type="submit" size="lg" loading={isSubmitting}>
                   Log in
                 </Button>
                 <p className="text-center text-sm text-muted-foreground">
                   New here?{' '}
-                  <Link className="text-primary underline-offset-4 hover:underline" to={`/register?returnTo=${encodeURIComponent(returnTo)}`}>
+                  <Link className="font-semibold text-primary underline-offset-4 hover:underline" to={`/register?returnTo=${encodeURIComponent(returnTo)}`}>
                     Create an account
                   </Link>
                 </p>
               </Form>
             )}
           </Formik>
-        </CardContent>
-      </Card>
-    </AuthLayout>
+        </AuthLayout>
   )
 }

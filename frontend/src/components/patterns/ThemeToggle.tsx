@@ -1,6 +1,7 @@
-import { Monitor, Moon, Sun } from 'lucide-react'
+import { Check, Monitor, Moon, Sun } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useTheme, type ThemePreference } from '@/lib/theme'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 const OPTIONS: { value: ThemePreference; label: string; Icon: typeof Sun }[] = [
   { value: 'system', label: 'System', Icon: Monitor },
@@ -8,23 +9,26 @@ const OPTIONS: { value: ThemePreference; label: string; Icon: typeof Sun }[] = [
   { value: 'dark', label: 'Dark', Icon: Moon },
 ]
 
+/** An icon button opening System / Light / Dark (§3.5). The icon shows what is applied right now. */
 export function ThemeToggle() {
-  const { preference, setPreference } = useTheme()
+  const { preference, resolved, setPreference } = useTheme()
+  const Icon = resolved === 'dark' ? Moon : Sun
   return (
-    <Select value={preference} onValueChange={(value) => setPreference(value as ThemePreference)}>
-      <SelectTrigger aria-label="Theme" className="h-8 w-28">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {OPTIONS.map(({ value, label, Icon }) => (
-          <SelectItem key={value} value={value}>
-            <span className="flex items-center gap-2">
-              <Icon className="size-4" aria-hidden />
-              {label}
-            </span>
-          </SelectItem>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label={`Theme: ${preference}`}>
+          <Icon aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-40">
+        {OPTIONS.map(({ value, label, Icon: OptionIcon }) => (
+          <DropdownMenuItem key={value} onSelect={() => setPreference(value)}>
+            <OptionIcon aria-hidden />
+            <span className="flex-1">{label}</span>
+            {preference === value ? <Check aria-label="selected" /> : null}
+          </DropdownMenuItem>
         ))}
-      </SelectContent>
-    </Select>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

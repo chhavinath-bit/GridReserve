@@ -19,7 +19,9 @@ const slot = (hourUtc: number) => ({
 
 const bookable: Bookable = {
   id: 7, venueId: 3, name: 'Visitor Bay 1', typeCode: 'BAY', label: 'Bay', bookingModel: 'EXCLUSIVE', active: true,
-  venueName: 'Palm Apartments', venueTimeZone: ZONE,
+  venueName: 'Palm Apartments', venueTimeZone: ZONE, version: 0,
+  overrides: { slotMinutes: null, minDurationMinutes: null, maxDurationMinutes: null, bufferMinutes: null },
+  openingHours: [], ownOpeningHours: false,
   rules: { slotMinutes: 60, minDurationMinutes: 60, maxDurationMinutes: 720, bufferMinutes: 0, cancellationCutoffMinutes: 120, maxActiveBookingsPerMember: 3, bookingHorizonDays: 7 },
 }
 const availability: Availability = {

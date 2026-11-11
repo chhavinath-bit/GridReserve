@@ -137,12 +137,13 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     @Query("""
             select b from Booking b
             where b.memberId = :memberId
-              and (:status is null or b.status = :status)
+              and (:anyStatus = true or b.status in :statuses)
               and (cast(:from as Instant) is null or b.startTime >= :from)
               and (cast(:to as Instant) is null or b.startTime < :to)
             """)
-    Page<Booking> findMine(@Param("memberId") long memberId, @Param("status") BookingStatus status,
-                           @Param("from") Instant from, @Param("to") Instant to, Pageable pageable);
+    Page<Booking> findMine(@Param("memberId") long memberId, @Param("anyStatus") boolean anyStatus,
+                           @Param("statuses") Collection<BookingStatus> statuses, @Param("from") Instant from,
+                           @Param("to") Instant to, Pageable pageable);
 
     /** Bookings still coming on some bookables (FR-CAT-10): CONFIRMED, or HELD and not run out; not ended. */
     @Query("""

@@ -53,3 +53,13 @@ export function formatCountdown(seconds: number): string {
   const minutes = Math.floor(seconds / 60)
   return `${minutes}:${String(seconds % 60).padStart(2, '0')}`
 }
+
+/** "Thursday 12 November" for a "YYYY-MM-DD" calendar date. */
+export function formatLongDay(isoDate: string): string {
+  return new Intl.DateTimeFormat(LOCALE, { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(`${isoDate}T12:00:00Z`))
+}
+
+/** "16:00 – 18:00" in the venue's zone. */
+export function formatTimeRange(start: string, end: string, zone: string): string {
+  return `${formatTime(start, zone)} – ${formatTime(end, zone)}`
+}

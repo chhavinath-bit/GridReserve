@@ -66,6 +66,8 @@ export interface OpeningHours {
 }
 
 export interface Venue extends VenueSummary {
+  /** Sent back in an admin's update; a stale one answers 409 STALE_UPDATE (FR-CAT-15). */
+  version: number
   openingHours: OpeningHours[]
 }
 
@@ -89,10 +91,22 @@ export interface Rules {
   bookingHorizonDays: number
 }
 
+/** A bookable's own rule values; null = the type's default (FR-CAT-04). */
+export interface RuleOverrides {
+  slotMinutes: number | null
+  minDurationMinutes: number | null
+  maxDurationMinutes: number | null
+  bufferMinutes: number | null
+}
+
 export interface Bookable extends BookableSummary {
   venueName: string
   venueTimeZone: string
+  version: number
   rules: Rules
+  overrides: RuleOverrides
+  openingHours: OpeningHours[]
+  ownOpeningHours: boolean
 }
 
 export interface Slot {
@@ -147,4 +161,62 @@ export interface ErrorBody {
   path: string
   requestId: string
   fieldErrors?: FieldError[]
+}
+
+// ---- Admin (M1.11, M1.12) ----
+
+export interface Country {
+  code: string
+}
+
+export interface CountryTimeZones {
+  countryCode: string
+  timeZones: string[]
+}
+
+export interface VenueInput {
+  categoryId?: number
+  version?: number
+  name: string
+  addressLine: string | null
+  countryCode: string
+  timeZone: string
+  openingHours: OpeningHours[]
+}
+
+export interface BookableInput extends Partial<Record<keyof RuleOverrides, number | null>> {
+  version?: number
+  bookableTypeId: number
+  name: string
+  openingHours: OpeningHours[] | null
+}
+
+export interface Activation {
+  id: number
+  active: boolean
+  version: number
+  activeFutureBookings: number
+}
+
+export interface AdminBooking {
+  booking: Booking
+  memberId: number
+  memberEmail: string | null
+  memberDisplayName: string | null
+}
+
+export interface AdminBookingPage extends Page<AdminBooking> {
+  /** false: identity-service couldn't be reached, so names are missing (FS-33). */
+  memberDetailsAvailable: boolean
+}
+
+export type ActorType = 'MEMBER' | 'ADMIN' | 'SYSTEM'
+
+export interface AuditEntry {
+  fromStatus: BookingStatus | null
+  toStatus: BookingStatus
+  actorType: ActorType
+  actorUserId: number | null
+  reason: string | null
+  occurredAt: string
 }

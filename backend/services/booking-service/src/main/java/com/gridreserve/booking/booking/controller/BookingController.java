@@ -10,6 +10,8 @@ import com.gridreserve.booking.booking.service.IdempotencyService;
 import com.gridreserve.booking.common.dto.PageResponse;
 import com.gridreserve.booking.common.web.PageParams;
 import com.gridreserve.booking.common.web.Viewer;
+import com.gridreserve.common.web.error.ErrorResponse.FieldError;
+import com.gridreserve.common.web.error.FieldValidationException;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
 import java.time.Instant;
+import java.util.List;
 
 /**
  * Booking lifecycle (FR-BK-01..06). The owner is always the caller's token {@code sub}; no endpoint
@@ -71,16 +74,26 @@ public class BookingController {
         return bookings.cancel(Viewer.memberId(caller), Viewer.isAdmin(caller), id, reason);
     }
 
-    /** Newest start first (FR-BK-05). {@code from}/{@code to} filter on the start time, as UTC instants. */
+    /**
+     * The caller's bookings (FR-BK-05). {@code status} may repeat ({@code ?status=HELD&status=CONFIRMED}); {@code
+     * from}/{@code to} filter on the start time, as UTC instants; {@code order} is {@code desc} (newest start
+     * first, the default) or {@code asc} (soonest first, for "upcoming").
+     */
     @GetMapping("/me")
-    public PageResponse<BookingResponse> mine(@RequestParam(required = false) BookingStatus status,
+    public PageResponse<BookingResponse> mine(@RequestParam(required = false) List<BookingStatus> status,
                                               @RequestParam(required = false) Instant from,
                                               @RequestParam(required = false) Instant to,
+                                              @RequestParam(defaultValue = "desc") String order,
                                               @RequestParam(defaultValue = "0") int page,
                                               @RequestParam(defaultValue = PageParams.DEFAULT_SIZE) int size,
                                               Authentication caller) {
-        return bookings.mine(Viewer.memberId(caller), status, from, to,
-                PageParams.of(page, size, Sort.by(Sort.Order.desc("startTime"), Sort.Order.desc("id"))));
+        Sort.Direction direction = switch (order) {
+            case "asc" -> Sort.Direction.ASC;
+            case "desc" -> Sort.Direction.DESC;
+            default -> throw new FieldValidationException(List.of(new FieldError("order", "Must be asc or desc.")));
+        };
+        return bookings.mine(Viewer.memberId(caller), status == null ? List.of() : status, from, to,
+                PageParams.of(page, size, Sort.by(new Sort.Order(direction, "startTime"), new Sort.Order(direction, "id"))));
     }
 
     @GetMapping("/{id}")
