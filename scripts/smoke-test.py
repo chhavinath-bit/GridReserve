@@ -21,10 +21,14 @@ import os
 import socket
 import ssl
 import sys
+import time
 import urllib.error
 import urllib.request
 
 PRIVATE_PORTS = [5432, 8080, 8081, 8082, 8761, 8888]
+# Healthy containers are not routed yet: the gateway learns each service's address from Eureka a few
+# seconds later, and answers 503 until then (the first deploy failed on exactly that).
+ROUTE_WAIT_SECONDS = 120
 
 
 class Client:
@@ -69,9 +73,21 @@ def auth_headers(client):
     return {"Origin": origin, "X-GridReserve-Client": "web"}
 
 
+def until_routed(what, request):
+    """Repeats `request` while the gateway answers 503/504 (service not routed yet), up to ROUTE_WAIT_SECONDS."""
+    deadline = time.monotonic() + ROUTE_WAIT_SECONDS
+    while True:
+        status, body = request()
+        if status not in (503, 504) or time.monotonic() > deadline:
+            return status, body
+        print(f"wait {what}: gateway answered {status}, not routed yet")
+        time.sleep(3)
+
+
 def sign_in(client, email, password):
-    status, body = client.call("POST", "/api/v1/auth/login", {"email": email, "password": password}, auth=False,
-                               headers=auth_headers(client))
+    status, body = until_routed("identity-service", lambda: client.call(
+        "POST", "/api/v1/auth/login", {"email": email, "password": password}, auth=False,
+        headers=auth_headers(client)))
     if status == 401:
         status, body = client.call("POST", "/api/v1/auth/register",
                                    {"email": email, "password": password, "displayName": "Smoke Test"},
@@ -82,7 +98,7 @@ def sign_in(client, email, password):
 
 def find_slot(client, earliest):
     """First free slot that starts after `earliest`, on any active bookable, in the next three days (UTC dates; the server answers in the venue's own days)."""
-    status, categories = client.call("GET", "/api/v1/categories")
+    status, categories = until_routed("booking-service", lambda: client.call("GET", "/api/v1/categories"))
     check(status == 200 and categories, f"categories listed ({status}, {len(categories or [])})")
     for category in categories:
         _, venues = client.call("GET", f"/api/v1/venues?categoryId={category['id']}&size=100")

@@ -316,7 +316,7 @@ scripts/demo-tunnel.sh     # prints the address; Ctrl-C closes the tunnel
 
 ### Deployment
 
-The live site runs on a free Oracle Cloud VM (arm64) with Docker Compose (`infra/compose.prod.yaml`, profile `prod`); only Caddy is public (HTTPS with a Let's Encrypt certificate for an `sslip.io` name). After CI passes on `main`, `.github/workflows/deploy.yml` releases that commit's images over SSH and smoke-tests the public address; rollback is the same workflow with an older commit SHA. Backups run nightly: `pg_dump` per database, kept 7 days on the host and copied encrypted to Google Drive for 30 days. Setting up the host, backups and the restore drill: [docs/deploy/oracle.md](docs/deploy/oracle.md).
+**Live: https://130-210-14-203.sslip.io** (demo accounts above; first deployed 2026-11-11). The live site runs on a free Oracle Cloud VM (arm64) with Docker Compose (`infra/compose.prod.yaml`, profile `prod`); only Caddy is public (HTTPS with a Let's Encrypt certificate for an `sslip.io` name). After CI passes on `main`, `.github/workflows/deploy.yml` releases that commit's images over SSH and smoke-tests the public address; rollback is the same workflow with an older commit SHA. Backups run nightly: `pg_dump` per database, kept 7 days on the host and copied encrypted to Google Drive for 30 days. Setting up the host, backups and the restore drill: [docs/deploy/oracle.md](docs/deploy/oracle.md).
 
 **Live demo:** not online yet (the host is being set up). Demo accounts are the ones above.
 
