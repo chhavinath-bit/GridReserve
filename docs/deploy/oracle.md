@@ -11,7 +11,7 @@ are fine.
 
 - One Ubuntu VM (Ampere A1, arm64) running the whole stack with Docker Compose from `/opt/gridreserve`.
 - `https://<ip-with-dashes>.sslip.io` serves the app; only ports 80 and 443 are open.
-- Every merge to `main` that passes CI is released automatically and smoke-tested.
+- A release happens only when you start it (Actions → Deploy → Run workflow), for a commit whose CI passed on `main`; it is smoke-tested from outside. Merging to `main` doesn't deploy by itself.
 - A backup every night at 02:30 UTC, encrypted, copied to your Google Drive.
 
 ## 1. Oracle account (you)
@@ -141,9 +141,10 @@ names and contents before upload.
 
 ## 8. First release
 
-Merge the config PR (with the prod public key), then the app PR. CI builds and pushes the images, and Deploy
-runs. If it ran before the packages were public, rerun it: Actions → Deploy → Run workflow (empty tag =
-latest `main`).
+Merge the config PR (with the prod public key), then the app PR, and wait until CI on `main` is green (it
+builds and pushes the images). Then release: GitHub → Actions → **Deploy** → **Run workflow** → leave the
+tag empty (= the latest commit on `main`) → **Run workflow**. The job refuses a commit whose CI on `main`
+didn't pass. Later releases and rollbacks are the same button (a rollback names an older full commit SHA).
 
 Then check it yourself:
 

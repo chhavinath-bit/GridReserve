@@ -1,19 +1,16 @@
 name: Deploy
 
-# Continuous deployment to the Oracle Always Free host (M1.10, D-15): after CI passes on main, release that
-# commit's images (pushed by CI) on the host over SSH, then smoke-test the public address from here.
-# Rollback: "Run workflow" with an older commit SHA; its images are still in GitHub's registry.
+# Deployment to the Oracle Always Free host (M1.10, D-15), started by hand only (owner decision 2026-11-11):
+# Actions → Deploy → Run workflow. It releases one commit's images (pushed by CI on main) on the host over
+# SSH, then smoke-tests the public address from here. Merging to main never deploys by itself.
+# Rollback: the same button with an older commit SHA; its images are still in GitHub's registry.
 #
 # Repository settings (Settings → Secrets and variables → Actions), described in docs/deploy/oracle.md:
 #   variables: DEPLOY_HOST (public IP), DEPLOY_USER (SSH user), DEPLOY_SITE (e.g. 203-0-113-5.sslip.io)
 #   secrets:   DEPLOY_SSH_KEY (private key of a deploy-only key pair), DEPLOY_KNOWN_HOSTS (the host's key line),
 #              SMOKE_PASSWORD (password of the smoke-test account)
-# Until DEPLOY_HOST is set, the job is skipped, so CI on main stays green without a host.
+# Until DEPLOY_HOST is set, the job is skipped.
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
@@ -22,6 +19,7 @@ on:
 
 permissions:
   contents: read
+  actions: read   # to check that CI passed for the commit being released
 
 # One deploy at a time; a second one waits instead of cancelling a release halfway.
 concurrency:
@@ -31,9 +29,7 @@ concurrency:
 jobs:
   deploy:
     name: Release on the host and smoke-test
-    if: >-
-      vars.DEPLOY_HOST != '' && (github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+    if: vars.DEPLOY_HOST != ''
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 20
@@ -43,12 +39,23 @@ jobs:
         id: release
         env:
           INPUT_TAG: ${{ inputs.tag }}
-          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
           MAIN_SHA: ${{ github.sha }}
         run: |
-          tag="${INPUT_TAG:-${RUN_SHA:-$MAIN_SHA}}"
+          tag="${INPUT_TAG:-$MAIN_SHA}"
           [[ "$tag" =~ ^[0-9a-f]{40}$ ]] || { echo "not a full commit SHA: $tag"; exit 1; }
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      # Only a commit whose CI passed on main has its images in the registry, tested. Refuse anything else
+      # before touching the host, with a clear message instead of a failed image pull halfway.
+      - name: Check that CI passed on main for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          conclusion="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --event push \
+            --commit "$TAG" --limit 1 --json conclusion --jq '.[0].conclusion // "none"')"
+          [ "$conclusion" = "success" ] || { echo "CI on main for $TAG: $conclusion (needs success); not deploying"; exit 1; }
+          echo "CI on main passed for $TAG"
 
       # The files of that same commit, so a rollback also gets its matching compose file.
       - uses: actions/checkout@v7
