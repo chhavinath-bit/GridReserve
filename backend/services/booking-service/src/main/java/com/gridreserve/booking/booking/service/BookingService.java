@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -106,11 +107,13 @@ public class BookingService {
                 .get(booking.getBookableId()));
     }
 
-    /** The caller's bookings (FR-BK-05); names for the whole page come from one catalog query. */
+    /** The caller's bookings (FR-BK-05), any of {@code statuses} (none = all); names for the page in one catalog query. */
     @Transactional(readOnly = true)
-    public PageResponse<BookingResponse> mine(long memberId, BookingStatus status, Instant from, Instant to,
+    public PageResponse<BookingResponse> mine(long memberId, List<BookingStatus> statuses, Instant from, Instant to,
                                               Pageable pageable) {
-        Page<Booking> page = bookings.findMine(memberId, status, from, to, pageable);
+        // An IN list can't be empty: no filter passes a placeholder that anyStatus = true makes the query ignore.
+        Page<Booking> page = bookings.findMine(memberId, statuses.isEmpty(), statuses.isEmpty()
+                ? List.of(BookingStatus.HELD) : statuses, from, to, pageable);
         Map<Long, BookableInfo> names = catalog.describe(page.getContent().stream()
                 .map(Booking::getBookableId).collect(Collectors.toSet()));
         return PageResponse.of(page, booking -> BookingMapper.toResponse(booking, names.get(booking.getBookableId())));
