@@ -54,7 +54,9 @@ export interface VenueSummary {
   categoryId: number
   name: string
   addressLine: string
-  /** Since M1.13 (FR-CAT-16): the Location filter and "where am I booking" use it. */
+  /** Since M1.13b (FR-CAT-16, D-48): one of the listed cities; the Location filter uses its ID. */
+  cityId: number
+  /** The city's name: the Location filter and "where am I booking" show it. */
   city: string
   countryCode: string
   timeZone: string
@@ -175,9 +177,12 @@ export interface Country {
   code: string
 }
 
-export interface CountryTimeZones {
+/** A city an admin can put a venue in; the venue takes its country and time zone (D-48). */
+export interface City {
+  id: number
+  name: string
   countryCode: string
-  timeZones: string[]
+  timeZone: string
 }
 
 export interface VenueInput {
@@ -185,9 +190,7 @@ export interface VenueInput {
   version?: number
   name: string
   addressLine: string | null
-  city: string
-  countryCode: string
-  timeZone: string
+  cityId: number
   openingHours: OpeningHours[]
 }
 

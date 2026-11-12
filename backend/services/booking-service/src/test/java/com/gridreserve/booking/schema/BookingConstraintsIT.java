@@ -15,6 +15,7 @@ import java.time.Instant;
 import static com.gridreserve.booking.support.SqlErrors.CHECK_VIOLATION;
 import static com.gridreserve.booking.support.SqlErrors.EXCLUSION_VIOLATION;
 import static com.gridreserve.booking.support.SqlErrors.FOREIGN_KEY_VIOLATION;
+import static com.gridreserve.booking.support.SqlErrors.UNIQUE_VIOLATION;
 import static com.gridreserve.booking.support.SqlErrors.assertRejectedBy;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
@@ -235,12 +236,35 @@ class BookingConstraintsIT {
         }
 
         @Test
-        @DisplayName("FR-CAT-03: a venue whose zone belongs to another country is rejected by fk_venue_country_zone")
-        void zoneMustBelongToCountry() {
-            assertRejectedBy(FOREIGN_KEY_VIOLATION, "fk_venue_country_zone", () -> jdbc.update("""
-                    INSERT INTO venue (category_id, name, city, country_code, time_zone, created_at, updated_at)
-                    SELECT id, 'Wrong Zone Venue', 'Pune', 'IN', 'Europe/London', now(), now() FROM category WHERE code = 'STUDY'
+        @DisplayName("FR-CAT-16: a venue whose country and zone differ from its city's is rejected by fk_venue_city")
+        void venueFollowsItsCity_FRCAT16() {
+            // GB + Europe/London is a valid pair (fk_venue_country_zone holds), but Pune is in IN.
+            assertRejectedBy(FOREIGN_KEY_VIOLATION, "fk_venue_city", () -> jdbc.update("""
+                    INSERT INTO venue (category_id, name, city_id, country_code, time_zone, created_at, updated_at)
+                    SELECT c.id, 'Wrong City Venue', ci.id, 'GB', 'Europe/London', now(), now()
+                    FROM category c, city ci WHERE c.code = 'STUDY' AND ci.name = 'Pune'
                     """));
+        }
+
+        @Test
+        @DisplayName("FR-CAT-03: a city whose zone belongs to another country is rejected by fk_city_country_zone")
+        void cityZoneMustBelongToCountry() {
+            assertRejectedBy(FOREIGN_KEY_VIOLATION, "fk_city_country_zone", () -> jdbc.update(
+                    "INSERT INTO city (country_code, name, time_zone) VALUES ('IN', 'Wrong Zone City', 'Europe/London')"));
+        }
+
+        @Test
+        @DisplayName("FR-CAT-16: a second city of the same name in another letter case is rejected by uq_city_country_name")
+        void cityNameUniqueIgnoringCase_FRCAT16() {
+            assertRejectedBy(UNIQUE_VIOLATION, "uq_city_country_name", () -> jdbc.update(
+                    "INSERT INTO city (country_code, name, time_zone) VALUES ('IN', 'delhi', 'Asia/Kolkata')"));
+        }
+
+        @Test
+        @DisplayName("FR-CAT-16: a city name with surrounding spaces is rejected by ck_city_name_trimmed")
+        void cityNameTrimmed_FRCAT16() {
+            assertRejectedBy(CHECK_VIOLATION, "ck_city_name_trimmed", () -> jdbc.update(
+                    "INSERT INTO city (country_code, name, time_zone) VALUES ('IN', ' Shimla', 'Asia/Kolkata')"));
         }
 
         @Test

@@ -14,11 +14,11 @@ describe('server errors on admin forms (FR-CAT-09, FR-CAT-15)', () => {
   it('puts field errors under their fields and every opening-hours error under "hours"', () => {
     const form = helpers()
     const error = new ApiError(400, 'VALIDATION_FAILED', 'Some details need fixing.', [
-      { field: 'timeZone', message: 'Is not a time zone of country IN.' },
+      { field: 'cityId', message: 'No such city.' },
       { field: 'openingHours[2]', message: 'Must open before it closes.' },
     ])
-    applyServerError(error, form, ['timeZone', 'hours'], (field) => (field.startsWith('openingHours') ? 'hours' : field))
-    expect(form.setErrors).toHaveBeenCalledWith({ timeZone: 'Is not a time zone of country IN.', hours: 'Must open before it closes.' })
+    applyServerError(error, form, ['cityId', 'hours'], (field) => (field.startsWith('openingHours') ? 'hours' : field))
+    expect(form.setErrors).toHaveBeenCalledWith({ cityId: 'No such city.', hours: 'Must open before it closes.' })
     expect(form.setStatus).not.toHaveBeenCalled()
   })
 

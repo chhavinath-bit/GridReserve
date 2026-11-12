@@ -25,7 +25,7 @@ public interface BookableRepository extends JpaRepository<Bookable, Long> {
                                Pageable pageable);
 
     /** One bookable with everything the rule resolver reads, in one query. */
-    @EntityGraph(attributePaths = {"venue", "bookableType", "bookableType.category"})
+    @EntityGraph(attributePaths = {"venue", "venue.city", "bookableType", "bookableType.category"})
     @Query("select b from Bookable b where b.id = :id")
     Optional<Bookable> findWithRulesById(@Param("id") Long id);
 
@@ -40,7 +40,7 @@ public interface BookableRepository extends JpaRepository<Bookable, Long> {
     Optional<Long> lockForBooking(@Param("id") long id);
 
     /** Several bookables with venue, type and category in one query, for labelling a list of bookings. */
-    @EntityGraph(attributePaths = {"venue", "bookableType", "bookableType.category"})
+    @EntityGraph(attributePaths = {"venue", "venue.city", "bookableType", "bookableType.category"})
     @Query("select b from Bookable b where b.id in :ids")
     List<Bookable> findWithVenueByIdIn(@Param("ids") Collection<Long> ids);
 

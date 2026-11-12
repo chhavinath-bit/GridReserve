@@ -27,7 +27,6 @@ import java.util.Map;
 
 import static com.gridreserve.booking.support.TestCatalog.PREFIX;
 import static com.gridreserve.booking.support.TestCatalog.bookableBody;
-import static com.gridreserve.booking.support.TestCatalog.venueBody;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -89,12 +88,15 @@ class AdminCatalogIT {
     @Test
     @DisplayName("FR-CAT-07/08: an admin creates a venue and a bookable; members see them with the effective rules")
     void createVenueAndBookable_FRCAT07() {
-        Response venue = http.post("/api/v1/venues", admin, venueBody(catalog.categoryId("SPORTS"), "Arena"));
+        Response venue = http.post("/api/v1/venues", admin, catalog.venueBody(catalog.categoryId("SPORTS"), "Arena"));
         assertThat(venue.status()).isEqualTo(201);
         long venueId = venue.body().get("id").asLong();
         assertThat(venue.location()).isEqualTo("/api/v1/venues/" + venueId);
         assertThat(venue.body().get("version").asLong()).isZero();
-        assertThat(venue.body().get("city").asString()).isEqualTo("Testville");
+        assertThat(venue.body().get("cityId").asLong()).isEqualTo(catalog.cityId("IN", "Mumbai"));
+        assertThat(venue.body().get("city").asString()).isEqualTo("Mumbai");
+        assertThat(venue.body().get("countryCode").asString()).isEqualTo("IN");        // from the city (D-48)
+        assertThat(venue.body().get("timeZone").asString()).isEqualTo("Asia/Kolkata");
         assertThat(venue.body().get("openingHours")).hasSize(7);
         assertThat(venue.body().get("openingHours").get(0).get("closesAt").asString()).isEqualTo("24:00");
 
@@ -136,10 +138,10 @@ class AdminCatalogIT {
     // ---- validation and roles ----
 
     @Test
-    @DisplayName("FR-CAT-09/14: every invalid field is reported at once, with 400 VALIDATION_FAILED")
+    @DisplayName("FR-CAT-09/16: every invalid field is reported at once, with 400 VALIDATION_FAILED")
     void venueValidation_FRCAT09() {
-        Map<String, Object> body = venueBody(catalog.categoryId("SPORTS"), "Invalid");
-        body = with(body, "timeZone", "Europe/London");                          // not a zone of IN
+        Map<String, Object> body = catalog.venueBody(catalog.categoryId("SPORTS"), "Invalid");
+        body = with(body, "cityId", 99999999);                                   // not a listed city
         body = with(body, "openingHours", List.of(
                 Map.of("weekday", "MONDAY", "opensAt", "10:00", "closesAt", "09:00"),   // closes before it opens
                 Map.of("weekday", "MONDAY", "opensAt", "11:00", "closesAt", "12:00"))); // Monday twice
@@ -148,21 +150,35 @@ class AdminCatalogIT {
 
         assertThat(response.status()).isEqualTo(400);
         assertThat(response.code()).isEqualTo("VALIDATION_FAILED");
-        assertThat(fieldNames(response)).containsExactlyInAnyOrder("timeZone", "openingHours[0]", "openingHours[1].weekday");
+        assertThat(fieldNames(response)).containsExactlyInAnyOrder("cityId", "openingHours[0]", "openingHours[1].weekday");
     }
 
     @Test
-    @DisplayName("FR-CAT-09: Bean Validation catches missing and malformed fields (name, country, time format)")
+    @DisplayName("FR-CAT-09: Bean Validation catches missing and malformed fields (name, city, time format)")
     void venueFieldFormats_FRCAT09() {
-        Map<String, Object> body = with(with(venueBody(catalog.categoryId("SPORTS"), "x"), "name", ""), "countryCode", "IND");
+        Map<String, Object> body = with(with(catalog.venueBody(catalog.categoryId("SPORTS"), "x"), "name", ""), "cityId", null);
         body = with(body, "openingHours", List.of(Map.of("weekday", "MONDAY", "opensAt", "24:00", "closesAt", "24:00")));
-
-        body = with(body, "city", " ");
 
         Response response = http.post("/api/v1/venues", admin, body);
 
         assertThat(response.status()).isEqualTo(400);
-        assertThat(fieldNames(response)).contains("name", "city", "countryCode", "openingHours[0].opensAt");
+        assertThat(fieldNames(response)).contains("name", "cityId", "openingHours[0].opensAt");
+    }
+
+    @Test
+    @DisplayName("FR-CAT-16: moving a venue to another city brings that city's country and zone")
+    void venueTakesCountryAndZoneFromCity_FRCAT16() {
+        long venueId = catalog.venue("SPORTS", "Moving Venue");
+        long version = http.get("/api/v1/venues/" + venueId, admin).body().get("version").asLong();
+        Map<String, Object> move = with(with(with(catalog.venueBody(0, "Moving Venue"), "version", version),
+                "categoryId", null), "cityId", catalog.cityId("GB", "London"));
+
+        Response moved = http.put("/api/v1/venues/" + venueId, admin, move);
+
+        assertThat(moved.status()).isEqualTo(200);
+        assertThat(moved.body().get("city").asString()).isEqualTo("London");
+        assertThat(moved.body().get("countryCode").asString()).isEqualTo("GB");
+        assertThat(moved.body().get("timeZone").asString()).isEqualTo("Europe/London");
     }
 
     @Test
@@ -206,14 +222,14 @@ class AdminCatalogIT {
         long courtId = catalog.bookable(venueId, "COURT", "Role Court");
         String member = TestJwtKeys.memberToken(FIRST_MEMBER);
 
-        assertThat(http.post("/api/v1/venues", member, venueBody(catalog.categoryId("SPORTS"), "No")).status()).isEqualTo(403);
+        assertThat(http.post("/api/v1/venues", member, catalog.venueBody(catalog.categoryId("SPORTS"), "No")).status()).isEqualTo(403);
         assertThat(http.post("/api/v1/venues/" + venueId + "/bookables", member,
                 bookableBody(catalog.typeId("COURT"), "No")).status()).isEqualTo(403);
         assertThat(http.post("/api/v1/bookables/" + courtId + "/deactivate", member, null).status()).isEqualTo(403);
         assertThat(http.post("/api/v1/venues/" + venueId + "/deactivate", member, null).status()).isEqualTo(403);
         assertThat(http.put("/api/v1/bookables/" + courtId, member, Map.of()).status()).isEqualTo(403);
         assertThat(http.post("/api/v1/bookables/99999999/deactivate", admin, null).status()).isEqualTo(404);
-        assertThat(http.put("/api/v1/venues/99999999", admin, with(venueBody(catalog.categoryId("SPORTS"), "x"), "version", 0))
+        assertThat(http.put("/api/v1/venues/99999999", admin, with(catalog.venueBody(catalog.categoryId("SPORTS"), "x"), "version", 0))
                 .status()).isEqualTo(404);
     }
 
@@ -283,7 +299,7 @@ class AdminCatalogIT {
     void staleVersion_FRCAT15() {
         long venueId = catalog.venue("SPORTS", "Version Venue");
         long version = http.get("/api/v1/venues/" + venueId, admin).body().get("version").asLong();
-        Map<String, Object> edit = with(with(venueBody(0, "Version Venue renamed"), "version", version), "categoryId", null);
+        Map<String, Object> edit = with(with(catalog.venueBody(0, "Version Venue renamed"), "version", version), "categoryId", null);
 
         Response first = http.put("/api/v1/venues/" + venueId, admin, edit);
         Response second = http.put("/api/v1/venues/" + venueId, admin, edit);

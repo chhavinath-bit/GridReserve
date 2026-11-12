@@ -17,8 +17,9 @@ import java.time.Instant;
 import java.time.ZoneId;
 
 /**
- * A place with bookables (Central Library, Sunrise Turf, ...). Its time zone drives opening hours
- * and display; the database guarantees the zone belongs to the country (fk_venue_country_zone).
+ * A place with bookables (Central Library, Sunrise Turf, ...) in one {@link City}. Its time zone drives
+ * opening hours and display. Country and zone are copied from the city (D-48), so queries and the rules
+ * need no join; the database keeps the copies equal to the city's (fk_venue_city).
  */
 @Entity
 @Table(name = "venue")
@@ -38,8 +39,9 @@ public class Venue {
     @Column(name = "address_line", length = 200)
     private String addressLine;
 
-    @Column(name = "city", nullable = false, length = 100)
-    private String city;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "city_id", nullable = false)
+    private City city;
 
     @JdbcTypeCode(SqlTypes.CHAR)
     @Column(name = "country_code", nullable = false, length = 2)
@@ -66,13 +68,12 @@ public class Venue {
     }
 
     /** A new venue, open for bookings (FR-CAT-07). The category is fixed: bookable types belong to it. */
-    public static Venue create(Category category, String name, String addressLine, String city, String countryCode,
-                               String timeZone, Instant now) {
+    public static Venue create(Category category, String name, String addressLine, City city, Instant now) {
         Venue venue = new Venue();
         venue.category = category;
         venue.active = true;
         venue.createdAt = now;
-        venue.update(name, addressLine, city, countryCode, timeZone, now);
+        venue.update(name, addressLine, city, now);
         return venue;
     }
 
@@ -80,13 +81,12 @@ public class Venue {
      * Replaces the editable fields. Always marks the row changed, so its {@code @Version} goes up even when
      * only the opening hours (another table) changed, and a second admin's stale edit is refused (FR-CAT-15).
      */
-    public void update(String name, String addressLine, String city, String countryCode, String timeZone,
-                       Instant now) {
+    public void update(String name, String addressLine, City city, Instant now) {
         this.name = name;
         this.addressLine = addressLine;
         this.city = city;
-        this.countryCode = countryCode;
-        this.timeZone = timeZone;
+        this.countryCode = city.getCountryCode();
+        this.timeZone = city.getTimeZone().getId();
         this.updatedAt = now;
     }
 
@@ -112,7 +112,7 @@ public class Venue {
         return name;
     }
 
-    public String getCity() {
+    public City getCity() {
         return city;
     }
 

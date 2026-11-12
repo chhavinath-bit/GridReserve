@@ -2,7 +2,7 @@
 import { api } from './client'
 import type {
   Activation, AdminBookingPage, AuditEntry, Availability, Bookable, BookableInput, BookableSummary, Booking, BookingStatus, Category,
-  Country, CountryTimeZones, Page, TokenResponse, User, Venue, VenueInput, VenueSummary,
+  City, Country, Page, TokenResponse, User, Venue, VenueInput, VenueSummary,
 } from './types'
 
 export const authApi = {
@@ -14,19 +14,11 @@ export const authApi = {
   me: () => api<User>('/me'),
 }
 
-/** A city in a country, the Browse Location filter (FR-CAT-16). */
-export interface Place {
-  countryCode: string
-  city: string
-}
-
 export const catalogApi = {
   categories: () => api<Category[]>('/categories'),
-  /** All venues, or one category's; admins may include closed ones. */
-  venues: (categoryId?: number, includeInactive = false, place?: Place) =>
-    api<Page<VenueSummary>>(
-      `/venues?${query({ categoryId, country: place?.countryCode, city: place?.city, includeInactive: includeInactive || undefined, size: 100 })}`,
-    ),
+  /** All venues, or one category's, optionally in one city (FR-CAT-16); admins may include closed ones. */
+  venues: (categoryId?: number, includeInactive = false, cityId?: number) =>
+    api<Page<VenueSummary>>(`/venues?${query({ categoryId, cityId, includeInactive: includeInactive || undefined, size: 100 })}`),
   venue: (venueId: number) => api<Venue>(`/venues/${venueId}`),
   bookables: (venueId: number, includeInactive = false) =>
     api<Page<BookableSummary>>(`/venues/${venueId}/bookables?${query({ includeInactive: includeInactive || undefined, size: 100 })}`),
@@ -34,7 +26,7 @@ export const catalogApi = {
   availability: (bookableId: number, date: string) =>
     api<Availability>(`/bookables/${bookableId}/availability?date=${date}`),
   countries: () => api<Country[]>('/countries'),
-  timeZones: (countryCode: string) => api<CountryTimeZones>(`/countries/${countryCode}/time-zones`),
+  cities: (countryCode: string) => api<City[]>(`/countries/${countryCode}/cities`),
 }
 
 export const bookingApi = {

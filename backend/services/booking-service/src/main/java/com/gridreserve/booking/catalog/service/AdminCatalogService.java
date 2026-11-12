@@ -13,7 +13,7 @@ import com.gridreserve.booking.catalog.entity.BookableOpeningHours;
 import com.gridreserve.booking.catalog.entity.BookableType;
 import com.gridreserve.booking.catalog.entity.BookingModel;
 import com.gridreserve.booking.catalog.entity.Category;
-import com.gridreserve.booking.catalog.entity.CountryTimeZoneId;
+import com.gridreserve.booking.catalog.entity.City;
 import com.gridreserve.booking.catalog.entity.RuleOverrides;
 import com.gridreserve.booking.catalog.entity.Venue;
 import com.gridreserve.booking.catalog.entity.VenueOpeningHours;
@@ -21,7 +21,7 @@ import com.gridreserve.booking.catalog.repository.BookableOpeningHoursRepository
 import com.gridreserve.booking.catalog.repository.BookableRepository;
 import com.gridreserve.booking.catalog.repository.BookableTypeRepository;
 import com.gridreserve.booking.catalog.repository.CategoryRepository;
-import com.gridreserve.booking.catalog.repository.CountryTimeZoneRepository;
+import com.gridreserve.booking.catalog.repository.CityRepository;
 import com.gridreserve.booking.catalog.repository.VenueOpeningHoursRepository;
 import com.gridreserve.booking.catalog.repository.VenueRepository;
 import com.gridreserve.booking.common.exception.BookingErrorCode;
@@ -38,7 +38,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * What admins change in the catalog (FR-CAT-07..16): create and edit venues and bookables, and open or close
@@ -49,20 +48,22 @@ import java.util.Locale;
 @Service
 public class AdminCatalogService {
 
+    private static final FieldError NO_SUCH_CITY = new FieldError("cityId", "No such city.");
+
     private final CategoryRepository categories;
     private final BookableTypeRepository types;
     private final VenueRepository venues;
     private final VenueOpeningHoursRepository venueHours;
     private final BookableRepository bookables;
     private final BookableOpeningHoursRepository bookableHours;
-    private final CountryTimeZoneRepository countryZones;
+    private final CityRepository cities;
     private final CatalogService catalog;
     private final ScheduledBookings scheduled;
     private final Clock clock;
 
     public AdminCatalogService(CategoryRepository categories, BookableTypeRepository types, VenueRepository venues,
                                VenueOpeningHoursRepository venueHours, BookableRepository bookables,
-                               BookableOpeningHoursRepository bookableHours, CountryTimeZoneRepository countryZones,
+                               BookableOpeningHoursRepository bookableHours, CityRepository cities,
                                CatalogService catalog, ScheduledBookings scheduled, Clock clock) {
         this.categories = categories;
         this.types = types;
@@ -70,7 +71,7 @@ public class AdminCatalogService {
         this.venueHours = venueHours;
         this.bookables = bookables;
         this.bookableHours = bookableHours;
-        this.countryZones = countryZones;
+        this.cities = cities;
         this.catalog = catalog;
         this.scheduled = scheduled;
         this.clock = clock;
@@ -83,13 +84,14 @@ public class AdminCatalogService {
         if (category == null) {
             errors.add(new FieldError("categoryId", "No such category."));
         }
-        String country = request.countryCode().toUpperCase(Locale.ROOT);
-        errors.addAll(zoneOfCountry(country, request.timeZone()));
+        City city = cities.findById(request.cityId()).orElse(null);
+        if (city == null) {
+            errors.add(NO_SUCH_CITY);
+        }
         errors.addAll(CatalogValidator.hours("openingHours", request.openingHours()));
         failIfAny(errors);
 
-        Venue venue = venues.saveAndFlush(Venue.create(category, request.name(), request.addressLine(),
-                request.city().strip(), country, request.timeZone(), now()));
+        Venue venue = venues.saveAndFlush(Venue.create(category, request.name(), request.addressLine(), city, now()));
         replaceVenueHours(venue.getId(), request.openingHours());
         return catalog.venue(venue.getId(), true);
     }
@@ -97,14 +99,13 @@ public class AdminCatalogService {
     @Transactional
     public VenueResponse updateVenue(long id, UpdateVenueRequest request) {
         Venue venue = venues.findById(id).orElseThrow(() -> notFound("No such venue."));
-        String country = request.countryCode().toUpperCase(Locale.ROOT);
-        List<FieldError> errors = new ArrayList<>(zoneOfCountry(country, request.timeZone()));
+        City city = cities.findById(request.cityId()).orElse(null);
+        List<FieldError> errors = new ArrayList<>(city == null ? List.of(NO_SUCH_CITY) : List.of());
         errors.addAll(CatalogValidator.hours("openingHours", request.openingHours()));
         failIfAny(errors);
         checkVersion(venue.getVersion(), request.version());
 
-        venue.update(request.name(), request.addressLine(), request.city().strip(), country, request.timeZone(),
-                now());
+        venue.update(request.name(), request.addressLine(), city, now());
         flushOrStale(venues::flush);
         replaceVenueHours(id, request.openingHours());
         return catalog.venue(id, true);
@@ -195,13 +196,6 @@ public class AdminCatalogService {
                     "Only time-slot (EXCLUSIVE) bookables can be added until seat sessions arrive in Phase 2.");
         }
         return type;
-    }
-
-    private List<FieldError> zoneOfCountry(String countryCode, String timeZone) {
-        if (countryZones.existsById(new CountryTimeZoneId(countryCode, timeZone))) {
-            return List.of();
-        }
-        return List.of(new FieldError("timeZone", "Is not a time zone of country " + countryCode + "."));
     }
 
     // Weekly hours are replaced as a whole: delete in one statement, then insert the new days.

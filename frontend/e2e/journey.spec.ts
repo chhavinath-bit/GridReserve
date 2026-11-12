@@ -60,3 +60,17 @@ test('a hold that runs out offers to pick again (US-06, FR-UI-06)', async ({ pag
   await page.getByRole('button', { name: 'Pick again' }).click()
   await expect(page.getByRole('button', { name: 'Hold slot' })).toBeVisible()
 })
+
+test('Browse narrows venues to one listed city and keeps it after a reload (FR-UI-14, FR-CAT-16)', async ({ page }) => {
+  await logIn(page, 'alice')
+  await page.getByRole('combobox', { name: 'Location' }).click()
+  await page.getByRole('combobox', { name: 'Search cities' }).fill('hyderabad')
+  await page.getByRole('option', { name: 'Hyderabad, India' }).click()
+  await expect(page).toHaveURL(/[?&]place=\d+/)
+  await expect(page.getByRole('link', { name: /CityCare Clinic/ })).toBeVisible()
+  await expect(page.getByRole('link', { name: /Sunrise Turf/ })).toHaveCount(0)
+
+  await page.reload()
+  await expect(page.getByRole('combobox', { name: 'Location' })).toHaveText('Hyderabad, India')
+  await expect(page.getByRole('link', { name: /CityCare Clinic/ })).toBeVisible()
+})

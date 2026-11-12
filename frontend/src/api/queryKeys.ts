@@ -13,7 +13,7 @@ export const queryKeys = {
   myBookings: ['bookings', 'me'] as const,
   myBookingsTab: (tab: string) => ['bookings', 'me', tab] as const,
   countries: ['countries'] as const,
-  timeZones: (countryCode: string) => ['countries', countryCode, 'time-zones'] as const,
+  cities: (countryCode: string) => ['countries', countryCode, 'cities'] as const,
   admin: ['admin'] as const,
   adminVenues: ['admin', 'venues'] as const,
   adminVenue: (venueId: number) => ['admin', 'venue', venueId] as const,

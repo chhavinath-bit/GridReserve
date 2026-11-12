@@ -3,6 +3,7 @@ package com.gridreserve.booking.catalog.repository;
 import com.gridreserve.booking.catalog.entity.Venue;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -13,18 +14,24 @@ public interface VenueRepository extends JpaRepository<Venue, Long> {
 
     /**
      * Venues of one category, country and city (each filter optional: null = any); inactive ones only when asked.
-     * The city matches case-insensitively ("hyderabad" finds "Hyderabad").
+     * Each with its city, in the same query (every list item shows the city's name).
      */
+    @EntityGraph(attributePaths = "city")
     @Query("""
             select v from Venue v
             where (:categoryId is null or v.category.id = :categoryId)
               and (cast(:countryCode as string) is null or v.countryCode = :countryCode)
-              and (cast(:city as string) is null or lower(v.city) = lower(cast(:city as string)))
+              and (:cityId is null or v.city.id = :cityId)
               and (:includeInactive = true or v.active = true)
             """)
     Page<Venue> search(@Param("categoryId") Long categoryId, @Param("countryCode") String countryCode,
-                       @Param("city") String city, @Param("includeInactive") boolean includeInactive,
+                       @Param("cityId") Long cityId, @Param("includeInactive") boolean includeInactive,
                        Pageable pageable);
+
+    /** One venue with its city in one query. */
+    @EntityGraph(attributePaths = "city")
+    @Query("select v from Venue v where v.id = :id")
+    Optional<Venue> findWithCityById(@Param("id") long id);
 
     /**
      * Locks the venue of a bookable {@code FOR SHARE} and returns its ID (empty if the bookable doesn't

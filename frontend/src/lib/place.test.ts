@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { VenueSummary } from '@/api/types'
-import { parsePlace, placeLabel, placesOf } from './place'
+import { parseCityId, placeLabel, placesOf } from './place'
 
-const venue = (city: string, countryCode: string): VenueSummary => ({
-  id: 1, categoryId: 1, name: 'V', addressLine: '', city, countryCode, timeZone: 'UTC', active: true,
+const venue = (cityId: number, city: string, countryCode: string): VenueSummary => ({
+  id: 1, categoryId: 1, name: 'V', addressLine: '', cityId, city, countryCode, timeZone: 'UTC', active: true,
 })
 
 describe('places', () => {
@@ -13,14 +13,16 @@ describe('places', () => {
   })
 
   it('lists each city once, sorted', () => {
-    const places = placesOf([venue('Pune', 'IN'), venue('London', 'GB'), venue('Pune', 'IN'), venue('Hyderabad', 'IN')])
+    const places = placesOf([venue(31, 'Pune', 'IN'), venue(48, 'London', 'GB'), venue(31, 'Pune', 'IN'), venue(14, 'Hyderabad', 'IN')])
     expect(places.map((place) => place.label)).toEqual(['Hyderabad, India', 'London, United Kingdom', 'Pune, India'])
-    expect(places[0]!.value).toBe('IN|Hyderabad')
+    expect(places[0]!.value).toBe('14')
   })
 
-  it('reads the URL form back, refusing a broken one', () => {
-    expect(parsePlace('IN|Hyderabad')).toEqual({ countryCode: 'IN', city: 'Hyderabad' })
-    expect(parsePlace('IN')).toBeUndefined()
-    expect(parsePlace(null)).toBeUndefined()
+  it('reads a city ID from the URL, treating anything else as anywhere', () => {
+    expect(parseCityId('14')).toBe(14)
+    expect(parseCityId('IN|Hyderabad')).toBeUndefined() // the M1.13 form
+    expect(parseCityId('0')).toBeUndefined()
+    expect(parseCityId('1.5')).toBeUndefined()
+    expect(parseCityId(null)).toBeUndefined()
   })
 })
