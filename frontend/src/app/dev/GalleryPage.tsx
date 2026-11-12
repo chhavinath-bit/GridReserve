@@ -3,6 +3,7 @@ import type { Slot } from '@/api/types'
 import { ConflictNotice } from '@/components/patterns/ConflictNotice'
 import { DateStrip } from '@/components/patterns/DateStrip'
 import { HoldTimer } from '@/components/patterns/HoldTimer'
+import { ReasonField } from '@/components/patterns/ReasonField'
 import { SlotGrid } from '@/components/patterns/SlotGrid'
 import { EmptyState, ErrorState, LoadingState } from '@/components/patterns/States'
 import { StatusBadge } from '@/components/patterns/StatusBadge'
@@ -103,6 +104,12 @@ function Everything({ prefix }: { prefix: string }) {
       </Section>
       <Section title="Textarea">
         <Textarea aria-label={`Reason (${prefix})`} className="max-w-md" placeholder="Reason (optional)" />
+      </Section>
+      <Section title="ReasonField (empty, with text)">
+        <div className="grid max-w-md gap-4">
+          <ReasonField label={`Reason (optional) (${prefix})`} value="" onChange={() => undefined} />
+          <ReasonField label={`Reason (optional, shown to the member) (${prefix})`} value="Court closed for repairs" onChange={() => undefined} />
+        </div>
       </Section>
       <Section title="Table">
         <Table>

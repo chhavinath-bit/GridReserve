@@ -37,10 +37,24 @@ test('a member books a court, sees it after a reload, and cancels it (US-02, FR-
   await expect(card).toBeVisible()
 
   await card.getByRole('button', { name: 'Cancel' }).click()
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Yes, cancel' }).click()
+  const dialog = page.getByRole('alertdialog')
+  // Unique per run, so this run's card is found among earlier runs' cancellations (D-49).
+  const reason = `Plans changed ${Date.now()}`
+  await dialog.getByRole('textbox', { name: 'Reason (optional)' }).fill(reason)
+  await dialog.getByRole('button', { name: 'Yes, cancel' }).click()
   await expect(page.getByText('Booking cancelled')).toBeVisible()
-  // It leaves Upcoming; "Cancelled & expired" lists by start time, so it may sit on a later page there.
   await expect(card).toHaveCount(0)
+
+  // The member sees who cancelled, when and why. "Cancelled & expired" is paged, newest start first.
+  await page.getByRole('tab', { name: 'Cancelled & expired' }).click()
+  const cancelled = page.getByRole('article').filter({ hasText: reason })
+  const more = page.getByRole('button', { name: 'Load more' })
+  while (!(await cancelled.isVisible()) && (await more.isVisible())) {
+    await more.click()
+    await settled(page)
+  }
+  await expect(cancelled).toContainText('Cancelled by you')
+  await expect(cancelled).toContainText(`“${reason}”`)
 })
 
 test('a hold that runs out offers to pick again (US-06, FR-UI-06)', async ({ page, cleanup }) => {

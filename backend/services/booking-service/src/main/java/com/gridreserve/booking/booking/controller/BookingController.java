@@ -70,7 +70,7 @@ public class BookingController {
     @PostMapping("/{id}/cancel")
     public BookingResponse cancel(@PathVariable long id, @Valid @RequestBody(required = false) CancelRequest request,
                                   Authentication caller) {
-        String reason = request == null ? null : request.reason();
+        String reason = request == null ? null : request.trimmedReason();
         return bookings.cancel(Viewer.memberId(caller), Viewer.isAdmin(caller), id, reason);
     }
 

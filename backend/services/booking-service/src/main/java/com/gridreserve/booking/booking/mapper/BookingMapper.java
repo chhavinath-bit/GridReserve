@@ -16,7 +16,7 @@ public final class BookingMapper {
         return new BookingResponse(booking.getId(), booking.getBookableId(), bookable.name(), bookable.label(),
                 bookable.venueName(), bookable.venueCity(), bookable.venueCountryCode(), bookable.zone().getId(), booking.getStartTime(), booking.getEndTime(),
                 booking.getStatus(), booking.getExpiresAt(), booking.getCreatedAt(), booking.getCancelledAt(),
-                booking.getCancelledBy(), cancellableUntil(booking, bookable));
+                booking.getCancelledBy(), booking.getCancelReason(), cancellableUntil(booking, bookable));
     }
 
     /** Same rule as the cancel UPDATE (CXL-01/02), stated as a moment so the UI can disable Cancel in time. */

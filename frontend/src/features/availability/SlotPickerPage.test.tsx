@@ -31,7 +31,7 @@ const availability: Availability = {
 const booking = (status: Booking['status'], at = slot(10)): Booking => ({
   id: 99, bookableId: 7, bookableName: 'Visitor Bay 1', bookableLabel: 'Bay', venueName: 'Palm Apartments', venueCity: 'Chennai', venueCountryCode: 'IN', venueTimeZone: ZONE,
   start: at.start, end: at.end, status, expiresAt: status === 'HELD' ? '2099-01-05T00:05:00Z' : null,
-  createdAt: '2099-01-05T00:00:00Z', cancelledAt: null, cancelledBy: null,
+  createdAt: '2099-01-05T00:00:00Z', cancelledAt: null, cancelledBy: null, cancelReason: null,
   cancellableUntil: status === 'HELD' ? '2099-01-05T00:05:00Z' : '2099-01-05T08:30:00Z',
 })
 

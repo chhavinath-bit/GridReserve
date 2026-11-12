@@ -8,23 +8,21 @@ import { adminApi, bookingApi, catalogApi, type AdminBookingsFilter } from '@/ap
 import { queryKeys } from '@/api/queryKeys'
 import type { AdminBooking, BookingStatus } from '@/api/types'
 import { PageHeader } from '@/components/patterns/PageHeader'
+import { ReasonField } from '@/components/patterns/ReasonField'
 import { EmptyState, ErrorState, LoadingState } from '@/components/patterns/States'
 import { StatusBadge } from '@/components/patterns/StatusBadge'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Combobox } from '@/components/ui/combobox'
 import { Table, TableCell, TableHead } from '@/components/ui/table'
-import { Textarea } from '@/components/ui/textarea'
 import { placeLabel } from '@/lib/place'
 import { addDays, formatDay, formatRange, formatTimeRange } from '@/lib/time'
 import { AuditTimeline } from './AuditTimeline'
 
 const ANY = 'any'
 const STATUSES: BookingStatus[] = ['HELD', 'CONFIRMED', 'CANCELLED', 'EXPIRED']
-const REASON_MAX = 200
 
 /** The URL's filters as the API's: dates are whole UTC days, "to" includes its day. */
 export function filterFromParams(params: URLSearchParams): AdminBookingsFilter {
@@ -280,7 +278,7 @@ function BookingDrawer({ row, onClose, onCancel }: { row: AdminBooking | null; o
   )
 }
 
-/** Admins may cancel any booking at any time, with an optional reason kept in the audit log (CXL-03). */
+/** Admins may cancel any booking at any time, with an optional reason the member sees and the history keeps (CXL-03, D-49). */
 function CancelDialog({ row, onClose, onDone }: { row: AdminBooking | null; onClose: () => void; onDone: () => void }) {
   const [reason, setReason] = useState('')
   const cancel = useMutation({
@@ -297,7 +295,6 @@ function CancelDialog({ row, onClose, onDone }: { row: AdminBooking | null; onCl
     cancel.reset()
     onClose()
   }
-  const tooLong = reason.length > REASON_MAX
   return (
     <Dialog open={row !== null} onOpenChange={(open) => !open && close()}>
       <DialogContent>
@@ -312,24 +309,12 @@ function CancelDialog({ row, onClose, onDone }: { row: AdminBooking | null; onCl
             {cancel.error instanceof ApiError ? cancel.error.message : 'Something went wrong. Please try again.'}
           </Alert>
         ) : null}
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="cancel-reason">Reason (optional, kept in the history)</Label>
-          <Textarea
-            id="cancel-reason"
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            aria-invalid={tooLong ? true : undefined}
-            aria-describedby="cancel-reason-hint"
-          />
-          <p id="cancel-reason-hint" className={tooLong ? 'text-sm text-destructive' : 'text-sm text-subtle-foreground'}>
-            {reason.length} / {REASON_MAX} characters
-          </p>
-        </div>
+        <ReasonField label="Reason (optional, shown to the member)" value={reason} onChange={setReason} />
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="ghost" onClick={close}>
             Keep it
           </Button>
-          <Button variant="destructive" disabled={tooLong} loading={cancel.isPending} onClick={() => row && cancel.mutate(row.booking.id)}>
+          <Button variant="destructive" loading={cancel.isPending} onClick={() => row && cancel.mutate(row.booking.id)}>
             Cancel booking
           </Button>
         </div>

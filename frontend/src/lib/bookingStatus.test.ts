@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Booking } from '@/api/types'
 import { tabOf } from '@/features/bookings/MyBookingsPage'
 import { holdDeadline } from '@/features/bookings/hold'
-import { canCancel, effectiveStatus } from './bookingStatus'
+import { canCancel, closedNote, effectiveStatus } from './bookingStatus'
 
 const NOW = Date.parse('2026-11-07T10:00:00Z')
 
@@ -22,6 +22,7 @@ const booking = (overrides: Partial<Booking>): Booking => ({
   createdAt: '2026-11-07T09:58:00Z',
   cancelledAt: null,
   cancelledBy: null,
+  cancelReason: null,
   cancellableUntil: '2026-11-08T02:30:00Z',
   ...overrides,
 })
@@ -57,5 +58,19 @@ describe('booking status shown to the member', () => {
     const hold = booking({ status: 'HELD', createdAt: '2026-11-07T09:58:00Z', expiresAt: '2026-11-07T10:03:00Z' })
     const arrived = Date.parse('2026-11-07T12:00:00Z')
     expect(holdDeadline(hold, arrived)).toBe(arrived + 5 * 60_000)
+  })
+})
+
+describe('how a closed booking ended, for its owner (D-49)', () => {
+  it('says who cancelled and when, in the venue’s zone', () => {
+    const at = { status: 'CANCELLED' as const, cancelledAt: '2026-11-07T08:35:00Z' }
+    expect(closedNote(booking({ ...at, cancelledBy: 'MEMBER' }), NOW)).toBe('Cancelled by you · Sat 7 Nov, 14:05')
+    expect(closedNote(booking({ ...at, cancelledBy: 'ADMIN' }), NOW)).toBe('Cancelled by the venue’s admin · Sat 7 Nov, 14:05')
+  })
+
+  it('says a hold ran out, also before the row is marked EXPIRED, and nothing for an open booking', () => {
+    expect(closedNote(booking({ status: 'EXPIRED' }), NOW)).toBe('Hold ran out before it was confirmed.')
+    expect(closedNote(booking({ status: 'HELD', expiresAt: '2026-11-07T09:59:00Z' }), NOW)).toBe('Hold ran out before it was confirmed.')
+    expect(closedNote(booking({ status: 'CONFIRMED' }), NOW)).toBeNull()
   })
 })

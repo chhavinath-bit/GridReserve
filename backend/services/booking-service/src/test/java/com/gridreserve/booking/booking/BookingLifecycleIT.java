@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
+import tools.jackson.databind.JsonNode;
 
 import java.sql.Timestamp;
 import java.time.Duration;
@@ -441,7 +442,7 @@ class BookingLifecycleIT {
     class Cancel {
 
         @Test
-        @DisplayName("FR-BK-04: the owner cancels a hold with a reason; cancelling again → 409 INVALID_STATE")
+        @DisplayName("FR-BK-04/07: the owner cancels a hold with a reason and sees it; cancelling again → 409 INVALID_STATE")
         void memberCancels_FRBK04() {
             long id = id(hold(memberA, "Court A", "10:00", "11:00"));
 
@@ -450,6 +451,7 @@ class BookingLifecycleIT {
             assertThat(cancelled.body().get("status").asString()).isEqualTo("CANCELLED");
             assertThat(cancelled.body().get("cancelledBy").asString()).isEqualTo("MEMBER");
             assertThat(cancelled.body().get("cancelledAt").isNull()).isFalse();
+            assertThat(cancelled.body().get("cancelReason").asString()).isEqualTo("Plans changed");
             assertThat(jdbc.queryForObject("SELECT cancel_reason FROM booking WHERE id = ?", String.class, id))
                     .isEqualTo("Plans changed");
 
@@ -469,6 +471,36 @@ class BookingLifecycleIT {
             assertThat(cancelled.body().get("cancelledBy").asString()).isEqualTo("ADMIN");
 
             assertThat(hold(memberB, "Court A", "10:00", "11:00").status()).isEqualTo(201);
+        }
+
+        @Test
+        @DisplayName("FR-BK-07: the member sees an admin's cancellation, who did it and why, in their own list")
+        void memberSeesAdminReason_FRBK07() {
+            long id = id(hold(memberA, "Court A", "10:00", "11:00"));
+            confirm(memberA, id);
+            cancel(admin, id, "Court closed for repairs");
+
+            JsonNode mine = null;
+            for (JsonNode booking : http.get("/api/v1/bookings/me?status=CANCELLED", memberA).body().get("items")) {
+                if (booking.get("id").asLong() == id) {
+                    mine = booking;
+                }
+            }
+            assertThat(mine).isNotNull();
+            assertThat(mine.get("cancelledBy").asString()).isEqualTo("ADMIN");
+            assertThat(mine.get("cancelReason").asString()).isEqualTo("Court closed for repairs");
+        }
+
+        @Test
+        @DisplayName("FR-BK-04: a reason is stored without surrounding spaces; a blank one counts as none")
+        void reasonTrimmed_FRBK04() {
+            long trimmed = id(hold(memberA, "Court A", "10:00", "11:00"));
+            long blank = id(hold(memberA, "Court B", "12:00", "13:00"));
+
+            assertThat(cancel(memberA, trimmed, "  Plans changed  ").body().get("cancelReason").asString())
+                    .isEqualTo("Plans changed");
+            assertThat(cancel(memberA, blank, "   ").body().get("cancelReason").isNull()).isTrue();
+            assertThat(jdbc.queryForObject("SELECT cancel_reason FROM booking WHERE id = ?", String.class, blank)).isNull();
         }
 
         @Test

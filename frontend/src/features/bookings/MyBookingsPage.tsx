@@ -12,9 +12,10 @@ import { HoldTimer } from '@/components/patterns/HoldTimer'
 import { EmptyState, ErrorState, LoadingState } from '@/components/patterns/States'
 import { StatusBadge } from '@/components/patterns/StatusBadge'
 import { Alert } from '@/components/ui/alert'
+import { ReasonField } from '@/components/patterns/ReasonField'
 import { ConfirmDialog } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { canCancel, effectiveStatus } from '@/lib/bookingStatus'
+import { canCancel, closedNote, effectiveStatus } from '@/lib/bookingStatus'
 import { placeLabel } from '@/lib/place'
 import { formatDay, formatTime, formatTimeRange } from '@/lib/time'
 import { useNow } from '@/lib/useNow'
@@ -170,6 +171,7 @@ function DateColumn({ booking }: { booking: Booking }) {
 function BookingCard({ booking, now }: { booking: Booking; now: number }) {
   const queryClient = useQueryClient()
   const [askingCancel, setAskingCancel] = useState(false)
+  const [reason, setReason] = useState('')
   const [error, setError] = useState<string | null>(null)
   // A hold loaded from the list (e.g. after a reload) has no "answer arrived" moment, so the device
   // clock is compared with expiresAt directly; the server still decides at confirm.
@@ -194,10 +196,11 @@ function BookingCard({ booking, now }: { booking: Booking; now: number }) {
     onError,
   })
   const cancel = useMutation({
-    mutationFn: () => bookingApi.cancel(booking.id),
+    mutationFn: () => bookingApi.cancel(booking.id, reason.trim() || undefined),
     onSuccess: () => {
       toast(status === 'HELD' ? 'Hold released' : 'Booking cancelled')
       setAskingCancel(false)
+      setReason('')
       settle()
     },
     onError,
@@ -216,7 +219,7 @@ function BookingCard({ booking, now }: { booking: Booking; now: number }) {
       ? `Cancellations closed ${formatDay(booking.cancellableUntil, zone)}, ${formatTime(booking.cancellableUntil, zone)}. Contact the venue to change this booking.`
       : active && booking.cancellableUntil
         ? `Free cancellation until ${formatDay(booking.cancellableUntil, zone)}, ${formatTime(booking.cancellableUntil, zone)}`
-        : null
+        : closedNote(booking, now)
 
   return (
     <article
@@ -246,6 +249,11 @@ function BookingCard({ booking, now }: { booking: Booking; now: number }) {
         {note ? (
           <p id={noteId} className={cn('text-[13px]', held ? 'text-warning-soft-foreground' : 'text-subtle-foreground')}>
             {note}
+          </p>
+        ) : null}
+        {!active && booking.cancelReason ? (
+          <p className="text-[13px] text-muted-foreground">
+            <span className="sr-only">Reason: </span>“{booking.cancelReason}”
           </p>
         ) : null}
         {error ? (
@@ -280,6 +288,7 @@ function BookingCard({ booking, now }: { booking: Booking; now: number }) {
         variant="destructive"
         busy={cancel.isPending}
         onConfirm={() => cancel.mutate()}
+        field={<ReasonField label="Reason (optional)" value={reason} onChange={setReason} />}
       >
         <p>
           {booking.bookableName} at {booking.venueName}, {placeLabel(booking.venueCity, booking.venueCountryCode)}: {formatDay(booking.start, zone)} · {times}.
