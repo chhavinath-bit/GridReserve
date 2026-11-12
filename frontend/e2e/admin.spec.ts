@@ -43,9 +43,39 @@ test('the venue form checks its fields before sending (FR-CAT-09)', async ({ pag
   await page.getByRole('textbox', { name: 'Monday opens' }).fill('22:00')
   await page.getByRole('textbox', { name: 'Monday closes' }).fill('08:00')
   await page.getByRole('button', { name: 'Create venue' }).click()
-  await expect(page.getByRole('alert')).toContainText('Check 6 fields')
+  await expect(page.getByRole('alert')).toContainText('Check 5 fields')
   await expect(page.getByText('Monday: must open before it closes.')).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Category' })).toBeFocused()
+})
+
+test('a venue’s city is picked from its country’s list and brings the time zone (FR-CAT-16)', async ({ page }) => {
+  // Fills the form without saving: venues are never deleted, so e2e doesn't create any (AdminCatalogIT does).
+  await logIn(page, 'admin')
+  await page.goto('/admin/venues/new')
+  const city = page.getByRole('combobox', { name: 'City', exact: true })
+  await expect(city).toBeDisabled()
+
+  await page.getByRole('combobox', { name: 'Country', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Search country' }).fill('united states')
+  await page.keyboard.press('Enter')
+  await city.click()
+  await page.getByRole('combobox', { name: 'Search city' }).fill('chic')
+  await page.getByRole('option', { name: 'Chicago' }).click()
+  await expect(page.getByText('Time zone America/Chicago')).toBeVisible()
+
+  // Another country clears the city; one with a single listed city picks it.
+  await page.getByRole('combobox', { name: 'Country', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Search country' }).fill('singapore')
+  await page.keyboard.press('Enter')
+  await expect(city).toHaveText('Singapore')
+  await expect(page.getByText('Time zone Asia/Singapore')).toBeVisible()
+
+  // A country without listed cities says so instead of offering a free-text field.
+  await page.getByRole('combobox', { name: 'Country', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Search country' }).fill('iceland')
+  await page.keyboard.press('Enter')
+  await expect(city).toBeDisabled()
+  await expect(city).toHaveText('No cities listed yet')
 })
 
 test('a member never sees the admin area (FR-ADM-01)', async ({ page }) => {

@@ -26,9 +26,9 @@ interface VenueValues {
   categoryId: string
   name: string
   addressLine: string
-  city: string
+  /** Only narrows the city list; the venue's country is its city's (D-48). */
   countryCode: string
-  timeZone: string
+  cityId: string
   hours: DayHours[]
 }
 
@@ -36,9 +36,8 @@ const FIELDS = [
   { name: 'categoryId', label: 'Category' },
   { name: 'name', label: 'Name' },
   { name: 'addressLine', label: 'Address' },
-  { name: 'city', label: 'City' },
   { name: 'countryCode', label: 'Country' },
-  { name: 'timeZone', label: 'Time zone' },
+  { name: 'cityId', label: 'City' },
   { name: 'hours', label: 'Opening hours' },
 ]
 
@@ -47,16 +46,15 @@ const schema = Yup.object({
   categoryId: Yup.string().required('Choose a category.'),
   name: Yup.string().trim().required('Enter a name.').max(100, 'Use at most 100 characters.'),
   addressLine: Yup.string().max(200, 'Use at most 200 characters.'),
-  city: Yup.string().trim().required('Enter the city, so members see where it is.').max(100, 'Use at most 100 characters.'),
   countryCode: Yup.string().required('Choose a country.'),
-  timeZone: Yup.string().required('Choose a time zone.'),
+  cityId: Yup.string().required('Choose the city, so members see where it is.'),
   hours: Yup.mixed<DayHours[]>().test('hours', (days, context) => {
     const problem = hoursProblem(days ?? [])
     return problem ? context.createError({ message: problem }) : true
   }),
 })
 
-/** Create a venue (/admin/venues/new) or edit one (/admin/venues/:venueId) (FR-CAT-07, FR-CAT-14, FR-CAT-15). */
+/** Create a venue (/admin/venues/new) or edit one (/admin/venues/:venueId) (FR-CAT-07, FR-CAT-15, FR-CAT-16). */
 export function VenueEditPage() {
   const id = useParams().venueId
   const venueId = id === undefined ? null : Number(id)
@@ -81,9 +79,8 @@ function VenueEditor({ categories, venue, onReload }: { categories: Category[]; 
     categoryId: venue ? String(venue.categoryId) : '',
     name: venue?.name ?? '',
     addressLine: venue?.addressLine ?? '',
-    city: venue?.city ?? '',
     countryCode: venue?.countryCode ?? '',
-    timeZone: venue?.timeZone ?? '',
+    cityId: venue ? String(venue.cityId) : '',
     hours: toDays(venue?.openingHours ?? []),
   }
 
@@ -98,9 +95,7 @@ function VenueEditor({ categories, venue, onReload }: { categories: Category[]; 
     const input: VenueInput = {
       name: values.name.trim(),
       addressLine: values.addressLine.trim() || null,
-      city: values.city.trim(),
-      countryCode: values.countryCode,
-      timeZone: values.timeZone,
+      cityId: Number(values.cityId),
       openingHours: fromDays(values.hours),
     }
     try {
@@ -153,11 +148,10 @@ function VenueEditor({ categories, venue, onReload }: { categories: Category[]; 
                     options={categories.map((candidate) => ({ value: String(candidate.id), label: candidate.name }))}
                   />
                   <FormField name="addressLine" label="Address" autoComplete="off" hint="Street and number." />
-                  <FormField name="city" label="City" autoComplete="off" hint="Members filter and see venues by city." />
                 </section>
                 <section aria-labelledby="location-title" className="flex flex-col gap-4 rounded-lg border bg-card p-5">
                   <h2 id="location-title" className="font-semibold">
-                    Location and time zone
+                    Location
                   </h2>
                   <CountryZoneFields />
                 </section>

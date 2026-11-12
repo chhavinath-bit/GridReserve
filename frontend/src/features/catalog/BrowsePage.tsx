@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, MapPin } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router'
-import { catalogApi, type Place } from '@/api/endpoints'
+import { catalogApi } from '@/api/endpoints'
 import { queryKeys } from '@/api/queryKeys'
 import type { Category, VenueSummary } from '@/api/types'
 import { ChipGroup } from '@/components/patterns/ChipGroup'
@@ -9,12 +9,12 @@ import { PageHeader } from '@/components/patterns/PageHeader'
 import { EmptyState, ErrorState, LoadingState } from '@/components/patterns/States'
 import { Badge } from '@/components/ui/badge'
 import { Combobox } from '@/components/ui/combobox'
-import { parsePlace, placeLabel, placesOf } from '@/lib/place'
+import { parseCityId, placeLabel, placesOf } from '@/lib/place'
 
 /**
  * Category → venues (FR-UI-01/02), narrowed by place (FR-CAT-16). The category chips act as the dropdown:
  * one press filters the list; Location is a searchable list of the cities that have venues. Both live in
- * the URL (?category=2&place=IN|Hyderabad), so back/forward and reload keep them; none = everything.
+ * the URL (?category=2&place=14, a city ID), so back/forward and reload keep them; none = everything.
  */
 export function BrowsePage() {
   const [params, setParams] = useSearchParams()
@@ -22,8 +22,8 @@ export function BrowsePage() {
   // Every venue once, for the Location options (all venues fit in one page of 100).
   const everyVenue = useQuery({ queryKey: queryKeys.venues(), queryFn: () => catalogApi.venues() })
   const categoryId = Number(params.get('category')) || undefined
-  const placeParam = params.get('place')
-  const place = parsePlace(placeParam)
+  const cityId = parseCityId(params.get('place'))
+  const places = placesOf(everyVenue.data?.items ?? [])
 
   const setFilter = (key: 'category' | 'place', value: string | undefined) => {
     const next = new URLSearchParams(params)
@@ -52,14 +52,19 @@ export function BrowsePage() {
                 <Combobox
                   aria-label="Location"
                   searchPlaceholder="Search cities"
-                  value={place ? placeParam! : ANYWHERE}
+                  value={cityId ? String(cityId) : ANYWHERE}
                   onValueChange={(value) => setFilter('place', value === ANYWHERE ? undefined : value)}
-                  options={[{ value: ANYWHERE, label: 'Anywhere' }, ...placesOf(everyVenue.data?.items ?? [])]}
+                  options={[{ value: ANYWHERE, label: 'Anywhere' }, ...places]}
                 />
               </div>
             </div>
           </div>
-          <VenueList categories={categories.data} categoryId={categoryId} place={place} placeKey={placeParam ?? undefined} />
+          <VenueList
+            categories={categories.data}
+            categoryId={categoryId}
+            cityId={cityId}
+            placeName={places.find((place) => place.value === String(cityId))?.label}
+          />
         </div>
       ) : null}
     </>
@@ -68,15 +73,17 @@ export function BrowsePage() {
 
 const ANYWHERE = 'anywhere'
 
-function VenueList({ categories, categoryId, place, placeKey }: { categories: Category[]; categoryId: number | undefined; place: Place | undefined; placeKey: string | undefined }) {
+function VenueList(props: { categories: Category[]; categoryId: number | undefined; cityId: number | undefined; placeName: string | undefined }) {
+  const { categories, categoryId, cityId, placeName } = props
   const venues = useQuery({
-    queryKey: queryKeys.venues(categoryId, place ? placeKey : undefined),
-    queryFn: () => catalogApi.venues(categoryId, false, place),
+    queryKey: queryKeys.venues(categoryId, cityId ? String(cityId) : undefined),
+    queryFn: () => catalogApi.venues(categoryId, false, cityId),
   })
   if (venues.isPending) return <LoadingState />
   if (venues.isError) return <ErrorState error={venues.error} onRetry={() => void venues.refetch()} />
   if (venues.data.items.length === 0) {
-    return <EmptyState title={place ? `No venues here in ${placeLabel(place.city, place.countryCode)}` : 'No venues in this category yet'} />
+    if (!cityId) return <EmptyState title="No venues in this category yet" />
+    return <EmptyState title={placeName ? `No venues here in ${placeName}` : 'No venues here in this city'} />
   }
   const categoryName = new Map(categories.map((category) => [category.id, category.name]))
   return (
