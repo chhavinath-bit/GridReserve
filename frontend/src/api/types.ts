@@ -152,6 +152,8 @@ export interface Booking {
   createdAt: string
   cancelledAt: string | null
   cancelledBy: CancelledBy | null
+  /** What the member or an admin wrote when cancelling; shown to the member (D-49). */
+  cancelReason: string | null
   /** Last moment the owner can cancel (CXL-01/02); null once cancelling is no longer possible. */
   cancellableUntil: string | null
 }

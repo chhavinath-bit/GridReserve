@@ -10,6 +10,8 @@ export interface ConfirmDialogProps {
   onOpenChange: (open: boolean) => void
   title: string
   children: ReactNode
+  /** An optional input under the text, such as a reason; outside the description so it isn't read as one. */
+  field?: ReactNode
   confirmLabel: string
   cancelLabel?: string
   variant?: ButtonProps['variant']
@@ -27,6 +29,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
           <AlertDialogPrimitive.Description asChild>
             <div className="flex flex-col gap-3 text-sm text-muted-foreground">{props.children}</div>
           </AlertDialogPrimitive.Description>
+          {props.field}
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <AlertDialogPrimitive.Cancel asChild>
               <Button variant="outline">{props.cancelLabel ?? 'Keep it'}</Button>
