@@ -920,6 +920,27 @@ Dev database: V7 applied on start; all 6 venues linked; "Lakeside Courts" (V6 ga
 
 ---
 
+## M1.13c Members see why a booking was cancelled — Built, awaiting owner review (2026-11-12)
+
+Owner check: can a member see the reason for a cancellation, by themselves or by an admin? No: the reason was stored (`booking.cancel_reason`, audit) but missing from `BookingResponse`, and My bookings showed neither who cancelled nor when. Decision D-49 (owner: members may give a reason too, 1a; one admin reason box shown to the member, no private note). No migration, no config-repo change. Branch `m1.13c-cancel-reason` from `main` after #25.
+
+**Built:**
+- booking-service: `cancelReason` in `BookingResponse` (owner and admins only, through the existing ownership checks); `CancelRequest.trimmedReason()` (surrounding spaces removed, blank = null).
+- Frontend: closed cards in My bookings say "Cancelled by you" / "Cancelled by the venue’s admin" with the time in the venue's zone, or "Hold ran out before it was confirmed.", and show the reason in quotes (`closedNote` in `lib/bookingStatus.ts`); the member's cancel dialog has an optional reason; the admin's box reads "Reason (optional, shown to the member)"; one `ReasonField` (`maxLength` 200, live count) for both; `ConfirmDialog` takes an optional `field` outside its description; gallery entry.
+- Docs: D-49, REQUIREMENTS v0.21 (FR-BK-04, FR-BK-07, new FR-UI-15; FR-UI-09 corrected for D-48, missed in M1.13b), CLAUDE.md §15.1, review guide, learning rows.
+
+### Test results
+
+`cd backend && ./mvnw -B verify`: **BUILD SUCCESS, 520 tests**, 0 failures (booking-service 70 unit + 364 integration). New in `BookingLifecycleIT`: `memberSeesAdminReason_FRBK07` (admin cancels with a reason; the owner's `/bookings/me` shows `cancelledBy: ADMIN` and the reason), `reasonTrimmed_FRBK04` (trimmed; blank stored as null); `memberCancels_FRBK04` also checks `cancelReason` in the response.
+Frontend: type check and lint clean; Vitest **66/66** (new: `closedNote` for member, admin, expired and open bookings).
+Playwright **29/29**. A full run at 23:20 IST first failed the 10 "member screens" tests: they clicked the first free slot of *today* on Court A, and Sunrise Turf closes at 23:00 ("No free times left on this day"), a time-of-day bug in `screens.spec.ts` since M1.13, not from this change. Fixed like the other specs: pick the last bookable day first (`pickLastDay`); then 20/20 and the whole suite 29/29. The journey now cancels with a unique reason and finds that card under "Cancelled & expired" with "Cancelled by you" and the reason. Its first run failed because the running stack still had the M1.13b booking-service image (no `cancelReason`); after `docker compose up -d --build` it passed.
+System tests: **27 run, 0 failures, 1 skipped** (the refresh test without `-Dgridreserve.config.dir`).
+
+### Open issues for later milestones
+- No browser test of the admin-cancels path (proven over HTTP and by Vitest).
+
+---
+
 ## Open issues
 
 - **M1.10 live deployment** (owner decision 2026-11-11; finish before M1.14). **Done 2026-11-11:** Oracle VM (arm64, Ubuntu 24.04 minimal) set up, `.env` from `init-env.sh`, prod public key in config PR #10 (merged), Google Drive token, GitHub deploy variables and secrets, packages public; M1.13's merge (`f18cc90`) deployed by Deploy run 42973850098, attempt 3 green: the whole smoke test from outside (front page, health, login, refresh and the Origin check, hold → confirm → cancel, private paths 404, platform ports closed). Live at https://130-210-14-203.sslip.io. On the way: attempt 1 timed out on SSH (Oracle's security list allowed port 22 only from the owner's IP; now 0.0.0.0/0, key-only login), attempt 2 got 503 at sign-in 4 s after the containers were healthy (the gateway hadn't learned identity's address from Eureka yet); the smoke test now waits up to 120 s for routes (`until_routed`, branch `m1.10-smoke-route-wait`). **Still open:** confirm the two backup encryption values (shown in chat once) were replaced in `.env` before the first backup, else replace them and delete that backup; reboot and fail-fast checks on the host, the first backup visible in Drive and `restore-drill.sh`, tag `first-deploy`.

@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
-import { horizontalOverflow, logIn, openBookable, settled } from './support'
+import { horizontalOverflow, logIn, openBookable, pickLastDay, settled } from './support'
 
 // Every screen at the five supported widths (DESIGN_SYSTEM §2): nothing wider than the screen, and no
 // axe WCAG 2.2 AA violations at the smallest and largest width, in light and dark. SCREENSHOTS=1 also
@@ -33,6 +33,8 @@ for (const scheme of ['light', 'dark'] as const) {
       await logIn(page, 'alice')
       await check(page, 'browse', width, scheme)
       await openBookable(page, 'Sports', 'Sunrise Turf', 'Court A')
+      // The last bookable day always has free times; today has none once the venue has closed (late evening).
+      await pickLastDay(page)
       await page.getByRole('button', { name: /, free$/ }).first().click()
       await expect(page.getByRole('button', { name: /, selected$/ })).toBeVisible()
       await check(page, 'book', width, scheme)
