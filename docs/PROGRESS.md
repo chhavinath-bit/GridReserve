@@ -892,6 +892,34 @@ Frontend: type check and lint clean; **64/64** (new `lib/place.test.ts` 3). Play
 
 ---
 
+## M1.13b City list instead of a free-text city — Built, awaiting owner review (2026-11-12)
+
+Owner review of the venue form: a free-text City lets anyone type anything ("claud", "Delhi" vs "delhi "), and the city drives the Browse filter, so it must be controlled. Owner chose a seeded city table picked from a dropdown, with country and zone following from the city (1a). Decision D-48 (supersedes the city part of D-46). Migration V7; no config-repo change (the new endpoint sits under the routed `/api/v1/countries/**`). Built on its own branch `m1.13b-city-list` from `main`; M1.14 is parked as a local WIP commit (`27a2bd6` on `m1.14-phase-close`) and will be rebased on top.
+
+**Built:**
+- `V7__city_reference.sql`: `city` (67 cities: 38 India, 15 UK, 14 elsewhere, one IANA zone each), `uq_city_country_name` (unique index on country + `lower(name)`), `fk_city_country_zone`, `ck_city_name_trimmed`, `uq_city_id_country_zone`; `venue.city_id` NOT NULL, backfilled by case-insensitive name, unlisted typed cities added once per country; composite `fk_venue_city (city_id, country_code, time_zone)`; V6's `city` column, its CHECK and index dropped; `ix_venue_city`.
+- booking-service: `City` entity (read-only reference data) and `CityRepository`; `Venue.city` is a `@ManyToOne`, and `create`/`update` copy the city's country and zone; `CreateVenueRequest`/`UpdateVenueRequest` take `cityId` instead of `city`, `countryCode`, `timeZone`; unknown city → field error `cityId`; `GET /countries/{code}/cities`; `GET /venues?cityId=`; venue responses add `cityId`; the city is fetched in the same query (`@EntityGraph` on the venue search, `findWithCityById`, and `venue.city` in the bookable graphs), so no N+1.
+- Frontend: venue form Country → City (searchable Combobox, filtered by country; a single listed city is picked; a country without cities says "No cities listed yet"), the time zone shown from the city; Browse Location filter by city ID (`?place=14`; old `IN|City` links fall back to Anywhere); `City` type, `catalogApi.cities`, query key; the unused `timeZones` client call removed (the endpoint stays).
+- Docs: D-48, REQUIREMENTS v0.20 (FR-CAT-16, FR-CAT-03, endpoint table), README curl examples, CLAUDE.md §15.1, schema in ARCHITECTURE §5.3, review guide, learning rows.
+
+### Test results
+
+`cd backend && ./mvnw -B verify` (stack running, Docker up): **BUILD SUCCESS, 518 tests**, 0 failures (booking-service 70 unit + 362 integration). New: `BookingConstraintsIT` `fk_venue_city`, `fk_city_country_zone`, `uq_city_country_name` (lower-case "delhi"), `ck_city_name_trimmed`; `CatalogIT.citiesOfCountry_FRCAT16`, `citiesOfOtherCountries_FRCAT16` (Iceland → `[]`, ZZ → 404); `AdminCatalogIT.venueTakesCountryAndZoneFromCity_FRCAT16` (move to London → GB, Europe/London); `CityMigrationIT` (scratch database migrated to V6, typed venues " mumbai ", "Unknown", "Springfield"/"springfield", then V7: linked, one Springfield, no venue without a city).
+First run had 2 failures, both test expectations: `MigrationIT` expected V1–V6 (now V1–V7), and my new test assumed unknown JSON fields are refused, which is API-02 in the parked M1.14 work, not on `main` (assertion removed; M1.14 brings it back).
+
+Frontend: type check and lint clean; Vitest **64/64** (`place.test.ts` reads city IDs; `admin.test.ts` field error on `cityId`). Playwright **29/29** against the dev stack with two booking instances (new: the admin city picker without saving, the Browse city filter after a reload; the form test now expects 5 fields).
+System tests `./mvnw -B -pl system-tests -Psystem-tests verify`: **27 run, 0 failures, 1 skipped** (the refresh test, which needs `-Dgridreserve.config.dir`).
+Dev database: V7 applied on start; all 6 venues linked; "Lakeside Courts" (V6 gave it `Unknown`) is now in a city named `Unknown`, which therefore appears in the local city list.
+
+**Changed tests (not weakened):** `TestCatalog.venueBody` is an instance method sending Mumbai's `cityId`; `BookingConstraintsIT`'s `fk_venue_country_zone` test became the `fk_venue_city` test (a venue row with a wrong zone now also breaks `fk_venue_city`, so the old constraint can't be isolated); `CatalogIT` filters by `cityId`; `AdminCatalogIT` validation tests use `cityId`.
+
+### Open issues for later milestones
+- Local `Unknown` city: give "Lakeside Courts" its real city and delete the `Unknown` row by hand (dev data only; owner's call).
+- Adding a city needs a migration; an admin "add city" screen is possible later work.
+- REQUIREMENTS has two items numbered **FR-CAT-16** (the city, from M1.13, and "never deleted", older). IDs must stay unique and stable; renumbering one needs the owner's decision.
+
+---
+
 ## Open issues
 
 - **M1.10 live deployment** (owner decision 2026-11-11; finish before M1.14). **Done 2026-11-11:** Oracle VM (arm64, Ubuntu 24.04 minimal) set up, `.env` from `init-env.sh`, prod public key in config PR #10 (merged), Google Drive token, GitHub deploy variables and secrets, packages public; M1.13's merge (`f18cc90`) deployed by Deploy run 42973850098, attempt 3 green: the whole smoke test from outside (front page, health, login, refresh and the Origin check, hold → confirm → cancel, private paths 404, platform ports closed). Live at https://130-210-14-203.sslip.io. On the way: attempt 1 timed out on SSH (Oracle's security list allowed port 22 only from the owner's IP; now 0.0.0.0/0, key-only login), attempt 2 got 503 at sign-in 4 s after the containers were healthy (the gateway hadn't learned identity's address from Eureka yet); the smoke test now waits up to 120 s for routes (`until_routed`, branch `m1.10-smoke-route-wait`). **Still open:** confirm the two backup encryption values (shown in chat once) were replaced in `.env` before the first backup, else replace them and delete that backup; reboot and fail-fast checks on the host, the first backup visible in Drive and `restore-drill.sh`, tag `first-deploy`.
