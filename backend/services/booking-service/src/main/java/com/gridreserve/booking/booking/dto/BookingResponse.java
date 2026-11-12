@@ -10,6 +10,7 @@ import java.time.Instant;
  * booking row stores only IDs. {@code expiresAt} is set only while HELD. {@code cancellableUntil} is the
  * last moment the owner can cancel (CXL-01/02): the hold's expiry, or start minus the category's cutoff
  * for a confirmed booking; null once that is no longer possible in any case (cancelled, expired).
+ * {@code cancelReason} is what the member or the admin wrote when cancelling (shown to the member, D-49).
  */
 public record BookingResponse(
         long id,
@@ -27,5 +28,6 @@ public record BookingResponse(
         Instant createdAt,
         Instant cancelledAt,
         CancelledBy cancelledBy,
+        String cancelReason,
         Instant cancellableUntil) {
 }
