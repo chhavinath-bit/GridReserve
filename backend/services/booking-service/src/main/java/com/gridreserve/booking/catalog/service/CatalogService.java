@@ -5,6 +5,7 @@ import com.gridreserve.booking.catalog.dto.BookableResponse;
 import com.gridreserve.booking.catalog.dto.BookableSchedule;
 import com.gridreserve.booking.catalog.dto.BookableSummaryResponse;
 import com.gridreserve.booking.catalog.dto.CategoryResponse;
+import com.gridreserve.booking.catalog.dto.CityResponse;
 import com.gridreserve.booking.catalog.dto.CountryResponse;
 import com.gridreserve.booking.catalog.dto.CountryTimeZonesResponse;
 import com.gridreserve.booking.catalog.dto.LockedBookable;
@@ -18,6 +19,7 @@ import com.gridreserve.booking.catalog.repository.BookableOpeningHoursRepository
 import com.gridreserve.booking.catalog.repository.BookableRepository;
 import com.gridreserve.booking.catalog.repository.BookableTypeRepository;
 import com.gridreserve.booking.catalog.repository.CategoryRepository;
+import com.gridreserve.booking.catalog.repository.CityRepository;
 import com.gridreserve.booking.catalog.repository.CountryTimeZoneRepository;
 import com.gridreserve.booking.catalog.repository.VenueOpeningHoursRepository;
 import com.gridreserve.booking.catalog.repository.VenueRepository;
@@ -54,12 +56,13 @@ public class CatalogService {
     private final BookableRepository bookables;
     private final BookableOpeningHoursRepository bookableHours;
     private final CountryTimeZoneRepository countryZones;
+    private final CityRepository cities;
     private final RuleResolver rules;
 
     public CatalogService(CategoryRepository categories, BookableTypeRepository types, VenueRepository venues,
                           VenueOpeningHoursRepository venueHours, BookableRepository bookables,
                           BookableOpeningHoursRepository bookableHours, CountryTimeZoneRepository countryZones,
-                          RuleResolver rules) {
+                          CityRepository cities, RuleResolver rules) {
         this.categories = categories;
         this.types = types;
         this.venues = venues;
@@ -67,6 +70,7 @@ public class CatalogService {
         this.bookables = bookables;
         this.bookableHours = bookableHours;
         this.countryZones = countryZones;
+        this.cities = cities;
         this.rules = rules;
     }
 
@@ -84,9 +88,9 @@ public class CatalogService {
                 .toList();
     }
 
-    public PageResponse<VenueSummaryResponse> venues(Long categoryId, String countryCode, String city,
+    public PageResponse<VenueSummaryResponse> venues(Long categoryId, String countryCode, Long cityId,
                                                      boolean includeInactive, Pageable pageable) {
-        return PageResponse.of(venues.search(categoryId, countryCode, city, includeInactive, pageable),
+        return PageResponse.of(venues.search(categoryId, countryCode, cityId, includeInactive, pageable),
                 CatalogMapper::toSummary);
     }
 
@@ -163,13 +167,22 @@ public class CatalogService {
         return new CountryTimeZonesResponse(code, zones);
     }
 
+    /** The cities of a known country, by name; none yet is an empty list, an unknown country 404 (FR-CAT-16). */
+    public List<CityResponse> cities(String countryCode) {
+        String code = countryCode.toUpperCase(Locale.ROOT);
+        if (countryZones.findByIdCountryCodeOrderByIdTimeZone(code).isEmpty()) {
+            throw notFound("No such country.");
+        }
+        return cities.findByCountryCodeOrderByName(code).stream().map(CatalogMapper::toResponse).toList();
+    }
+
     private EffectiveRules resolve(Bookable bookable) {
         return rules.resolve(bookable, bookableHours.findByIdBookableId(bookable.getId()),
                 venueHours.findByIdVenueId(bookable.getVenue().getId()));
     }
 
     private Venue visibleVenue(long id, boolean includeInactive) {
-        return venues.findById(id)
+        return venues.findWithCityById(id)
                 .filter(venue -> includeInactive || venue.isActive())
                 .orElseThrow(() -> notFound("No such venue."));
     }
@@ -182,7 +195,7 @@ public class CatalogService {
 
     private static BookableInfo info(Bookable bookable) {
         return new BookableInfo(bookable.getId(), bookable.getName(), bookable.getBookableType().getLabel(),
-                bookable.getVenue().getName(), bookable.getVenue().getCity(), bookable.getVenue().getCountryCode(),
+                bookable.getVenue().getName(), bookable.getVenue().getCity().getName(), bookable.getVenue().getCountryCode(),
                 bookable.getVenue().getTimeZone(),
                 bookable.getBookableType().getCategory().getCancellationCutoffMinutes());
     }

@@ -3,6 +3,7 @@ package com.gridreserve.booking.catalog.controller;
 import com.gridreserve.booking.catalog.dto.BookableResponse;
 import com.gridreserve.booking.catalog.dto.BookableSummaryResponse;
 import com.gridreserve.booking.catalog.dto.CategoryResponse;
+import com.gridreserve.booking.catalog.dto.CityResponse;
 import com.gridreserve.booking.catalog.dto.CountryResponse;
 import com.gridreserve.booking.catalog.dto.CountryTimeZonesResponse;
 import com.gridreserve.booking.catalog.dto.VenueResponse;
@@ -23,7 +24,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Catalog reads for any signed-in user (FR-CAT-06, FR-CAT-14). {@code includeInactive=true} counts
+ * Catalog reads for any signed-in user (FR-CAT-06, FR-CAT-14, FR-CAT-16). {@code includeInactive=true} counts
  * only for admins; for members it is ignored, so they never see closed venues or bookables.
  */
 @RestController
@@ -44,12 +45,12 @@ public class CatalogController {
     @GetMapping("/venues")
     public PageResponse<VenueSummaryResponse> venues(@RequestParam(required = false) Long categoryId,
                                                      @RequestParam(required = false) String country,
-                                                     @RequestParam(required = false) String city,
+                                                     @RequestParam(required = false) Long cityId,
                                                      @RequestParam(defaultValue = "false") boolean includeInactive,
                                                      @RequestParam(defaultValue = "0") int page,
                                                      @RequestParam(defaultValue = PageParams.DEFAULT_SIZE) int size,
                                                      Authentication caller) {
-        return catalog.venues(categoryId, blankToNull(country, true), blankToNull(city, false),
+        return catalog.venues(categoryId, blankToNull(country), cityId,
                 includeInactive && Viewer.isAdmin(caller),
                 PageParams.of(page, size, Sort.by("name", "id")));
     }
@@ -84,12 +85,16 @@ public class CatalogController {
         return catalog.timeZones(code);
     }
 
-    // An empty filter (?city=) means "any", like a missing one; countries are stored upper case ("in" finds IN).
-    private static String blankToNull(String value, boolean upperCase) {
+    @GetMapping("/countries/{code}/cities")
+    public List<CityResponse> cities(@PathVariable String code) {
+        return catalog.cities(code);
+    }
+
+    // An empty filter (?country=) means "any", like a missing one; countries are stored upper case ("in" finds IN).
+    private static String blankToNull(String value) {
         if (value == null || value.isBlank()) {
             return null;
         }
-        String trimmed = value.strip();
-        return upperCase ? trimmed.toUpperCase(Locale.ROOT) : trimmed;
+        return value.strip().toUpperCase(Locale.ROOT);
     }
 }

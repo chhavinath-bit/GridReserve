@@ -97,13 +97,16 @@ class CatalogIT {
         }
 
         @Test
-        @DisplayName("FR-CAT-16: every seed venue has its city, taken from the end of its address by V6")
+        @DisplayName("FR-CAT-16: every seed venue is in its listed city (V6 took it from the address, V7 linked it to the list)")
         void seedCities_FRCAT16() {
             Response response = http.get("/api/v1/venues?size=100", member);
 
             Map<String, String> cities = new HashMap<>();
             response.body().get("items").forEach(venue -> cities.put(venue.get("name").asString(),
                     venue.get("city").asString() + ", " + venue.get("countryCode").asString()));
+            response.body().get("items").forEach(venue -> assertThat(venue.get("cityId").asLong())
+                    .isEqualTo(jdbc.queryForObject("SELECT city_id FROM venue WHERE name = ?", Long.class,
+                            venue.get("name").asString())));
             assertThat(cities).containsEntry("Central Library", "Pune, IN")
                     .containsEntry("Sunrise Turf", "Bengaluru, IN")
                     .containsEntry("Palm Apartments", "Chennai, IN")
@@ -112,15 +115,15 @@ class CatalogIT {
         }
 
         @Test
-        @DisplayName("FR-CAT-16: venues filtered by country and city; the city ignores case, an empty filter means any")
+        @DisplayName("FR-CAT-16: venues filtered by country and city ID; an empty filter means any")
         void venuesByPlace_FRCAT16() {
             assertThat(texts(http.get("/api/v1/venues?country=GB", member).body().get("items"), "name"))
                     .containsExactly("IronWorks");
-            assertThat(texts(http.get("/api/v1/venues?country=in&city=hyderabad", member).body().get("items"), "name"))
-                    .containsExactly("CityCare Clinic");
-            assertThat(texts(http.get("/api/v1/venues?city=London&categoryId=" + id("category", "Study"), member)
-                    .body().get("items"), "name")).isEmpty();
-            assertThat(http.get("/api/v1/venues?country=&city=&size=100", member).body().get("totalItems").asLong())
+            assertThat(texts(http.get("/api/v1/venues?country=in&cityId=" + id("city", "Hyderabad"), member)
+                    .body().get("items"), "name")).containsExactly("CityCare Clinic");
+            assertThat(texts(http.get("/api/v1/venues?cityId=" + id("city", "London") + "&categoryId="
+                    + id("category", "Study"), member).body().get("items"), "name")).isEmpty();
+            assertThat(http.get("/api/v1/venues?country=&cityId=&size=100", member).body().get("totalItems").asLong())
                     .isEqualTo(http.get("/api/v1/venues?size=100", member).body().get("totalItems").asLong());
         }
 
@@ -293,6 +296,31 @@ class CatalogIT {
             assertThat(response.status()).isEqualTo(200);
             assertThat(response.body().get("countryCode").asString()).isEqualTo("IN");
             assertThat(strings(response.body().get("timeZones"))).containsExactly("Asia/Kolkata");
+        }
+
+        @Test
+        @DisplayName("FR-CAT-16: a country's cities, sorted by name, each with its zone; the code is case-insensitive")
+        void citiesOfCountry_FRCAT16() {
+            Response india = http.get("/api/v1/countries/in/cities", member);
+            JsonNode us = http.get("/api/v1/countries/US/cities", member).body();
+
+            assertThat(india.status()).isEqualTo(200);
+            assertThat(texts(india.body(), "name")).contains("Bengaluru", "Delhi", "Hyderabad", "Pune").isSorted();
+            assertThat(texts(india.body(), "timeZone")).containsOnly("Asia/Kolkata");
+            assertThat(texts(india.body(), "countryCode")).containsOnly("IN");
+            Map<String, String> zones = new HashMap<>();
+            us.forEach(city -> zones.put(city.get("name").asString(), city.get("timeZone").asString()));
+            assertThat(zones).containsEntry("New York", "America/New_York").containsEntry("Chicago", "America/Chicago");
+        }
+
+        @Test
+        @DisplayName("FR-CAT-16: a known country without listed cities answers an empty list; an unknown one 404")
+        void citiesOfOtherCountries_FRCAT16() {
+            Response none = http.get("/api/v1/countries/IS/cities", member);
+
+            assertThat(none.status()).isEqualTo(200);
+            assertThat(none.body()).isEmpty();
+            assertThat(http.get("/api/v1/countries/ZZ/cities", member).status()).isEqualTo(404);
         }
 
         @Test

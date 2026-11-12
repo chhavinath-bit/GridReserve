@@ -13,8 +13,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Venues and bookables that a test creates through the admin API, and removes again afterwards: tests in
  * the same Spring context share one database, and other tests count the seeded catalog. Every name starts
- * with {@link #PREFIX}, so cleanup finds exactly these rows. Venues are in India (Asia/Kolkata), open every
- * day 00:00-24:00 unless a test says otherwise.
+ * with {@link #PREFIX}, so cleanup finds exactly these rows. Venues are in Mumbai (a seeded city without seeded
+ * venues; India, Asia/Kolkata), open every day 00:00-24:00 unless a test says otherwise.
  */
 public final class TestCatalog {
 
@@ -36,6 +36,11 @@ public final class TestCatalog {
         return jdbc.queryForObject("SELECT id FROM bookable_type WHERE code = ?", Long.class, code);
     }
 
+    public long cityId(String countryCode, String name) {
+        return jdbc.queryForObject("SELECT id FROM city WHERE country_code = ? AND name = ?", Long.class,
+                countryCode, name);
+    }
+
     public static List<Map<String, Object>> everyDay(String opensAt, String closesAt) {
         List<Map<String, Object>> days = new ArrayList<>();
         for (String day : List.of("MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY")) {
@@ -44,14 +49,12 @@ public final class TestCatalog {
         return days;
     }
 
-    public static Map<String, Object> venueBody(long categoryId, String name) {
+    public Map<String, Object> venueBody(long categoryId, String name) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("categoryId", categoryId);
         body.put("name", PREFIX + name);
         body.put("addressLine", "1 Test Road");
-        body.put("city", "Testville");
-        body.put("countryCode", "IN");
-        body.put("timeZone", "Asia/Kolkata");
+        body.put("cityId", cityId("IN", "Mumbai"));
         body.put("openingHours", everyDay("00:00", "24:00"));
         return body;
     }

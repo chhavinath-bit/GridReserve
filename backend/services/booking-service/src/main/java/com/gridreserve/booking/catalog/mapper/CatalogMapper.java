@@ -4,6 +4,7 @@ import com.gridreserve.booking.catalog.dto.BookableResponse;
 import com.gridreserve.booking.catalog.dto.BookableSummaryResponse;
 import com.gridreserve.booking.catalog.dto.BookableTypeResponse;
 import com.gridreserve.booking.catalog.dto.CategoryResponse;
+import com.gridreserve.booking.catalog.dto.CityResponse;
 import com.gridreserve.booking.catalog.dto.OpeningHoursResponse;
 import com.gridreserve.booking.catalog.dto.RuleOverridesResponse;
 import com.gridreserve.booking.catalog.dto.RulesResponse;
@@ -12,6 +13,7 @@ import com.gridreserve.booking.catalog.dto.VenueSummaryResponse;
 import com.gridreserve.booking.catalog.entity.Bookable;
 import com.gridreserve.booking.catalog.entity.BookableType;
 import com.gridreserve.booking.catalog.entity.Category;
+import com.gridreserve.booking.catalog.entity.City;
 import com.gridreserve.booking.catalog.entity.RuleOverrides;
 import com.gridreserve.booking.catalog.entity.Venue;
 import com.gridreserve.booking.catalog.service.EffectiveRules;
@@ -40,15 +42,19 @@ public final class CatalogMapper {
                 type.getBufferMinutes());
     }
 
+    public static CityResponse toResponse(City city) {
+        return new CityResponse(city.getId(), city.getName(), city.getCountryCode(), city.getTimeZone().getId());
+    }
+
     public static VenueSummaryResponse toSummary(Venue venue) {
         return new VenueSummaryResponse(venue.getId(), venue.getCategory().getId(), venue.getName(),
-                venue.getAddressLine(), venue.getCity(), venue.getCountryCode(), venue.getTimeZone().getId(),
+                venue.getAddressLine(), venue.getCity().getId(), venue.getCity().getName(), venue.getCountryCode(), venue.getTimeZone().getId(),
                 venue.isActive());
     }
 
     public static VenueResponse toResponse(Venue venue, WeeklyHours hours) {
         return new VenueResponse(venue.getId(), venue.getCategory().getId(), venue.getName(),
-                venue.getAddressLine(), venue.getCity(), venue.getCountryCode(), venue.getTimeZone().getId(),
+                venue.getAddressLine(), venue.getCity().getId(), venue.getCity().getName(), venue.getCountryCode(), venue.getTimeZone().getId(),
                 venue.isActive(), venue.getVersion(), toResponse(hours));
     }
 
@@ -61,7 +67,7 @@ public final class CatalogMapper {
     public static BookableResponse toResponse(Bookable bookable, EffectiveRules rules) {
         BookableType type = bookable.getBookableType();
         Venue venue = bookable.getVenue();
-        return new BookableResponse(bookable.getId(), venue.getId(), venue.getName(), venue.getCity(),
+        return new BookableResponse(bookable.getId(), venue.getId(), venue.getName(), venue.getCity().getName(),
                 venue.getCountryCode(), venue.getTimeZone().getId(),
                 bookable.getName(), type.getCode(), type.getLabel(), type.getBookingModel(), bookable.isActive(),
                 bookable.getVersion(), toResponse(rules), toResponse(bookable.overrides()), toResponse(rules.hours()),

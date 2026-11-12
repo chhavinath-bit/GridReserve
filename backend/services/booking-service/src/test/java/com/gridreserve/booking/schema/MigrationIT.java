@@ -21,12 +21,12 @@ class MigrationIT {
     JdbcTemplate jdbc;
 
     @Test
-    @DisplayName("M1.2/M1.13: V1-V6 are applied in order and all succeeded")
+    @DisplayName("M1.2/M1.13/M1.13b: V1-V7 are applied in order and all succeeded")
     void allMigrationsApplied() {
         List<String> versions = jdbc.queryForList(
                 "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank", String.class);
 
-        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6");
+        assertThat(versions).containsExactly("1", "2", "3", "4", "5", "6", "7");
     }
 
     @Test
